@@ -99,7 +99,8 @@ end
 --=======================================================================
 -- ⚠️ 警告：此 ModuleList 被多个插件共享
 --  它是 Tools 左侧路由、模块管理与模块元数据的唯一真源。
---  严禁模块在运行时追加/覆盖条目；新增模块只能在这里显式登记。
+--  内置模块在此显式登记；外置插件只能通过下方 RegisterExternalModule
+--  入口注册一次，不能直接写入或覆盖此表。
 ExwindTools.ModuleList = {
     ----------------------------------------------------------------------------------------------------------
     ---------------------------------------------工具类 (1)---------------------------------------------------
@@ -300,6 +301,41 @@ local function SyncModuleRegistry()
             ExwindTools.DB.LoadByKey[k] = nil
         end
     end
+end
+
+-- 外置插件的源码仍归各自 AddOn 所有；这里仅把已经加载的模块资料接入
+-- Tools 的既有导航、模块开关和设置页路由。禁止外置代码直接改 ModuleList。
+function ExwindTools:RegisterExternalModule(meta)
+    if type(meta) ~= "table" then
+        error("RegisterExternalModule: meta must be table", 2)
+    end
+
+    local key = meta.Key
+    if type(key) ~= "string" or key == "" then
+        error("RegisterExternalModule: Key must be non-empty string", 2)
+    end
+    if type(meta.Name) ~= "string" or meta.Name == "" then
+        error("RegisterExternalModule: Name must be non-empty string", 2)
+    end
+    if self.ModuleIndexByKey[key] then
+        error("RegisterExternalModule: duplicate module key " .. key, 2)
+    end
+    if not toolsCatalogOwner then
+        error("RegisterExternalModule: ExwindTools storage is not registered", 2)
+    end
+
+    local entry = {
+        Key = key,
+        Name = meta.Name,
+        Desc = type(meta.Desc) == "string" and meta.Desc or "",
+        Category = type(meta.Category) == "number" and meta.Category or 1,
+        DefaultEnabled = meta.DefaultEnabled,
+        HideCfg = meta.HideCfg == true,
+    }
+
+    self.ModuleList[#self.ModuleList + 1] = entry
+    SyncModuleRegistry()
+    return entry
 end
 
 -- Addons register their own already-loaded SavedVariables table from their

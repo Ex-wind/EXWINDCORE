@@ -263,8 +263,13 @@ local function ValidateDefinition(definition)
     end
     if definition.kind == "material" then
         local child = definition.children and definition.children[1]
-        if #(definition.children or {}) ~= 1 or not child or child.kind ~= "texture" then
-            Fail("material definition requires exactly one texture child")
+        if not child or child.kind ~= "texture" then
+            Fail("material definition requires a texture body as its first child")
+        end
+        for index = 2, #(definition.children or {}) do
+            if definition.children[index].kind ~= "text" then
+                Fail("material definition supports only text children after its texture body")
+            end
         end
         if #(definition.extraChildHosts or {}) ~= 0 or #(definition.collectionDecorations or {}) ~= 0 then
             Fail("material definition does not support extra child hosts or collection decorations")
@@ -1071,7 +1076,10 @@ local function RefreshItemHitboxes(item)
 end
 
 local function ApplyTransientPosition(item, element, position)
-    if item.widget then
+    -- Icon/TimerBar 的本体固定在 slot 中心；材质本体则已经由
+    -- MaterialPresentation.anchor 定义局部位置。拖动其文字 child 时若强制
+    -- CenterFixedBody，会覆盖材质锚点并造成贴图跟随文字跳动。
+    if item.widget and item.kind ~= "material" then
         CenterFixedBody(item)
         ApplyFixedElementAnchors(item)
     end
@@ -1240,7 +1248,7 @@ local function MaterializeItem(preview, definition, modelItem)
     local root = EXFactory:Acquire(ITEM_POOL, preview.layout)
     root:EnableMouse(false)
     ApplyPreviewLayer(root, _G.EXPREVIEWBODYFRAME, preview.layout)
-    local item = { root = root, itemID = modelItem.itemID, elements = {} }
+    local item = { root = root, itemID = modelItem.itemID, kind = definition.kind, elements = {} }
     root.__EXUIStandardPreviewPosition = modelItem.position
     local name, icon = ResolveContent(modelItem)
     if definition.kind == "icon" then
@@ -1338,6 +1346,14 @@ local function MaterializeItem(preview, definition, modelItem)
         for _, child in ipairs(definition.children or {}) do MaterializeChild(item, roots, child, modelItem.elements and modelItem.elements[child.id], fallback) end
         for _, host in ipairs(definition.extraChildHosts or {}) do
             MaterializeExtraChildHost(item, roots, host, modelItem.extraChildren and modelItem.extraChildren[host.id], fallback)
+        end
+    else
+        -- A material has one public texture body and may declare text-only
+        -- annotation children.  They share the normal preview child path so
+        -- their drag hitboxes and config intents remain Core-owned.
+        for index = 2, #(definition.children or {}) do
+            local child = definition.children[index]
+            MaterializeChild(item, roots, child, modelItem.elements and modelItem.elements[child.id], fallback)
         end
     end
     if #(definition.extraChildHosts or {}) > 0 then

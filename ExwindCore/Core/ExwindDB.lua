@@ -1,6 +1,6 @@
 -- ExwindDB.lua - 全局共享数据库
 -- 提供职业、专精等静态数据，减少API调用，供所有模块使用
-
+-- TEST
 local ExwindTools = _G.ExwindTools
 if not ExwindTools then return end
 

@@ -1,0 +1,8 @@
+## Interface: 120100
+## Title: EXDK
+## Notes: Tracks spell 1265982 cooldown updates.
+## Author: EXCORE
+## Version: 1.2.0
+## SavedVariables: EXDKDB
+
+EXDK.lua

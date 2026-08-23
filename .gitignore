@@ -1,0 +1,18 @@
+# Local editor and agent state; never include in the public source repository.
+.claude/
+.codex/
+.vscode/
+.idea/
+
+# Local credentials and environment files.
+.env
+.env.*
+*.pem
+*.key
+*.pfx
+id_rsa*
+
+# Development scripts and HTML tooling belong in EXWIND-DEV, never in this public addon source repository.
+*.py
+*.html
+*.htm

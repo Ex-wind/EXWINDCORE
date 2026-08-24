@@ -54,7 +54,9 @@ local CORE_LAYOUT_SLOT_IDS = {
     stacks = "core.stacks",
 }
 
-local CORE_LAYOUT_ORDER = { "icon", "label", "time", "stacks" }
+-- 名称是 Countdown 等复合行的锚点源，必须先解除它对 IconWidget.textLayer
+-- 的默认依赖；之后图标／时间才可安全锚定名称内容区域。
+local CORE_LAYOUT_ORDER = { "label", "icon", "time", "stacks" }
 
 local function AssertPureCoreLayout(value, label, seen)
     local valueType = type(value)
@@ -76,9 +78,26 @@ local function ResolveCoreLayoutSlot(item, elementID)
     if elementID == "core.root" then return item.root end
     if elementID == "core.icon" or elementID == "core.cooldown" then return widget end
     if elementID == "core.label" or elementID == "core.spellName" then return widget.labelText end
+    if elementID == "core.label.content" then return widget.labelText:GetContentRegion() end
     if elementID == "core.time" then return widget.countdownText end
     if elementID == "core.stacks" or elementID == "icon.stacks" then return widget.stackText end
     error("IconCollection coreLayout references unknown core slot " .. tostring(elementID), 3)
+end
+
+-- IconWidget normally owns its text slots below its own textLayer.  A compound
+-- row may explicitly promote a slot to ItemRoot so icon, name and time become
+-- siblings.  This is required when the icon must follow the *actual* name
+-- FontString width: anchoring an IconWidget parent to its own label child is a
+-- forbidden dependency cycle.
+local function ApplyDetachedCoreSlots(item, presentation)
+    local detached = type(presentation) == "table" and presentation.detachedCoreSlots or nil
+    local widget = item.widget
+    local function Place(slotID, child)
+        local parent = type(detached) == "table" and detached[slotID] == true and item.root or widget.textLayer
+        if child and child:GetParent() ~= parent then child:SetParent(parent) end
+    end
+    Place("label", widget.labelText)
+    Place("time", widget.countdownText)
 end
 
 local function CoreRectPoint(rect, point)
@@ -142,6 +161,9 @@ local function ApplyCoreLayout(item, presentation)
             local elementID = CORE_LAYOUT_SLOT_IDS[key]
             local bounds = spec.bounds
             local width, height = nil, nil
+            if spec.clearBounds == true and type(target.ClearBounds) == "function" then
+                target:ClearBounds()
+            end
             if bounds ~= nil then
                 if type(bounds) ~= "table" then error("IconCollection coreLayout." .. key .. ".bounds must be table", 3) end
                 width, height = tonumber(bounds.width), tonumber(bounds.height)
@@ -579,6 +601,7 @@ end
 -- 时，拖动必须保持这条正式相对锚点链，不能把位置叠加到 style.x/y。
 local function ResolveTransientAnchorParent(item, relativeSlot)
     if relativeSlot == "core.root" then return item.root end
+    if relativeSlot == "core.label.content" then return item.widget.labelText:GetContentRegion() end
     if type(relativeSlot) == "string" and relativeSlot ~= "" then
         local target = GetTextSlot(item, relativeSlot, nil)
         if target then return target end
@@ -930,6 +953,17 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
         item.declaredBounds = RequireDeclaredBounds(presentation)
         item.localOffset = ResolveLocalOffset(self, presentation)
         local widget = item.widget
+        if type(widget.SetSuppressBorderGeometry) == "function" then
+            widget:SetSuppressBorderGeometry(presentation.suppressIconBorderGeometry == true)
+        end
+        -- A previous Secret content anchor can make this Frame's current
+        -- geometry protected.  Restore the normal ItemRoot relation before
+        -- applying any visual style that reads the fixed icon size.
+        widget:ClearAllPoints()
+        widget:SetPoint("CENTER", item.root, "CENTER", item.localOffset.x, item.localOffset.y)
+        -- Detach before IconWidget reapplies its own text-slot anchors.  The
+        -- subsequent core layout then establishes the only final anchors.
+        ApplyDetachedCoreSlots(item, presentation)
         widget:ApplyStyle(presentation.style or {})
         ApplyIcon(widget, presentation.icon)
         ApplyStacks(widget, presentation.stacks)
@@ -950,6 +984,13 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
         ApplyCooldown(self, widget, presentation.cooldown)
         if presentation.usable ~= nil then widget:SetUsable(presentation.usable) else widget:SetUsable(nil) end
         if presentation.desaturated ~= nil then widget:SetDesaturated(presentation.desaturated) else widget:SetDesaturated(nil) end
+        -- 先把 IconWidget 放到 ItemRoot。core.icon 就是这个 IconWidget 本体，
+        -- 因而固定 core 布局必须在此之后应用；否则其 SetAnchor 会被下面的
+        -- 默认居中锚点立刻覆盖，图标永远留在行中央。
+        item.bodyWidth, item.bodyHeight = ResolveDeclaredBodySize(presentation, widget)
+        item.root:SetSize(item.bodyWidth, item.bodyHeight)
+        widget:ClearAllPoints()
+        widget:SetPoint("CENTER", item.root, "CENTER", item.localOffset.x, item.localOffset.y)
         -- 固定 core 槽位布局必须在 Panel hitbox 建立前完成；之后才轮到
         -- RegionElements 的独立子 Region 与交互覆盖层。
         ApplyCoreLayout(item, presentation)
@@ -963,10 +1004,6 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
         ConfigureRuntimeTooltip(self, item, presentation.runtimeTooltip)
         ConfigureRuntimeAction(self, item, presentation.runtimeAction)
         ConfigureInteractionOverlays(self, item, presentation.interaction)
-        item.bodyWidth, item.bodyHeight = ResolveDeclaredBodySize(presentation, widget)
-        item.root:SetSize(item.bodyWidth, item.bodyHeight)
-        widget:ClearAllPoints()
-        widget:SetPoint("CENTER", item.root, "CENTER", item.localOffset.x, item.localOffset.y)
         item.root:Show()
         return item
     end

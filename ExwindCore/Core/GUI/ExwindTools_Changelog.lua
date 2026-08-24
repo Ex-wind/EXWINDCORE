@@ -146,20 +146,31 @@ local function AcquireDivider(frame, index)
     return divider
 end
 
-local function NormalizeLocaleLine(line, source)
+local function NormalizeLocaleLine(line, source, blockLanguage)
     local isChinese = IsChineseLocale()
     if type(source.IsChineseLocale) == "function" then
         isChinese = source:IsChineseLocale() == true
     end
+
+    -- 发布器历史上同时产出过逐行 @CN@/@EN@ 与区块 [CN_0]...[CN_1]
+    -- 两种格式。语言状态收敛在共享查看器，避免每个插件各自解析。
+    local marker = Trim(line)
+    if marker == "[CN_0]" then return nil, "CN" end
+    if marker == "[CN_1]" then return nil, nil end
+    if marker == "[EN_0]" then return nil, "EN" end
+    if marker == "[EN_1]" then return nil, nil end
+    if blockLanguage == "CN" and not isChinese then return nil, blockLanguage end
+    if blockLanguage == "EN" and isChinese then return nil, blockLanguage end
+
     if line:match("^@CN@") then
-        if not isChinese then return nil end
-        return (line:gsub("^@CN@%s?", ""))
+        if not isChinese then return nil, blockLanguage end
+        return (line:gsub("^@CN@%s?", "")), blockLanguage
     end
     if line:match("^@EN@") then
-        if isChinese then return nil end
-        return (line:gsub("^@EN@%s?", ""))
+        if isChinese then return nil, blockLanguage end
+        return (line:gsub("^@EN@%s?", "")), blockLanguage
     end
-    return line
+    return line, blockLanguage
 end
 
 local function RenderContent(frame, source)
@@ -175,8 +186,10 @@ local function RenderContent(frame, source)
     local contentWidth = math.max(320, frame:GetWidth() - 62)
     local y, lineIndex, dividerIndex = 0, 0, 0
     local seenH1 = false
+    local blockLanguage = nil
     for rawLine in (content .. "\n"):gmatch("(.-)\n") do
-        local line = NormalizeLocaleLine(rawLine, source)
+        local line
+        line, blockLanguage = NormalizeLocaleLine(rawLine, source, blockLanguage)
         if line then
             if type(source.TransformLine) == "function" then
                 line = tostring(source.TransformLine(line) or "")
@@ -257,13 +270,13 @@ local function EnsureViewerFrame()
     local tabHost = CreateFrame("Frame", nil, viewerFrame)
     tabHost:SetPoint("TOPLEFT", 18, -42)
     tabHost:SetPoint("TOPRIGHT", -34, -42)
-    tabHost:SetHeight(26)
+    tabHost:SetHeight(30)
     viewerFrame.TabHost = tabHost
     viewerFrame.TabButtons = {}
 
     local scrollFrame = CreateFrame("ScrollFrame", nil, viewerFrame, "ScrollFrameTemplate")
     scrollFrame:EnableMouseWheel(true)
-    scrollFrame:SetPoint("TOPLEFT", 18, -76)
+    scrollFrame:SetPoint("TOPLEFT", 18, -82)
     scrollFrame:SetPoint("BOTTOMRIGHT", -34, 18)
     viewerFrame.ScrollFrame = scrollFrame
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
@@ -283,6 +296,54 @@ local function EnsureViewerFrame()
     return viewerFrame
 end
 
+local TAB_STYLE = {
+    activeBackground = { 0.075, 0.125, 0.165, 0.96 },
+    hoverBackground = { 0.075, 0.115, 0.150, 0.90 },
+    idleBackground = { 0.025, 0.035, 0.050, 0.56 },
+    activeText = { 0.90, 0.95, 1.00, 1.00 },
+    idleText = { 0.52, 0.60, 0.69, 1.00 },
+    hoverText = { 0.76, 0.86, 0.94, 1.00 },
+    accent = { 0.28, 0.80, 0.91, 1.00 },
+}
+
+local function SetTabVisual(button, active, hovered)
+    button._tabActive = active == true
+    if active then
+        button.Background:SetColorTexture(unpack(TAB_STYLE.activeBackground))
+        button.Label:SetTextColor(unpack(TAB_STYLE.activeText))
+        button.Accent:Show()
+    elseif hovered then
+        button.Background:SetColorTexture(unpack(TAB_STYLE.hoverBackground))
+        button.Label:SetTextColor(unpack(TAB_STYLE.hoverText))
+        button.Accent:Hide()
+    else
+        button.Background:SetColorTexture(unpack(TAB_STYLE.idleBackground))
+        button.Label:SetTextColor(unpack(TAB_STYLE.idleText))
+        button.Accent:Hide()
+    end
+end
+
+local function CreateTabButton(parent)
+    local button = CreateFrame("Button", nil, parent)
+    button:SetHeight(30)
+    button.Background = button:CreateTexture(nil, "BACKGROUND")
+    button.Background:SetAllPoints()
+    button.Label = button:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    button.Label:SetPoint("CENTER", 0, 1)
+    button.Accent = button:CreateTexture(nil, "ARTWORK")
+    button.Accent:SetPoint("BOTTOMLEFT", 0, 0)
+    button.Accent:SetPoint("BOTTOMRIGHT", 0, 0)
+    button.Accent:SetHeight(3)
+    button.Accent:SetColorTexture(unpack(TAB_STYLE.accent))
+    button:SetScript("OnEnter", function(self)
+        if not self._tabActive then SetTabVisual(self, false, true) end
+    end)
+    button:SetScript("OnLeave", function(self)
+        if not self._tabActive then SetTabVisual(self, false, false) end
+    end)
+    return button
+end
+
 local function RebuildTabs(frame, activeSourceID)
     local previous, tabIndex = nil, 0
     for _, sourceID in ipairs(Viewer.Order) do
@@ -291,18 +352,18 @@ local function RebuildTabs(frame, activeSourceID)
             tabIndex = tabIndex + 1
             local button = frame.TabButtons[tabIndex]
             if not button then
-                button = CreateFrame("Button", nil, frame.TabHost, "UIPanelButtonTemplate")
+                button = CreateTabButton(frame.TabHost)
                 frame.TabButtons[tabIndex] = button
             end
             button:ClearAllPoints()
-            button:SetSize(150, 24)
-            if previous then button:SetPoint("LEFT", previous, "RIGHT", 8, 0) else button:SetPoint("LEFT", 0, 0) end
-            button:SetText(GetSourceTitle(source))
+            button.Label:SetText(GetSourceTitle(source))
+            button:SetWidth(math.max(132, button.Label:GetStringWidth() + 40))
+            if previous then button:SetPoint("LEFT", previous, "RIGHT", 4, 0) else button:SetPoint("LEFT", 0, 0) end
             button.sourceID = sourceID
             button:SetScript("OnClick", function(self)
                 Viewer:Show(self.sourceID, { markSeen = true, markShown = true })
             end)
-            if sourceID == activeSourceID then button:Disable() else button:Enable() end
+            SetTabVisual(button, sourceID == activeSourceID, false)
             button:Show()
             previous = button
         end

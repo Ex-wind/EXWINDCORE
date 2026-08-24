@@ -1044,8 +1044,24 @@ local function ApplyIconCooldownStyle(widget)
     widget._showNativeCooldown = IsCooldownVisualEnabled(widget) and (showSwipe or showEdge or showBling)
 end
 
+local function ApplySecretSafeIconBorder(widget)
+    local border = widget.secretSafeBorder
+    if not border then return end
+    if IconStyleValue(widget.iconStyle, "showBorder") == false then
+        border:Hide()
+        return
+    end
+    widget.border:Hide()
+    border:Show()
+end
+
 local function ApplyIconBorder(widget)
     local iconStyle = widget.iconStyle
+    if widget._useSecretSafeBorder then
+        ApplySecretSafeIconBorder(widget)
+        return
+    end
+    if widget.secretSafeBorder then widget.secretSafeBorder:Hide() end
     if IconStyleValue(iconStyle, "showBorder") == false then
         widget.border:Hide()
         return
@@ -1564,6 +1580,7 @@ local function IconWidgetRelease(widget)
     widget.icon:SetBlendMode("BLEND")
     widget.icon:SetRotation(0)
     widget.border:Hide()
+    if widget.secretSafeBorder then widget.secretSafeBorder:Hide() end
     widget:Hide()
     widget:ClearAllPoints()
     if widget.countdownText then widget.countdownText:Release(); widget.countdownText = nil end
@@ -1606,10 +1623,36 @@ EXFactory:InitPool(ICON_WIDGET_POOL, "Frame", nil, function(widget)
     EXUI:ApplyVisualLayer(border, _G.EXBORDERFRAME, widget)
     widget.border = border
 
+    -- Secret geometry must never reach Backdrop/NineSlice: Blizzard's
+    -- implementation performs Lua-visible width/height arithmetic.  These
+    -- four fixed 1px textures are geometry-free and therefore safe to anchor
+    -- to a Secret-positioned icon.
+    local secretSafeBorder = CreateFrame("Frame", nil, widget)
+    secretSafeBorder:EnableMouse(false)
+    secretSafeBorder:SetAllPoints(widget)
+    secretSafeBorder:Hide()
+    EXUI:ApplyVisualLayer(secretSafeBorder, _G.EXBORDERFRAME, widget)
+    local function Edge(pointA, pointB, width, height)
+        local edge = EXUI:CreateVisualTexture(secretSafeBorder, _G.EXBORDERFRAME)
+        edge:SetColorTexture(0, 0, 0, 1)
+        edge:SetPoint(pointA, secretSafeBorder, pointA, pointA:find("LEFT", 1, true) and -1 or 1,
+            pointA:find("TOP", 1, true) and 1 or -1)
+        edge:SetPoint(pointB, secretSafeBorder, pointB, pointB:find("LEFT", 1, true) and -1 or 1,
+            pointB:find("TOP", 1, true) and 1 or -1)
+        if width then edge:SetWidth(width) end
+        if height then edge:SetHeight(height) end
+        return edge
+    end
+    secretSafeBorder.top = Edge("TOPLEFT", "TOPRIGHT", nil, 1)
+    secretSafeBorder.bottom = Edge("BOTTOMLEFT", "BOTTOMRIGHT", nil, 1)
+    secretSafeBorder.left = Edge("TOPLEFT", "BOTTOMLEFT", 1, nil)
+    secretSafeBorder.right = Edge("TOPRIGHT", "BOTTOMRIGHT", 1, nil)
+    widget.secretSafeBorder = secretSafeBorder
+
     -- Pool reuse and style changes can resize an IconWidget without recreating
     -- its Backdrop frame. Reapply the final LSM border geometry at that point.
     widget:HookScript("OnSizeChanged", function(self)
-        if self.iconStyle and self.border:IsShown() then
+        if not self._suppressBorderGeometry and self.iconStyle and self.border:IsShown() then
             ApplyIconBorder(self)
         end
     end)
@@ -1644,6 +1687,11 @@ EXFactory:InitPool(ICON_WIDGET_POOL, "Frame", nil, function(widget)
     widget.ResolveDeclaredElement = IconWidgetResolveDeclaredElement
     widget.SetCountdownTextVisibleOverride = IconWidgetSetCountdownTextVisibleOverride
     widget.SetCooldownVisualVisibleOverride = IconWidgetSetCooldownVisualVisibleOverride
+    widget.SetSuppressBorderGeometry = function(self, suppress)
+        self._suppressBorderGeometry = suppress == true
+        self._useSecretSafeBorder = suppress == true
+        return self
+    end
     widget.GetExtraChildHost = IconWidgetGetExtraChildHost
     widget.ConfigureExtraChildHost = IconWidgetConfigureExtraChildHost
     widget.Release = IconWidgetRelease
@@ -1655,6 +1703,8 @@ function EXUI:CreateIconWidget(parent, style)
     widget._released = false
     widget._desaturatedOverride = nil
     widget._unusableOverride = nil
+    widget._suppressBorderGeometry = nil
+    widget._useSecretSafeBorder = nil
     widget.countdownText = EXUI:CreateTextWidget(widget.textLayer, "countdown")
     widget.secretCountdown = EXUI:CreateSecretCountdownWidget(widget.textLayer)
     widget.stackText = EXUI:CreateTextWidget(widget.textLayer, "stacks")

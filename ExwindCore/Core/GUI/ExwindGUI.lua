@@ -2965,6 +2965,57 @@ end
 -- 扁平前缀字段：<key>Enabled/Source/Label/LSM/Path/TtsText/Channel。
 -- 来源集合由调用方 opts.sources 声明；未声明时绝不开放语音包。
 -- =========================================================
+local function ResolveSoundGroupSecondaryCheckbox(opts)
+    local spec = type(opts) == "table" and opts.secondaryCheckbox or nil
+    if spec == nil then return nil end
+    if type(spec) ~= "table" then
+        error("soundgroup secondaryCheckbox must be table", 3)
+    end
+    for field in pairs(spec) do
+        if field ~= "key" and field ~= "label" then
+            error("soundgroup secondaryCheckbox only supports key/label", 3)
+        end
+    end
+    if type(spec.key) ~= "string" or spec.key == "" then
+        error("soundgroup secondaryCheckbox requires non-empty key", 3)
+    end
+    if type(spec.label) ~= "string" or spec.label == "" then
+        error("soundgroup secondaryCheckbox requires non-empty label", 3)
+    end
+    return spec
+end
+
+-- SoundGroup 的测量和控件重排必须共用同一份纯布局结果。额外复选框由组件
+-- 自己占据第二行，因而能与“启用”使用完全相同的父级和水平内边距；未声明
+-- secondaryCheckbox 的现有调用者仍保持原来的 104/180 高度。
+function EXUI:BuildSoundGroupLayout(width, opts)
+    local groupWidth = math.max(1, tonumber(width) or 750)
+    local secondaryCheckbox = ResolveSoundGroupSecondaryCheckbox(opts)
+    local extraHeight = secondaryCheckbox and 56 or 0
+    if groupWidth >= 760 then
+        return {
+            height = 104 + extraHeight,
+            isWide = true,
+            secondaryCheckbox = secondaryCheckbox,
+            enabledY = -4,
+            secondaryY = -60,
+            sourceY = -4,
+            channelY = -4,
+            testY = -4,
+        }
+    end
+    return {
+        height = 180 + extraHeight,
+        isWide = false,
+        secondaryCheckbox = secondaryCheckbox,
+        enabledY = -8,
+        secondaryY = -45,
+        sourceY = -45 - extraHeight,
+        channelY = -101 - extraHeight,
+        testY = -104 - extraHeight,
+    }
+end
+
 function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
     db = type(db) == "table" and db or {}
     opts = type(opts) == "table" and opts or {}
@@ -3039,7 +3090,8 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
     -- 宽版标准页面统一使用一行：启用 / 来源 / 当前音效 / 输出 / 试听。
     -- 窄宿主仍保留两列，以免控件相互覆盖。
     local groupWidth = width or 750
-    local groupHeight = groupWidth >= 760 and 104 or 180
+    local soundLayout = self:BuildSoundGroupLayout(groupWidth, opts)
+    local groupHeight = soundLayout.height
     local isNew
     group, isNew = AcquireCompositeGroup("CompositeSoundGroup", parent)
     group._exCompositeLabel = label or L["音效设置"]
@@ -3096,6 +3148,14 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
 
     local enabled = self:CreateCheckbox(settingsCard, L["启用"], GetValue("enabled"), function(value)
         SetValue("enabled", value); EmitUpdate()
+    end)
+    local secondaryCheckbox = self:CreateCheckbox(settingsCard, "", false, function(value)
+        local activeOpts = group._exCompositeOpts or {}
+        local spec = ResolveSoundGroupSecondaryCheckbox(activeOpts)
+        local active = ActiveDB()
+        if spec and active and CompositePathSet(active, spec.key, value) then
+            EmitUpdate()
+        end
     end)
     local sourceDrop = self:CreateDropdown(settingsCard, 200, L["音效来源"], dropdownSources, GetValue("source"), function(value)
         SetValue("source", value)
@@ -3194,7 +3254,13 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
     group._exCompositeConfigure = function(self)
         local state = self._soundState or {}
         local activeOpts = self._exCompositeOpts or {}
+        local secondarySpec = ResolveSoundGroupSecondaryCheckbox(activeOpts)
         if testButton.SetText then testButton:SetText(activeOpts.testLabel or L["试听"]) end
+        secondaryCheckbox:SetShown(secondarySpec ~= nil)
+        if secondarySpec then
+            secondaryCheckbox.label:SetText(secondarySpec.label)
+            secondaryCheckbox:SetChecked(CompositePathValue(self._exCompositeDb, secondarySpec.key) == true)
+        end
         -- 同一 CompositeHost 可被不同 key/来源集合的页面复用；先将每个已建立
         -- 控件的扁平字段映射重绑到本轮 key，再刷新显示，不能沿用上一页路径。
         for _, entry in ipairs(self._exCompositeControls or {}) do
@@ -3229,7 +3295,8 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
         ttsInput:SetShown(source == "tts")
     end
     group._exCompositeReflow = function(self, nextWidth, nextHeight)
-        if nextWidth >= 760 then
+        local layout = EXUI:BuildSoundGroupLayout(nextWidth, self._exCompositeOpts)
+        if layout.isWide then
             -- 对应在线编辑器的标准比例：20 / 35 / 62 / 30 / 25。
             -- 当前音效位只会显示 LSM、路径或 TTS 三者之一。
             local padding = 15
@@ -3248,13 +3315,14 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
             settingsCard:ClearAllPoints(); settingsCard:SetPoint("TOPLEFT", content, "TOPLEFT")
             settingsCard:SetSize(nextWidth, math.max(1, nextHeight - 40))
 
-            enabled:ClearAllPoints(); enabled:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", padding, -4); enabled:SetWidth(checkWidth)
-            sourceDrop:ClearAllPoints(); sourceDrop:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", sourceX, -4); sourceDrop:SetWidth(sourceWidth)
+            enabled:ClearAllPoints(); enabled:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", padding, layout.enabledY); enabled:SetWidth(checkWidth)
+            secondaryCheckbox:ClearAllPoints(); secondaryCheckbox:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", padding, layout.secondaryY); secondaryCheckbox:SetWidth(checkWidth)
+            sourceDrop:ClearAllPoints(); sourceDrop:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", sourceX, layout.sourceY); sourceDrop:SetWidth(sourceWidth)
             for _, control in ipairs({ packDrop, lsmDrop, pathInput, ttsInput }) do
-                control:ClearAllPoints(); control:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", soundX, -4); control:SetWidth(soundWidth)
+                control:ClearAllPoints(); control:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", soundX, layout.sourceY); control:SetWidth(soundWidth)
             end
-            channelDrop:ClearAllPoints(); channelDrop:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", channelX, -4); channelDrop:SetWidth(channelWidth)
-            testButton:ClearAllPoints(); testButton:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", testX, -4); testButton:SetWidth(testWidth)
+            channelDrop:ClearAllPoints(); channelDrop:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", channelX, layout.channelY); channelDrop:SetWidth(channelWidth)
+            testButton:ClearAllPoints(); testButton:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", testX, layout.testY); testButton:SetWidth(testWidth)
             return
         end
 
@@ -3265,13 +3333,14 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
         content:SetSize(nextWidth, math.max(1, nextHeight - 40))
         settingsCard:ClearAllPoints(); settingsCard:SetPoint("TOPLEFT", content, "TOPLEFT", padding, -8)
         settingsCard:SetSize(nextWidth - padding * 2, math.max(1, nextHeight - 56))
-        enabled:ClearAllPoints(); enabled:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", 10, -8)
-        sourceDrop:ClearAllPoints(); sourceDrop:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", col1, -45); sourceDrop:SetWidth(itemWidth)
+        enabled:ClearAllPoints(); enabled:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", 10, layout.enabledY)
+        secondaryCheckbox:ClearAllPoints(); secondaryCheckbox:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", 10, layout.secondaryY)
+        sourceDrop:ClearAllPoints(); sourceDrop:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", col1, layout.sourceY); sourceDrop:SetWidth(itemWidth)
         for _, control in ipairs({ packDrop, lsmDrop, pathInput, ttsInput }) do
-            control:ClearAllPoints(); control:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", col2, -45); control:SetWidth(itemWidth)
+            control:ClearAllPoints(); control:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", col2, layout.sourceY); control:SetWidth(itemWidth)
         end
-        channelDrop:ClearAllPoints(); channelDrop:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", col1, -101); channelDrop:SetWidth(itemWidth)
-        testButton:ClearAllPoints(); testButton:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", col2, -104)
+        channelDrop:ClearAllPoints(); channelDrop:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", col1, layout.channelY); channelDrop:SetWidth(itemWidth)
+        testButton:ClearAllPoints(); testButton:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", col2, layout.testY)
     end
     group:_exCompositeConfigure()
     group:_exCompositeReflow(groupWidth, groupHeight)
@@ -6776,9 +6845,8 @@ EXUI:RegisterGridComponentMeasure("icongroup", FixedGridMeasure(220))
 EXUI:RegisterGridComponentMeasure("timerbargroup", FixedGridMeasure(282))
 EXUI:RegisterGridComponentMeasure("texturegroup", FixedGridMeasure(250))
 EXUI:RegisterGridComponentMeasure("anchorgroup", FixedGridMeasure(92))
-EXUI:RegisterGridComponentMeasure("soundgroup", function(width, _)
-    width = tonumber(width)
-    local height = width and width >= 760 and 104 or 180
+EXUI:RegisterGridComponentMeasure("soundgroup", function(width, opts)
+    local height = EXUI:BuildSoundGroupLayout(width, opts).height
     return { minHeight = height, preferredHeight = height }
 end)
 EXUI:RegisterGridComponentMeasure("widgetlayout", function(_, opts)

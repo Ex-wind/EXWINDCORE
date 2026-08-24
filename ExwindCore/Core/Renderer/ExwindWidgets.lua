@@ -1321,7 +1321,7 @@ end
 -- The underlying Blizzard renderer accepts both ordinary and protected
 -- Duration Objects.  Public callers must choose a semantic entry below, but
 -- neither native path may leave the legacy numeric OnUpdate loop attached.
-local function IconWidgetSetNativeDuration(widget, durationObject, clearIfZero, mode, durationTextProperty)
+local function IconWidgetSetNativeDuration(widget, durationObject, clearIfZero, mode, durationTextProperty, durationTextOptions)
     if not durationObject then
         return IconWidgetClearCooldown(widget)
     end
@@ -1345,9 +1345,15 @@ local function IconWidgetSetNativeDuration(widget, durationObject, clearIfZero, 
     if IsCountdownEnabled(widget) then
         -- 数字直接由 TextWidget 的原生 Duration binding 渲染；Cooldown 只保留图标
         -- 自己的扇形/边缘视觉，不再被借作“隐藏倒数圈”的文字 renderer。
+        local options = type(durationTextOptions) == "table" and durationTextOptions or {}
         widget.countdownText:SetDurationBinding(durationObject, {
-            property = durationTextProperty or Enum.DurationTextBindingProperty.RemainingDuration,
-            formatString = widget.countdownTextPrefix and (widget.countdownTextPrefix .. "{}") or nil,
+            property = options.property or durationTextProperty or Enum.DurationTextBindingProperty.RemainingDuration,
+            formatter = options.formatter,
+            components = options.components,
+            formatString = options.formatString or (widget.countdownTextPrefix and (widget.countdownTextPrefix .. "{}") or nil),
+            expiredText = options.expiredText,
+            zeroDurationText = options.zeroDurationText,
+            updateInterval = options.updateInterval,
         })
         widget.countdownText:Show()
     else
@@ -1403,8 +1409,8 @@ end
 -- 同时驱动圆环扇形（原生 Cooldown）和倒数数字（内部 secretCountdown，同一份 Cooldown 挪用方案，
 -- 已验证可靠，见 EXUI_组合控件规范.md 0.2）。clearIfZero 是 SetCooldownFromDurationObject 的
 -- 官方参数名（到 0 秒是否自动清空显示），不是方向反转。
-local function IconWidgetSetDurationObject(widget, durationObject, clearIfZero, durationTextProperty)
-    return IconWidgetSetNativeDuration(widget, durationObject, clearIfZero, "DURATION", durationTextProperty)
+local function IconWidgetSetDurationObject(widget, durationObject, clearIfZero, durationTextProperty, durationTextOptions)
+    return IconWidgetSetNativeDuration(widget, durationObject, clearIfZero, "DURATION", durationTextProperty, durationTextOptions)
 end
 
 local function IconWidgetSetSecretCooldown(widget, durationObject, clearIfZero)

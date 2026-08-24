@@ -257,7 +257,8 @@ local function ApplyCooldown(collection, widget, cooldown)
     if cooldown.mode == "SECRET" then
         widget:SetSecretCooldown(cooldown.duration, cooldown.clearIfZero)
     elseif cooldown.mode == "DURATION" then
-        widget:SetDurationObject(cooldown.duration, cooldown.clearIfZero, cooldown.durationTextProperty)
+        widget:SetDurationObject(cooldown.duration, cooldown.clearIfZero, cooldown.durationTextProperty,
+            cooldown.durationTextOptions)
     elseif cooldown.static == true then
         widget:SetStaticCooldown(cooldown.remaining, cooldown.duration, cooldown.format)
         -- Static editor/world samples have a known ordinary display string.

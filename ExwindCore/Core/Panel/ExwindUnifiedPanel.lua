@@ -820,7 +820,7 @@ function Panel:CreateFrame()
     -- 单一插件的全局开关（例如统一小地图按钮的隐藏开关）。
     local settingsBtn = CreateFrame("Button", nil, rail, "BackdropTemplate")
     settingsBtn:SetSize(42, 42)
-    settingsBtn:SetPoint("BOTTOM", rail, "BOTTOM", 0, 137)
+    settingsBtn:SetPoint("BOTTOM", rail, "BOTTOM", 0, 188)
     settingsBtn:SetBackdrop(Backdrop)
     settingsBtn:SetBackdropColor(0.03, 0.04, 0.06, 0)
     settingsBtn:SetBackdropBorderColor(Color.borderSoft[1], Color.borderSoft[2], Color.borderSoft[3], 0)
@@ -852,6 +852,36 @@ function Panel:CreateFrame()
         GameTooltip:Hide()
     end)
     self.SettingsRailButton = settingsBtn
+
+    -- 唯一的更新日志入口：正文仍由各插件注册，Core 只打开统一 TAB 窗口。
+    local changelog = CreateFrame("Button", nil, rail, "BackdropTemplate")
+    changelog:SetSize(42, 42)
+    changelog:SetPoint("BOTTOM", rail, "BOTTOM", 0, 137)
+    changelog:SetBackdrop(Backdrop)
+    changelog:SetBackdropColor(0.03, 0.04, 0.06, 0)
+    changelog:SetBackdropBorderColor(Color.borderSoft[1], Color.borderSoft[2], Color.borderSoft[3], 0)
+    changelog.label = MakeText(changelog, "OVERLAY", 15, Color.muted, "OUTLINE")
+    changelog.label:SetPoint("CENTER")
+    changelog.label:SetText("≡")
+    changelog:SetScript("OnClick", function()
+        local viewer = ExwindTools.ChangelogViewer
+        if viewer and viewer.ShowManual then
+            viewer:ShowManual()
+        end
+    end)
+    changelog:SetScript("OnEnter", function(self)
+        self:SetBackdropColor(0.10, 0.13, 0.18, 0.78)
+        self:SetBackdropBorderColor(Color.cyan[1], Color.cyan[2], Color.cyan[3], 0.55)
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:SetText(L["更新日志"], 0.86, 0.92, 1)
+        GameTooltip:Show()
+    end)
+    changelog:SetScript("OnLeave", function(self)
+        self:SetBackdropColor(0.03, 0.04, 0.06, 0)
+        self:SetBackdropBorderColor(Color.borderSoft[1], Color.borderSoft[2], Color.borderSoft[3], 0)
+        GameTooltip:Hide()
+    end)
+    self.ChangelogRailButton = changelog
 
     -- 固定在应用栏底部的全局编辑模式入口。它不属于任何 Provider，因此
     -- Tools / EXBoss / EXAura 任一页面都复用同一个 Core 编辑会话。

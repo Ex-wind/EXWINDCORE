@@ -231,7 +231,8 @@ local function ApplyIcon(widget, spec, moduleKey)
     local cooldown = content.cooldown
     if type(cooldown) ~= "table" then widget:ClearCooldown()
     elseif cooldown.mode == "SECRET" then widget:SetSecretCooldown(cooldown.duration, cooldown.clearIfZero)
-    elseif cooldown.mode == "DURATION" then widget:SetDurationObject(cooldown.duration, cooldown.clearIfZero, cooldown.durationTextProperty)
+    elseif cooldown.mode == "DURATION" then widget:SetDurationObject(cooldown.duration, cooldown.clearIfZero,
+        cooldown.durationTextProperty, cooldown.durationTextOptions)
     elseif cooldown.static == true then widget:SetStaticCooldown(cooldown.remaining, cooldown.duration, cooldown.format)
     elseif cooldown.start ~= nil and cooldown.duration ~= nil then widget:SetCooldown(moduleKey, cooldown.start, cooldown.duration, cooldown.modRate, cooldown.format)
     else widget:SetCountdownText(cooldown.text) end

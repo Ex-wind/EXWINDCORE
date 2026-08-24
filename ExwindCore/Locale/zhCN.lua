@@ -2090,6 +2090,7 @@ L["施法序列"] = true
 L["距离监视"] = true
 L["位移技能CD提示"] = true
 L["焦点施法提示"] = true
+L["仅敌方单位"] = true
 L["PTR工具箱"] = true
 L["快速设置钥石 (PTR)"] = true
 

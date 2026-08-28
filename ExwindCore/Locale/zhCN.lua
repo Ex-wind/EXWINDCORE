@@ -9,6 +9,28 @@ if not L then return end
 -- added 2026-08-19 11:20
 -- added 2026-08-21 22:46
 -- added 2026-08-23 03:02
+-- added 2026-08-28 22:11
+L["野兽"] = true
+L["龙类"] = true
+L["恶魔"] = true
+L["元素生物"] = true
+L["巨人"] = true
+L["亡灵"] = true
+L["人型生物"] = true
+L["小动物"] = true
+L["机械"] = true
+L["未指定"] = true
+L["图腾"] = true
+L["非战斗宠物"] = true
+L["气体云雾"] = true
+L["野生宠物"] = true
+L["畸变怪"] = true
+L["Exwind 大米法术详细信息"] = true
+L["层"] = true
+L["精英"] = true
+L["加载条件"] = true
+L["仅敌方单位"] = true
+
 L["周围怪物DEBUFF监控"] = true
 L["以格子显示周围进入战斗的敌对怪物；玩家或宠物施放的指定 Debuff 存在时显示红色。"] = true
 L["启用周围怪物DEBUFF监控"] = true

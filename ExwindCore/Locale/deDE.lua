@@ -6,6 +6,28 @@ if not L then return end
 -- added 2026-08-19 11:20
 -- added 2026-08-21 22:46
 -- added 2026-08-23 03:02
+-- added 2026-08-28 22:11
+L["野兽"] = "Beast"
+L["龙类"] = "Dragonkin"
+L["恶魔"] = "Demon"
+L["元素生物"] = "Elemental"
+L["巨人"] = "Giant"
+L["亡灵"] = "Undead"
+L["人型生物"] = "Humanoid"
+L["小动物"] = "Critter"
+L["机械"] = "Mechanical"
+L["未指定"] = "Unspecified"
+L["图腾"] = "Totem"
+L["非战斗宠物"] = "Non-combat Pet"
+L["气体云雾"] = "Gas Cloud"
+L["野生宠物"] = "Wild Pet"
+L["畸变怪"] = "Aberration"
+L["Exwind 大米法术详细信息"] = "Exwind Mythic+ Spell Details"
+L["层"] = "Level"
+L["精英"] = "Elite"
+L["加载条件"] = "Load Conditions"
+L["仅敌方单位"] = "Hostile Units Only"
+
 L["周围怪物DEBUFF监控"] = "Debuff-Monitor für Feinde in der Nähe"
 L["以格子显示周围进入战斗的敌对怪物；玩家或宠物施放的指定 Debuff 存在时显示红色。"] = "Zeigt ein Raster für feindliche Feinde in der Nähe im Kampf an; wird rot, wenn ein bestimmter vom Spieler oder seinem Haustier angewendeter Debuff vorhanden ist."
 L["启用周围怪物DEBUFF监控"] = "Aktivieren Sie die Debuff-Überwachung für Feinde in der Nähe"

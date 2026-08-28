@@ -1,4 +1,4 @@
-## Interface: 120100,120007
+## Interface: 120100
 ## Title: |cffff0000Exwind|r |cff00ffffCore|r
 ## Notes: ExwindTools 核心引擎
 ## Version: 6.0.0

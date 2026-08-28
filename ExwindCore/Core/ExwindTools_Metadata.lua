@@ -3,6 +3,6 @@
 -- 请勿手动通过 Git 提交修改此文件中的版本号，除非你是为了测试。
 
 ExwindTools_MetaData = {
-    version = "v26.8.25.0026",
+    version = "v26.8.27.2051",
     gridEngineVersion = "2.0",
 }

@@ -436,42 +436,40 @@ local function TryGetScenarioCriteriaInfo(index)
     end
 
     if type(GetCriteriaInfo) == "function" then
-        local ok, description, _, _, quantityString, currentQuantity, totalQuantity = pcall(GetCriteriaInfo, index)
+        local ok, description, criteriaType, completed, quantity, totalQuantity, flags, assetID, quantityString,
+        criteriaID = pcall(GetCriteriaInfo, index)
         if ok then
             return {
                 description = description,
+                criteriaType = criteriaType,
+                completed = completed,
                 quantityString = quantityString,
-                quantity = currentQuantity,
+                quantity = quantity,
                 totalQuantity = totalQuantity,
+                flags = flags,
+                assetID = assetID,
+                criteriaID = criteriaID,
             }
         end
     end
 end
 
+-- Criteria.db2 中 165 为地下城首领击杀；用类型字段而非客户端本地化文本。
+local CRITERIA_TYPE_DEFEAT_DUNGEON_BOSS = 165
+
 local function IsBossScenarioCriteria(info)
     if type(info) ~= "table" then
         return false
     end
-    local description = tostring(info.description or info.criteriaString or info.name or "")
-    if description == "" then
-        return false
-    end
-    if description:find(L["击败"], 1, true) ~= 1 then
-        return false
-    end
-    local totalQuantity = tonumber(info.totalQuantity or info.maxQuantity or 0) or 0
-    if totalQuantity > 0 and totalQuantity ~= 1 then
-        return false
-    end
-    return true
+    return tonumber(info.criteriaType) == CRITERIA_TYPE_DEFEAT_DUNGEON_BOSS
 end
 
 local MPLUS_FORCES_KEYWORDS = {
     "enemy forces",
     "forces",
-    L["敌军"],
-    L["部队"],
-    L["兵力"],
+    "敌军",
+    "部队",
+    "兵力",
 }
 
 local function ParseForcesNumber(value)
@@ -1222,7 +1220,9 @@ local function InitializeStateMonitors()
         elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA"
             or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS"
             or event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_DIFFICULTY_CHANGED"
+            or event == "NEW_WMO_CHUNK"
             or event == "CHALLENGE_MODE_START" or event == "CHALLENGE_MODE_RESET"
+            or event == "MINIMAP_UPDATE_ZOOM" or event == "AREA_POIS_UPDATED"
             or event == "CHALLENGE_MODE_COMPLETED" then
             local inInstance, instanceType = IsInInstance()
             local _, _, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
@@ -1308,8 +1308,11 @@ local function InitializeStateMonitors()
     ExwindTools:RegisterEvent("ZONE_CHANGED_INDOORS", OWNER, UpdateBaseState)
     ExwindTools:RegisterEvent("GROUP_ROSTER_UPDATE", OWNER, UpdateBaseState)
     ExwindTools:RegisterEvent("PLAYER_DIFFICULTY_CHANGED", OWNER, UpdateBaseState)
+    ExwindTools:RegisterEvent("NEW_WMO_CHUNK", OWNER, UpdateBaseState)
     ExwindTools:RegisterEvent("CHALLENGE_MODE_START", OWNER, UpdateBaseState)
     ExwindTools:RegisterEvent("CHALLENGE_MODE_RESET", OWNER, UpdateBaseState)
+    ExwindTools:RegisterEvent("MINIMAP_UPDATE_ZOOM", OWNER, UpdateBaseState)
+    ExwindTools:RegisterEvent("AREA_POIS_UPDATED", OWNER, UpdateBaseState)
     ExwindTools:RegisterEvent("CHALLENGE_MODE_COMPLETED", OWNER, UpdateBaseState)
     ExwindTools:RegisterEvent("SCENARIO_UPDATE", OWNER, UpdateBaseState)
 

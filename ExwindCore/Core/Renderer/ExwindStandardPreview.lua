@@ -1073,9 +1073,20 @@ local function MatchHitboxToElement(hitbox, element)
     end
 end
 
-local function RefreshItemHitboxes(item)
+local function RefreshItemHitboxes(item, preview)
     for _, element in pairs(item.elements) do
-        if element.hitbox then MatchHitboxToElement(element.hitbox, element) end
+        local root = ElementRoot(element)
+        local shouldHaveHitbox = preview and preview.interactionMode == "panel"
+            and (element.spec.movable == true or element.spec.focusable == true)
+            and root and (not root.IsShown or root:IsShown())
+        if preview and shouldHaveHitbox and not element.hitbox then
+            AttachHitbox(preview, item, element)
+        elseif preview and not shouldHaveHitbox and element.hitbox then
+            ReleaseHitbox(element.hitbox)
+            element.hitbox = nil
+        elseif element.hitbox then
+            MatchHitboxToElement(element.hitbox, element)
+        end
     end
 end
 
@@ -1510,7 +1521,7 @@ function EXUI:CreateStandardPreview(host, options)
         for _, item in ipairs(self.items) do
             CenterFixedBody(item)
             ApplyFixedElementAnchors(item)
-            RefreshItemHitboxes(item)
+            RefreshItemHitboxes(item, self)
         end
         MaterializeCollectionDecorations(self, definitionSnapshot, modelSnapshot)
         -- 同一次 materialize 的内容并集同时供 world 尺寸和 panel 对齐使用。
@@ -1579,6 +1590,63 @@ function EXUI:CreateStandardPreview(host, options)
 
     -- 单静态样本的 Slider 只触碰已物化的 Region/FontString，不构造或替换
     -- 预览树。Panel 与 Core 拥有的 World 编辑预览共用这条在位重套契约。
+    local function ReapplyDeclaredChild(item, declaration, data)
+        local element = item.elements and item.elements[declaration.id]
+        if not element then return false end
+        local shown = data == nil or data.shown ~= false
+        element.spec, element.anchor = declaration, declaration.anchor
+        element.position = {
+            x = data and data.position and data.position.x or (declaration.anchor and declaration.anchor.x) or 0,
+            y = data and data.position and data.position.y or (declaration.anchor and declaration.anchor.y) or 0,
+        }
+        if declaration.kind == "text" then
+            if not element.text then return false end
+            local style = data and data.style or declaration.style
+            local width = data and data.width or declaration.width or item.widget:GetWidth()
+            local height = data and data.height or declaration.height or item.widget:GetHeight()
+            element.text:ApplyStyle(PreviewTextStyle(style))
+            element.text:SetText(data and tostring(data.text or "") or "")
+            ApplyTextBounds(element.text, style, width, height)
+            ApplyAnchor(element.text, declaration.anchor, item.roots, element.fallback,
+                data and data.position or nil)
+            element.text:SetShown(shown)
+            return true
+        end
+        if declaration.kind ~= "texture" or not element.region then return false end
+        local width = data and data.width or declaration.width or 16
+        local height = data and data.height or declaration.height or 16
+        element.region:SetSize(width, height)
+        ApplyAnchor(element.region, declaration.anchor, item.roots, element.fallback,
+            data and data.position or nil)
+        element.region._texture:SetTexture(data and data.texture or nil)
+        local color = data and data.color or nil
+        if color then
+            element.region._texture:SetVertexColor(
+                color.r or 1, color.g or 1, color.b or 1, color.a == nil and 1 or color.a)
+        else
+            element.region._texture:SetVertexColor(1, 1, 1, 1)
+        end
+        element.region._texture:SetShown(shown)
+        element.region:SetShown(shown)
+        return true
+    end
+
+    local function ReapplyFixedText(item, id, spec, text, shown, width, height)
+        local element = item.elements and item.elements[id]
+        if not element or not element.text then return false end
+        element.spec, element.anchor = spec, spec.anchor
+        element.position = {
+            x = spec.anchor and spec.anchor.x or 0,
+            y = spec.anchor and spec.anchor.y or 0,
+        }
+        element.text:ApplyStyle(PreviewTextStyle(spec.style))
+        element.text:SetText(tostring(text or ""))
+        ApplyTextBounds(element.text, spec.style, width, height)
+        ApplyAnchor(element.text, spec.anchor, item.roots, element.fallback)
+        element.text:SetShown(shown == true)
+        return true
+    end
+
     local function ApplyReappliedMaterialBounds(target, envelope)
         target.width, target.height = envelope.width, envelope.height
         if target.interactionMode ~= "world" then return end
@@ -1628,7 +1696,23 @@ function EXUI:CreateStandardPreview(host, options)
                 or not data or not element then
                 return false
             end
+            for index = 2, #(definitionSnapshot.children or {}) do
+                local child = definitionSnapshot.children[index]
+                local oldChild = self.definition.children and self.definition.children[index]
+                local childElement = child and item.elements and item.elements[child.id]
+                if not oldChild or oldChild.id ~= child.id or oldChild.kind ~= child.kind
+                    or not childElement or (child.kind ~= "text" and child.kind ~= "texture") then
+                    return false
+                end
+            end
             ApplyMaterialBody(item, declaration, data)
+            for index = 2, #(definitionSnapshot.children or {}) do
+                local child = definitionSnapshot.children[index]
+                if not ReapplyDeclaredChild(item, child,
+                    modelItem.elements and modelItem.elements[child.id] or nil) then
+                    return false
+                end
+            end
             local itemWidth = definitionSnapshot.layout and definitionSnapshot.layout.itemWidth or item.widget:GetWidth()
             local itemHeight = definitionSnapshot.layout and definitionSnapshot.layout.itemHeight or item.widget:GetHeight()
             item.root:SetSize(itemWidth, itemHeight)
@@ -1638,7 +1722,7 @@ function EXUI:CreateStandardPreview(host, options)
             self.layout:SetParent(self.host)
             self.layout:ClearAllPoints()
             self.layout:SetPoint("CENTER", self.host, "CENTER", 0, 0)
-            RefreshItemHitboxes(item)
+            RefreshItemHitboxes(item, self)
             local envelope = ResolveWorldEnvelope(self)
             ApplyReappliedMaterialBounds(self, envelope)
             return true
@@ -1661,47 +1745,40 @@ function EXUI:CreateStandardPreview(host, options)
         item.root:SetSize(itemWidth, itemHeight)
         CenterFixedBody(item)
 
+        local iconSpec = FixedSpec(definitionSnapshot, "core.icon", FIXED.icon["core.icon"])
+        local coreIcon = item.elements and item.elements["core.icon"]
+        if not coreIcon then return false end
+        coreIcon.spec, coreIcon.anchor = iconSpec, iconSpec.anchor
+        coreIcon.position = {
+            x = iconSpec.anchor and iconSpec.anchor.x or 0,
+            y = iconSpec.anchor and iconSpec.anchor.y or 0,
+        }
+        item.widget:SetShown(iconSpec.shown ~= false)
+        local timeSpec = FixedSpec(definitionSnapshot, "core.time", FIXED.icon["core.time"])
+        local stacksSpec = FixedSpec(definitionSnapshot, "core.stacks", FIXED.icon["core.stacks"])
+        if not ReapplyFixedText(item, "core.time", timeSpec,
+            modelItem.duration and (modelItem.timeText or EXUI:FormatCountdown(modelItem.remaining)) or "",
+            modelItem.duration ~= nil and timeSpec.shown ~= false,
+            item.widget:GetWidth(), item.widget:GetHeight())
+            or not ReapplyFixedText(item, "core.stacks", stacksSpec,
+                modelItem.stacks and tostring(modelItem.stacks) or "",
+                modelItem.stacks ~= nil and stacksSpec.shown ~= false,
+                item.widget:GetWidth(), item.widget:GetHeight()) then
+            return false
+        end
+
         for _, declaration in ipairs(definitionSnapshot.children or {}) do
             local data = modelItem.elements and modelItem.elements[declaration.id] or nil
-            local element = item.elements[declaration.id]
-            local shown = data == nil or data.shown ~= false
-            element.spec, element.anchor = declaration, declaration.anchor
-            element.position = {
-                x = data and data.position and data.position.x or (declaration.anchor and declaration.anchor.x) or 0,
-                y = data and data.position and data.position.y or (declaration.anchor and declaration.anchor.y) or 0,
-            }
-            if declaration.kind == "text" then
-                local style = data and data.style or declaration.style
-                local width = data and data.width or declaration.width or item.widget:GetWidth()
-                local height = data and data.height or declaration.height or item.widget:GetHeight()
-                element.text:ApplyStyle(PreviewTextStyle(style))
-                element.text:SetText(data and tostring(data.text or "") or "")
-                ApplyTextBounds(element.text, style, width, height)
-                ApplyAnchor(element.text, declaration.anchor, item.roots, element.fallback, data and data.position or nil)
-                element.text:SetShown(shown)
-            else
-                local width = data and data.width or declaration.width or 16
-                local height = data and data.height or declaration.height or 16
-                element.region:SetSize(width, height)
-                ApplyAnchor(element.region, declaration.anchor, item.roots, element.fallback, data and data.position or nil)
-                element.region._texture:SetTexture(data and data.texture or nil)
-                local color = data and data.color or nil
-                if color then
-                    element.region._texture:SetVertexColor(color.r or 1, color.g or 1, color.b or 1, color.a == nil and 1 or color.a)
-                else
-                    element.region._texture:SetVertexColor(1, 1, 1, 1)
-                end
-                element.region._texture:SetShown(shown)
-                element.region:SetShown(shown)
-            end
+            if not ReapplyDeclaredChild(item, declaration, data) then return false end
         end
+        ApplyFixedElementAnchors(item)
         self.definition, self.model = definitionSnapshot, modelSnapshot
         self.layout:ApplyStyle(definitionSnapshot.layout or DEFAULT_LAYOUT)
         self.layout:SetItems({ item.root }, item.root:GetWidth(), item.root:GetHeight())
         self.layout:SetParent(self.host)
         self.layout:ClearAllPoints()
         self.layout:SetPoint("CENTER", self.host, "CENTER", 0, 0)
-        RefreshItemHitboxes(item)
+        RefreshItemHitboxes(item, self)
         local envelope = ResolveWorldEnvelope(self)
         ApplyReappliedMaterialBounds(self, envelope)
         return true

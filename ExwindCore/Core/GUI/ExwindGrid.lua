@@ -1461,20 +1461,24 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         widget = EXUI:CreateAnchorGroup(container, pw, ele.label, anchorConfig, bindKey, function() NotifyCompositeWrite(moduleKey, anchorPath) end, BuildCompositeOptions(ele.opts, moduleKey, anchorPath))
         widget._exGridWidth = pw
     elseif ele.type == "texturegroup" then
-        local subConfig = config
-        if contextPath then
+        local bindValue = type(ele.opts) == "table" and ele.opts.bindValue == true
+        local subConfig = bindValue and curVal or config
+        if not bindValue and contextPath then
             subConfig = GetConfigPath(config, contextPath) or config
         end
         local textureWidth = pw
-        widget = EXUI:CreateTextureGroup(container, textureWidth, ele.label, subConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
+        widget = EXUI:CreateTextureGroup(container, textureWidth, ele.label, subConfig,
+            bindValue and nil or ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end,
+            BuildCompositeOptions(ele.opts, moduleKey, fullPath))
         widget._exGridWidth = textureWidth
     elseif ele.type == "icongroup" then
         local bindRoot = type(ele.opts) == "table" and ele.opts.bindRoot == true
+        local bindValue = type(ele.opts) == "table" and ele.opts.bindValue == true
         -- bindRoot is a persistence contract, not merely a key-elision hint:
         -- a root-bound IconGroup must receive the page binding root even if a
         -- surrounding Grid context path is present.
-        local subConfig = config
-        if not bindRoot and contextPath then
+        local subConfig = bindValue and curVal or config
+        if not bindValue and not bindRoot and contextPath then
             subConfig = GetConfigPath(config, contextPath) or config
         end
         -- Composite groups normally own a nested table named after their Grid
@@ -1485,9 +1489,9 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         -- Lua 的 `condition and nil or fallback` 会永远落到 fallback；
         -- root 绑定必须显式保留 nil，不能把 Grid key "icon" 传进去。
         local bindKey = nil
-        if not bindRoot then bindKey = ele.key end
+        if not bindRoot and not bindValue then bindKey = ele.key end
         local iconGroupWidth = pw
-        local iconPath = bindKey and fullPath or (contextPath or "")
+        local iconPath = bindValue and fullPath or (bindKey and fullPath or (contextPath or ""))
         widget = EXUI:CreateIconGroup(container, iconGroupWidth, ele.label, subConfig, bindKey, function() NotifyCompositeWrite(moduleKey, iconPath) end, BuildCompositeOptions(ele.opts, moduleKey, iconPath))
         widget._exGridWidth = iconGroupWidth
     elseif ele.type == "soundgroup" then

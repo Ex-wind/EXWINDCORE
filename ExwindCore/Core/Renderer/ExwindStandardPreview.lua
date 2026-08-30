@@ -267,8 +267,9 @@ local function ValidateDefinition(definition)
             Fail("material definition requires a texture body as its first child")
         end
         for index = 2, #(definition.children or {}) do
-            if definition.children[index].kind ~= "text" then
-                Fail("material definition supports only text children after its texture body")
+            local childKind = definition.children[index].kind
+            if childKind ~= "text" and childKind ~= "texture" then
+                Fail("material definition supports only text or texture children after its texture body")
             end
         end
         if #(definition.extraChildHosts or {}) ~= 0 or #(definition.collectionDecorations or {}) ~= 0 then
@@ -294,7 +295,7 @@ local function ValidateMaterialSpec(material, path)
     if material.visible ~= nil and type(material.visible) ~= "boolean" then Fail(path .. ".material.visible must be boolean") end
 end
 
-local function ValidateItem(item, kind, index, childrenByID, extraHostsByID, layout)
+local function ValidateItem(item, kind, index, childrenByID, extraHostsByID, layout, materialBodyID)
     local path = "model.items[" .. index .. "]"
     if type(item) ~= "table" then Fail(path .. " must be table") end
     if type(item.itemID) ~= "string" or item.itemID == "" then Fail(path .. ".itemID must be non-empty string") end
@@ -352,14 +353,14 @@ local function ValidateItem(item, kind, index, childrenByID, extraHostsByID, lay
             Number(data.position.x, path .. ".elements." .. id .. ".position.x")
             Number(data.position.y, path .. ".elements." .. id .. ".position.y")
         end
-        if kind == "material" and declaration.kind == "texture" then
+        if kind == "material" and id == materialBodyID then
             ValidateMaterialSpec(data.material, path .. ".elements." .. id)
         end
         if data.shown ~= false then
             if declaration.kind == "atlas" and (type(data.atlas) ~= "string" or data.atlas == "") then
                 Fail(path .. ".elements." .. id .. " requires non-empty atlas")
             elseif declaration.kind == "texture" then
-                if kind ~= "material" and data.texture == nil then
+                if id ~= materialBodyID and data.texture == nil then
                     Fail(path .. ".elements." .. id .. " requires texture")
                 end
             elseif declaration.kind == "glow" and type(data.style or declaration.style) ~= "table" then
@@ -405,8 +406,11 @@ local function ValidateModel(definition, model)
     end
     for _, child in ipairs(definition.children or {}) do childrenByID[child.id] = child end
     for _, host in ipairs(definition.extraChildHosts or {}) do extraHostsByID[host.id] = host end
+    local materialBodyID = definition.kind == "material"
+        and definition.children and definition.children[1] and definition.children[1].id or nil
     for index, item in ipairs(model.items) do
-        ValidateItem(item, definition.kind, index, childrenByID, extraHostsByID, definition.layout or DEFAULT_LAYOUT)
+        ValidateItem(item, definition.kind, index, childrenByID, extraHostsByID,
+            definition.layout or DEFAULT_LAYOUT, materialBodyID)
         if itemIDs[item.itemID] then Fail("model has duplicate itemID " .. item.itemID) end
         if orders[item.order] then Fail("model has duplicate order " .. tostring(item.order)) end
         itemIDs[item.itemID], orders[item.order] = true, true
@@ -1348,9 +1352,11 @@ local function MaterializeItem(preview, definition, modelItem)
             MaterializeExtraChildHost(item, roots, host, modelItem.extraChildren and modelItem.extraChildren[host.id], fallback)
         end
     else
-        -- A material has one public texture body and may declare text-only
-        -- annotation children.  They share the normal preview child path so
-        -- their drag hitboxes and config intents remain Core-owned.
+        -- A material has one public texture body and may declare text or
+        -- texture annotation children.  The latter is an edit-safe projection
+        -- for attached icon/progress content; actual panel/runtime widgets stay
+        -- owned by the business renderer.  Every child still shares the normal
+        -- preview path so drag hitboxes and config intents remain Core-owned.
         for index = 2, #(definition.children or {}) do
             local child = definition.children[index]
             MaterializeChild(item, roots, child, modelItem.elements and modelItem.elements[child.id], fallback)

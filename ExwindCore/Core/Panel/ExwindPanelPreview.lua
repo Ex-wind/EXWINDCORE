@@ -875,6 +875,63 @@ local function CreatePanelPresetButton(parent, width, textValue)
     return EXUI:CreateButton(parent, width, 24, textValue)
 end
 
+local function AcquirePanelPresetSidebarTexture(button, key, r, g, b, a)
+    button.__ExwindPanelPresetSidebarTextures = button.__ExwindPanelPresetSidebarTextures or {}
+    local textures = button.__ExwindPanelPresetSidebarTextures
+    local texture = textures[key]
+    if not texture then
+        texture = EXUI:CreateVisualTexture(button, _G.EXBASEFRAME)
+        texture:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
+        texture:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
+        textures[key] = texture
+    end
+    texture:SetColorTexture(r, g, b, a)
+    return texture
+end
+
+local function SetPanelPresetButtonPresentation(button, sidebar, role)
+    if not button then return end
+    local fontString = button.GetFontString and button:GetFontString() or nil
+    if sidebar then
+        local normal = AcquirePanelPresetSidebarTexture(button, "normal", 0.055, 0.086, 0.122, 1)
+        local pushed = AcquirePanelPresetSidebarTexture(button, "pushed", 0.102, 0.153, 0.204, 1)
+        local disabled = AcquirePanelPresetSidebarTexture(button, "disabled", 0.039, 0.063, 0.090, 0.75)
+        local highlight = AcquirePanelPresetSidebarTexture(button, "highlight", 0.306, 0.835, 0.914, 0.18)
+        button:SetNormalTexture(normal)
+        button:SetPushedTexture(pushed)
+        button:SetDisabledTexture(disabled)
+        button:SetHighlightTexture(highlight, "ADD")
+        if not button.__ExwindPanelPresetSidebarBorder then
+            local border = CreateFrame("Frame", nil, button, "BackdropTemplate")
+            border:SetAllPoints()
+            border:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+            border:EnableMouse(false)
+            button.__ExwindPanelPresetSidebarBorder = border
+        end
+        local border = button.__ExwindPanelPresetSidebarBorder
+        border:SetBackdropBorderColor(0.141, 0.216, 0.278, 1)
+        border:Show()
+        if fontString then
+            if role == "delete" then
+                fontString:SetTextColor(0.929, 0.349, 0.392, 1)
+            elseif role == "add" then
+                fontString:SetTextColor(0.306, 0.835, 0.914, 1)
+            else
+                fontString:SetTextColor(0.906, 0.941, 0.969, 1)
+            end
+        end
+    else
+        if button.__ExwindPanelPresetSidebarBorder then
+            button.__ExwindPanelPresetSidebarBorder:Hide()
+        end
+        if button.SetNormalAtlas then button:SetNormalAtlas("common-button-tertiary-normal") end
+        if button.SetPushedAtlas then button:SetPushedAtlas("common-button-tertiary-pressed") end
+        if button.SetDisabledAtlas then button:SetDisabledAtlas("common-button-tertiary-disabled") end
+        if button.SetHighlightAtlas then button:SetHighlightAtlas("common-button-tertiary-normal", "ADD") end
+        if fontString then fontString:SetTextColor(1, 0.82, 0, 1) end
+    end
+end
+
 local ReleasePanelPresetThumbnail
 
 local function CreatePanelPresetThumbnail(parent, width, height)
@@ -1065,14 +1122,34 @@ local function ApplyPanelPresetThumbnail(view, family, slot, currentFonts, inclu
     return true
 end
 
+local function PlacePanelStylePresetControls(dock, controls)
+    if not dock or not controls or not controls.bar then return end
+    local placement = dock.__ExwindPanelStylePresetPlacement
+    local host = placement and placement.host
+    if not host or type(host.SetPoint) ~= "function" then host = dock end
+    local mode = placement and placement.mode == "sidebar" and "sidebar" or "inline"
+    controls.host = host
+    controls.layoutMode = mode
+    controls.bar:SetParent(host)
+    controls.bar:ClearAllPoints()
+    if mode == "sidebar" then
+        controls.bar:SetPoint("TOPLEFT", host, "TOPLEFT", 9, -40)
+        controls.bar:SetPoint("TOPRIGHT", host, "TOPRIGHT", -9, -40)
+    else
+        controls.bar:SetPoint("TOPLEFT", dock, "TOPLEFT", 10, -8)
+    end
+end
+
 local function AcquirePanelStylePresetControls(dock)
     local controls = dock.__ExwindPanelStylePresetControls
-    if controls then return controls end
+    if controls then
+        PlacePanelStylePresetControls(dock, controls)
+        return controls
+    end
 
     controls = {}
     local bar = CreateFrame("Frame", nil, dock)
     bar:SetSize(1, 24)
-    bar:SetPoint("TOPLEFT", dock, "TOPLEFT", 10, -8)
     controls.bar = bar
     controls.buttons = {}
     controls.deleteButtons = {}
@@ -1169,7 +1246,37 @@ local function AcquirePanelStylePresetControls(dock)
     controls.tooltipPreview = tooltipPreview
 
     dock.__ExwindPanelStylePresetControls = controls
+    PlacePanelStylePresetControls(dock, controls)
     return controls
+end
+
+-- Panel style presets remain Core-owned, but a product editor may provide a
+-- dedicated chrome host instead of letting the preset bar cover its preview.
+-- The host changes presentation only; preset storage, confirmation, apply and
+-- delete transactions stay in this file.
+function EXUI:SetPanelStylePresetControlsHost(dock, host, mode)
+    RequireDock(dock, "SetPanelStylePresetControlsHost")
+    if host ~= nil and type(host.SetPoint) ~= "function" then
+        error("SetPanelStylePresetControlsHost requires a Frame host", 2)
+    end
+    dock.__ExwindPanelStylePresetPlacement = host and {
+        host = host,
+        mode = mode == "sidebar" and "sidebar" or "inline",
+    } or nil
+    local controls = dock.__ExwindPanelStylePresetControls
+    if not controls then return true end
+    PlacePanelStylePresetControls(dock, controls)
+    local owner = controls.owner
+    if owner and type(owner.RefreshStylePresetButtons) == "function" then
+        owner:RefreshStylePresetButtons()
+    end
+    return true
+end
+
+function EXUI:IsPanelStylePresetControlsActive(dock)
+    local controls = dock and dock.__ExwindPanelStylePresetControls
+    return controls ~= nil and controls.owner ~= nil
+        and controls.bar ~= nil and controls.bar:IsShown()
 end
 
 local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
@@ -1191,6 +1298,8 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
         local controls = self.stylePresetControls
         if not descriptor or not controls or controls.owner ~= self then return false end
 
+        PlacePanelStylePresetControls(self.dock, controls)
+        local sidebar = controls.layoutMode == "sidebar"
         local entries = {
             { slot = "A", label = L["样式 A"], custom = false, x = 0, y = 0, width = 82 },
             { slot = "B", label = L["样式 B"], custom = false, x = 88, y = 0, width = 82 },
@@ -1234,8 +1343,15 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
             button.isCustomStylePreset = entry.custom
             button:SetSize(entry.width, 24)
             button:SetText(entry.label)
+            SetPanelPresetButtonPresentation(button, sidebar, "preset")
             button:ClearAllPoints()
-            button:SetPoint("TOPLEFT", controls.bar, "TOPLEFT", entry.x, entry.y)
+            if sidebar then
+                local y = -(index - 1) * 30
+                button:SetPoint("TOPLEFT", controls.bar, "TOPLEFT", 0, y)
+                button:SetPoint("TOPRIGHT", controls.bar, "TOPRIGHT", entry.custom and -30 or 0, y)
+            else
+                button:SetPoint("TOPLEFT", controls.bar, "TOPLEFT", entry.x, entry.y)
+            end
             button:SetShown(true)
 
             if entry.custom then
@@ -1249,9 +1365,17 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
                     controls.deleteButtons[entry.customRow] = deleteButton
                 end
                 deleteButton.presetSlot = entry.slot
-                deleteButton:SetText(L["删除自定义样式"] .. tostring(entry.customID))
+                deleteButton:SetText(sidebar and "×" or (L["删除自定义样式"] .. tostring(entry.customID)))
+                SetPanelPresetButtonPresentation(deleteButton, sidebar, "delete")
                 deleteButton:ClearAllPoints()
-                deleteButton:SetPoint("TOPLEFT", controls.bar, "TOPLEFT", 124, entry.y)
+                if sidebar then
+                    local y = -(index - 1) * 30
+                    deleteButton:SetSize(24, 24)
+                    deleteButton:SetPoint("TOPRIGHT", controls.bar, "TOPRIGHT", 0, y)
+                else
+                    deleteButton:SetSize(140, 24)
+                    deleteButton:SetPoint("TOPLEFT", controls.bar, "TOPLEFT", 124, entry.y)
+                end
                 deleteButton:Show()
             end
         end
@@ -1263,8 +1387,17 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
         end
 
         controls.addButton:ClearAllPoints()
-        controls.addButton:SetPoint("TOPLEFT", controls.bar, "TOPLEFT", 176, 0)
-        controls.bar:SetSize(264, 24 + #customPresets * 30)
+        SetPanelPresetButtonPresentation(controls.addButton, sidebar, "add")
+        if sidebar then
+            controls.addButton:SetText("+ " .. L["新增样式"])
+            controls.addButton:SetPoint("TOPLEFT", controls.bar, "TOPLEFT", 0, -#entries * 30)
+            controls.addButton:SetPoint("TOPRIGHT", controls.bar, "TOPRIGHT", 0, -#entries * 30)
+            controls.bar:SetHeight((#entries + 1) * 30)
+        else
+            controls.addButton:SetText(L["新增样式"])
+            controls.addButton:SetPoint("TOPLEFT", controls.bar, "TOPLEFT", 176, 0)
+            controls.bar:SetSize(264, 24 + #customPresets * 30)
+        end
         controls.addButton:Show()
         if #customPresets >= MAX_CUSTOM_STYLE_PRESETS then
             controls.addButton:Disable()

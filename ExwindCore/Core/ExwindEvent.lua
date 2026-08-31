@@ -14,12 +14,26 @@ if not ExwindTools then return end
 --=======================================================================
 ExwindTools.EventHandlers = {}
 ExwindTools.CoreEventFrame = CreateFrame("Frame")
+ExwindTools.UnitEventBindings = {}
+ExwindTools.UnitEventOwnerBindings = {}
+
+local Unpack = table.unpack or unpack
+
+local function IsTableEmpty(t)
+    for _ in pairs(t) do
+        return false
+    end
+    return true
+end
 
 --- 注册游戏事件 (支持原生事件和虚拟事件)
 function ExwindTools:RegisterEvent(event, owner, func)
     if type(event) ~= "string" then error("RegisterEvent: event must be string", 2) end
     if owner == nil then error("RegisterEvent: owner cannot be nil", 2) end
     if type(func) ~= "function" then error("RegisterEvent: func must be function", 2) end
+    if self.UnitEventOwnerBindings[event] and self.UnitEventOwnerBindings[event][owner] then
+        error("RegisterEvent: owner is already registered for this event through RegisterUnitEvent", 2)
+    end
 
     if not self.EventHandlers[event] then
         self.EventHandlers[event] = {}
@@ -27,6 +41,153 @@ function ExwindTools:RegisterEvent(event, owner, func)
         pcall(self.CoreEventFrame.RegisterEvent, self.CoreEventFrame, event)
     end
     self.EventHandlers[event][owner] = func
+end
+
+local function NormalizeUnitEventUnits(units)
+    local normalized = {}
+    if type(units) == "string" then
+        normalized[1] = units
+    elseif type(units) == "table" then
+        for _, unit in ipairs(units) do
+            normalized[#normalized + 1] = unit
+        end
+    else
+        error("RegisterUnitEvent: units must be string or array table", 3)
+    end
+
+    if #normalized == 0 then
+        error("RegisterUnitEvent: units cannot be empty", 3)
+    end
+
+    local unique, result = {}, {}
+    for _, unit in ipairs(normalized) do
+        if type(unit) ~= "string" or unit == "" then
+            error("RegisterUnitEvent: every unit must be non-empty string", 3)
+        end
+        if not unique[unit] then
+            unique[unit] = true
+            result[#result + 1] = unit
+        end
+    end
+    table.sort(result)
+    return result
+end
+
+local function ReleaseUnitEventBinding(event, bindingKey)
+    local bindings = ExwindTools.UnitEventBindings[event]
+    local binding = bindings and bindings[bindingKey]
+    if not binding or not IsTableEmpty(binding.handlers) then
+        return
+    end
+
+    binding.frame:UnregisterEvent(event)
+    binding.frame:SetScript("OnEvent", nil)
+    bindings[bindingKey] = nil
+    if IsTableEmpty(bindings) then
+        ExwindTools.UnitEventBindings[event] = nil
+    end
+end
+
+--- 注册原生单位事件；同一 event + owner 只能有一组 units，重复注册会替换回调或单位集合。
+--- @param event string 原生单位事件名
+--- @param units string|string[] 要监听的单位 token
+--- @param owner any 模块标识
+--- @param func function 回调函数 func(event, unit, ...)
+function ExwindTools:RegisterUnitEvent(event, units, owner, func)
+    if type(event) ~= "string" or event == "" then error("RegisterUnitEvent: event must be non-empty string", 2) end
+    if owner == nil then error("RegisterUnitEvent: owner cannot be nil", 2) end
+    if type(func) ~= "function" then error("RegisterUnitEvent: func must be function", 2) end
+    if not Unpack then error("RegisterUnitEvent: unpack is unavailable", 2) end
+    if self.EventHandlers[event] and self.EventHandlers[event][owner] then
+        error("RegisterUnitEvent: owner is already registered for this event through RegisterEvent", 2)
+    end
+
+    local unitTokens = NormalizeUnitEventUnits(units)
+    local bindingKey = table.concat(unitTokens, "\31")
+    local ownerBindings = self.UnitEventOwnerBindings[event]
+    if not ownerBindings then
+        ownerBindings = {}
+        self.UnitEventOwnerBindings[event] = ownerBindings
+    end
+
+    local previousBindingKey = ownerBindings[owner]
+
+    local bindings = self.UnitEventBindings[event]
+    if not bindings then
+        bindings = {}
+        self.UnitEventBindings[event] = bindings
+    end
+
+    local binding = bindings[bindingKey]
+    if not binding then
+        if type(CreateFrame) ~= "function" then
+            error("RegisterUnitEvent: CreateFrame is unavailable", 2)
+        end
+        local frame = CreateFrame("Frame")
+        binding = { frame = frame, handlers = {}, units = unitTokens }
+        frame:SetScript("OnEvent", function(_, firedEvent, ...)
+            local perf = ExwindTools.PerfMonitor
+            for bindingOwner, bindingFunc in pairs(binding.handlers) do
+                local t0 = perf and debugprofilestop()
+                local ok, err = pcall(bindingFunc, firedEvent, ...)
+                if t0 then
+                    perf:RecordTiming("Event:" .. tostring(firedEvent) .. ":" .. tostring(bindingOwner), debugprofilestop() - t0)
+                end
+                if not ok then
+                    ExwindTools:LogError(string.format("UnitEvent[%s][%s]", firedEvent, bindingOwner), err)
+                    print(string.format(L["|cffff0000[ExwindTools] 单位事件错误 [%s][%s]: %s|r"], firedEvent,
+                        tostring(bindingOwner), tostring(err)))
+                end
+            end
+        end)
+
+        local ok, err = pcall(frame.RegisterUnitEvent, frame, event, Unpack(unitTokens))
+        if not ok then
+            frame:SetScript("OnEvent", nil)
+            if IsTableEmpty(bindings) then
+                self.UnitEventBindings[event] = nil
+            end
+            if IsTableEmpty(ownerBindings) then
+                self.UnitEventOwnerBindings[event] = nil
+            end
+            error("RegisterUnitEvent: native registration failed for " .. event .. ": " .. tostring(err), 2)
+        end
+        bindings[bindingKey] = binding
+    end
+
+    binding.handlers[owner] = func
+    ownerBindings[owner] = bindingKey
+
+    if previousBindingKey and previousBindingKey ~= bindingKey then
+        local previousBindings = self.UnitEventBindings[event]
+        local previousBinding = previousBindings and previousBindings[previousBindingKey]
+        if previousBinding then
+            previousBinding.handlers[owner] = nil
+        end
+        ReleaseUnitEventBinding(event, previousBindingKey)
+    end
+end
+
+--- 注销当前 owner 对指定原生单位事件的订阅。
+--- @param event string 原生单位事件名
+--- @param owner any 模块标识
+function ExwindTools:UnregisterUnitEvent(event, owner)
+    local ownerBindings = self.UnitEventOwnerBindings[event]
+    local bindingKey = ownerBindings and ownerBindings[owner]
+    if not bindingKey then
+        return
+    end
+
+    local bindings = self.UnitEventBindings[event]
+    local binding = bindings and bindings[bindingKey]
+    if binding then
+        binding.handlers[owner] = nil
+    end
+    ownerBindings[owner] = nil
+    if IsTableEmpty(ownerBindings) then
+        self.UnitEventOwnerBindings[event] = nil
+    end
+    ReleaseUnitEventBinding(event, bindingKey)
 end
 
 --- 注销游戏事件 (支持原生事件和虚拟事件)
@@ -54,7 +215,7 @@ function ExwindTools:SendEvent(event, ...)
         local t0 = perf and debugprofilestop()
         local ok, err = pcall(func, event, ...)
         if t0 then
-            perf:RecordTiming("Event:" .. tostring(owner), debugprofilestop() - t0)
+            perf:RecordTiming("Event:" .. tostring(event) .. ":" .. tostring(owner), debugprofilestop() - t0)
         end
         if not ok then
             self:LogError(string.format("SendEvent[%s][%s]", event, owner), err)
@@ -72,7 +233,7 @@ ExwindTools.CoreEventFrame:SetScript("OnEvent", function(_, event, ...)
             local t0 = perf and debugprofilestop()
             local ok, err = pcall(func, event, ...)
             if t0 then
-                perf:RecordTiming("Event:" .. tostring(owner), debugprofilestop() - t0)
+                perf:RecordTiming("Event:" .. tostring(event) .. ":" .. tostring(owner), debugprofilestop() - t0)
             end
             if not ok then
                 ExwindTools:LogError(string.format("Event[%s][%s]", event, owner), err)
@@ -103,13 +264,6 @@ local function NormalizeUnwatchEvenArgs(a, b, c)
         return b, c
     end
     return a, b
-end
-
-local function IsTableEmpty(t)
-    for _ in pairs(t) do
-        return false
-    end
-    return true
 end
 
 local function WatchEvenOnEvent(event, ...)

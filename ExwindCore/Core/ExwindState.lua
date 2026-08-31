@@ -454,7 +454,7 @@ local function TryGetScenarioCriteriaInfo(index)
     end
 end
 
--- Criteria.db2 中 165 为地下城首领击杀；用类型字段而非客户端本地化文本。
+
 local CRITERIA_TYPE_DEFEAT_DUNGEON_BOSS = 165
 
 local function IsBossScenarioCriteria(info)
@@ -1541,6 +1541,102 @@ local function InitializeStateMonitors()
         end
     end
 
+    -- 属性类事件在短时间内常成簇出现（尤其是玩家 UNIT_AURA）。这里保留每类事件的
+    -- 精细更新语义，但把实际采样与 State 广播统一限制为每 0.5 秒最多一次；窗口内的
+    -- 不同精细事件会合并，完整刷新优先于精细刷新。移动速度走下方独立的 1 秒 ticker。
+    local PLAYER_STATS_REFRESH_INTERVAL_SECONDS = 0.5
+    local PLAYER_STATS_TARGETED_EVENT_ORDER = {
+        "MASTERY_UPDATE",
+        "COMBAT_RATING_UPDATE",
+        "UNIT_STATS",
+        "UNIT_MAXHEALTH",
+        "AVOIDANCE_UPDATE",
+        "LIFESTEAL_UPDATE",
+        "UPDATE_INVENTORY_DURABILITY",
+    }
+    local PLAYER_STATS_TARGETED_EVENTS = {}
+    for _, eventName in ipairs(PLAYER_STATS_TARGETED_EVENT_ORDER) do
+        PLAYER_STATS_TARGETED_EVENTS[eventName] = true
+    end
+
+    local playerStatsLastRefreshAt = -math.huge
+    local playerStatsRefreshPending = false
+    local playerStatsPendingFullEvent = nil
+    local playerStatsPendingItemLevelRetry = false
+    local playerStatsPendingTargetedEvents = {}
+
+    local function GetPlayerStatsRefreshTime()
+        return (GetTimePreciseSec and GetTimePreciseSec()) or GetTime()
+    end
+
+    local FlushPlayerStatsRefresh
+
+    local function SchedulePlayerStatsRefresh(delaySeconds)
+        playerStatsRefreshPending = true
+        C_Timer.After(delaySeconds, function()
+            playerStatsRefreshPending = false
+            FlushPlayerStatsRefresh()
+        end)
+    end
+
+    FlushPlayerStatsRefresh = function()
+        local now = GetPlayerStatsRefreshTime()
+        local remaining = PLAYER_STATS_REFRESH_INTERVAL_SECONDS - (now - playerStatsLastRefreshAt)
+        if remaining > 0 then
+            SchedulePlayerStatsRefresh(remaining)
+            return
+        end
+
+        local fullEvent = playerStatsPendingFullEvent
+        local needsItemLevelRetry = playerStatsPendingItemLevelRetry
+        local targetedEvents = playerStatsPendingTargetedEvents
+
+        playerStatsPendingFullEvent = nil
+        playerStatsPendingItemLevelRetry = false
+        playerStatsPendingTargetedEvents = {}
+        playerStatsLastRefreshAt = now
+
+        if fullEvent then
+            -- 保留装备/登录/天赋变动后的延迟装等复采样合同。
+            if needsItemLevelRetry then
+                fullEvent = "PLAYER_EQUIPMENT_CHANGED"
+            end
+            UpdatePlayerStats(fullEvent)
+            return
+        end
+
+        for _, eventName in ipairs(PLAYER_STATS_TARGETED_EVENT_ORDER) do
+            if targetedEvents[eventName] then
+                UpdatePlayerStats(eventName)
+            end
+        end
+    end
+
+    local function RequestPlayerStatsRefresh(event, unit)
+        -- 先在事件进入限频器前过滤非玩家 UNIT_*，不把无关事件放入队列。
+        if (event == "UNIT_STATS" or event == "UNIT_MAXHEALTH" or event == "UNIT_AURA") and unit and unit ~= "player" then
+            return
+        end
+
+        if PLAYER_STATS_TARGETED_EVENTS[event] then
+            playerStatsPendingTargetedEvents[event] = true
+        else
+            -- 未列为精细事件的调用保持原有“全量刷新”语义；nil 用于初始化同步。
+            playerStatsPendingFullEvent = playerStatsPendingFullEvent or event or "__INITIAL_SYNC"
+            if event == "PLAYER_EQUIPMENT_CHANGED" or event == "PLAYER_ENTERING_WORLD" or event == "TRAIT_CONFIG_UPDATED" then
+                playerStatsPendingItemLevelRetry = true
+            end
+        end
+
+        if playerStatsRefreshPending then
+            return
+        end
+
+        local now = GetPlayerStatsRefreshTime()
+        local delay = math.max(0, PLAYER_STATS_REFRESH_INTERVAL_SECONDS - (now - playerStatsLastRefreshAt))
+        SchedulePlayerStatsRefresh(delay)
+    end
+
     -- 移速计时器 (每秒更新一次，脱离事件以降低开销)
     C_Timer.NewTicker(1, function()
         local _, runSpeed = GetUnitSpeed("player")
@@ -1558,7 +1654,7 @@ local function InitializeStateMonitors()
         "PLAYER_TALENT_UPDATE", "PLAYER_SPECIALIZATION_CHANGED"
     }
     for _, e in ipairs(statEvents) do
-        ExwindTools:RegisterEvent(e, OWNER, UpdatePlayerStats)
+        ExwindTools:RegisterEvent(e, OWNER, RequestPlayerStatsRefresh)
     end
 
     --[[
@@ -1708,7 +1804,7 @@ local function InitializeStateMonitors()
 
     -- 强制触发一次全量更新
     UpdateSpecInfo()
-    UpdatePlayerStats()
+    RequestPlayerStatsRefresh()
     -- 12.1 暂停：旧版 Debuff 快照状态链已停用
     -- UpdatePlayerDebuffState()
     RefreshActiveMythicPlusState()
@@ -1718,7 +1814,7 @@ local function InitializeStateMonitors()
     -- 额外延迟检查，防止登录瞬间数据未就绪
     C_Timer.After(2, function()
         UpdateSpecInfo()
-        UpdatePlayerStats()
+        RequestPlayerStatsRefresh()
         -- 12.1 暂停：旧版 Debuff 快照状态链已停用
         -- UpdatePlayerDebuffState()
         RefreshActiveMythicPlusState()

@@ -181,6 +181,8 @@ function Controller:ReleasePanel() if self.panel then self.panel:Release(); self
 function Controller:RefreshActiveSurfaces(changedPath, phase)
     -- Core owns the one controller.  This optional hook only rebuilds the
     -- module's current presentation data before existing surfaces are reapplied.
+    -- AnchorGroup 的手动输入和选择器共用这份 DB；统一由中央重套实际锚点。
+    self.anchor:ApplyPosition()
     if self.moduleRefreshActiveSurfaces then self.moduleRefreshActiveSurfaces(self, changedPath, phase) end
     local function resolve(entries, id)
         for _, entry in ipairs(entries or {}) do if entry.itemID == id then return copy(entry.presentation) end end

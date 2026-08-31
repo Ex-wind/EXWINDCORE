@@ -139,6 +139,8 @@ function Controller:ReleasePanel() if self.panel then self.panel:Release(); self
 function Controller:RefreshActiveSurfaces(changedPath, phase)
     -- 个别标准 TimerBar 的 Item Apply 本身会重置原生条的视觉状态；它们可
     -- 明确拒绝 changing，仅在 committed 做一次既有表面重套。
+    -- AnchorGroup 的手动输入和选择器共用这份 DB；统一由中央重套实际锚点。
+    self.anchor:ApplyPosition()
     if self.moduleRefreshActiveSurfaces
         and self.moduleRefreshActiveSurfaces(self, changedPath, phase) == false then
         return

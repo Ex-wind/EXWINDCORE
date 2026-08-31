@@ -110,6 +110,9 @@ function Controller:RefreshActiveSurfaces(changedPath, phase)
     -- The Core controller remains the sole value controller.  A factory module
     -- may only supply this one business projection hook; it never registers a
     -- second controller or receives a GUI callback itself.
+    -- AnchorGroup 的手动输入和选择器都已经写入同一份 DB；每次提交统一重套
+    -- AnchorController，避免模块各自猜测锚点字段路径。
+    self.anchor:ApplyPosition()
     if self.moduleRefreshActiveSurfaces then self.moduleRefreshActiveSurfaces(self, changedPath, phase) end
     local function resolve(entries, id)
         for _, entry in ipairs(entries or {}) do if entry.itemID == id then return copy(entry.presentation) end end

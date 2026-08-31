@@ -948,6 +948,38 @@ local function BuildCompositeOptions(sourceOpts, moduleKey, pathPrefix)
     return opts
 end
 
+-- 旧版的 `condition and nil or key` 在 Lua 中永远回退到 key，因此已经声明
+-- bindRoot 的 AnchorGroup 仍会多写出一层 `anchor` / `anchorGroup`。修正后，
+-- 把那层旧表保留原样；仅在真实字段为空时，接回旧输入框中可能手动填写的目标。
+-- 已由选择器写入的真实目标优先级最高，绝不覆盖。
+local function MigrateLegacyDirectAnchorInput(anchorConfig, widgetKey, opts)
+    if type(anchorConfig) ~= "table" or type(widgetKey) ~= "string" or widgetKey == "" then
+        return false
+    end
+
+    local legacy = anchorConfig[widgetKey]
+    if type(legacy) ~= "table" or legacy.__exAnchorDirectBindingMigrated then
+        return false
+    end
+    legacy.__exAnchorDirectBindingMigrated = true
+
+    opts = type(opts) == "table" and opts or {}
+    local targetKey = opts.attachTargetKey or "customAttachTarget"
+    local enabledKey = opts.attachEnabledKey or "attachToCustom"
+    local legacyTarget = legacy[targetKey]
+    local currentTarget = anchorConfig[targetKey]
+    if (currentTarget == nil or currentTarget == "")
+        and type(legacyTarget) == "string" and legacyTarget ~= "" then
+        anchorConfig[targetKey] = legacyTarget
+        if anchorConfig[enabledKey] ~= true then
+            anchorConfig[enabledKey] = legacy[enabledKey] == true
+        end
+        return true
+    end
+
+    return false
+end
+
 local function NotifyCompositeWrite(moduleKey, fullPath)
     if moduleKey then EXUI:NotifyModuleValueChanged(moduleKey, fullPath, "committed") end
 end
@@ -1456,10 +1488,25 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         if contextPath then
             anchorConfig = GetConfigPath(config, contextPath) or config
         end
-        local bindKey = (type(ele.opts) == "table" and ele.opts.bindRoot == true) and nil or ele.key
-        local anchorPath = bindKey and fullPath or (contextPath or "")
+        local bindRoot = type(ele.opts) == "table" and ele.opts.bindRoot == true
+        local bindKey = nil
+        local migratedLegacyInput = false
+        if bindRoot then
+            migratedLegacyInput = MigrateLegacyDirectAnchorInput(anchorConfig, ele.key, ele.opts)
+        else
+            bindKey = ele.key
+        end
+        local anchorPath = fullPath
+        if not bindKey then
+            local targetKey = type(ele.opts) == "table" and ele.opts.attachTargetKey or nil
+            targetKey = type(targetKey) == "string" and targetKey ~= "" and targetKey or "customAttachTarget"
+            anchorPath = contextPath and (contextPath .. "." .. targetKey) or targetKey
+        end
         widget = EXUI:CreateAnchorGroup(container, pw, ele.label, anchorConfig, bindKey, function() NotifyCompositeWrite(moduleKey, anchorPath) end, BuildCompositeOptions(ele.opts, moduleKey, anchorPath))
         widget._exGridWidth = pw
+        if migratedLegacyInput then
+            NotifyCompositeWrite(moduleKey, anchorPath)
+        end
     elseif ele.type == "texturegroup" then
         local bindValue = type(ele.opts) == "table" and ele.opts.bindValue == true
         local subConfig = bindValue and curVal or config

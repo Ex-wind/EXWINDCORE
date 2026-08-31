@@ -1206,17 +1206,22 @@ local function InitializeStateMonitors()
     -- 1. 基础状态监听 (战斗/副本/天赋)
     --===================================================================
 
+    local function RefreshMountedState()
+        ExwindTools:UpdateState("IsMounted", IsMounted() and true or false)
+    end
+
     local function UpdateBaseState(event, ...)
         if event == "PLAYER_REGEN_DISABLED" then
             ExwindTools:UpdateState("InCombat", true)
         elseif event == "PLAYER_REGEN_ENABLED" then
             ExwindTools:UpdateState("InCombat", false)
-        elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" or event == "UNIT_AURA" then
-            local unit = ...
-            if event == "UNIT_AURA" and unit and unit ~= "player" then
-                return
+        elseif event == "PLAYER_MOUNT_DISPLAY_CHANGED" then
+            RefreshMountedState()
+        elseif event == "COMPANION_UPDATE" then
+            local companionType = ...
+            if companionType == "MOUNT" then
+                RefreshMountedState()
             end
-            ExwindTools:UpdateState("IsMounted", IsMounted() and true or false)
         elseif event == "PLAYER_ENTERING_WORLD" or event == "ZONE_CHANGED_NEW_AREA"
             or event == "ZONE_CHANGED" or event == "ZONE_CHANGED_INDOORS"
             or event == "GROUP_ROSTER_UPDATE" or event == "PLAYER_DIFFICULTY_CHANGED"
@@ -1224,6 +1229,9 @@ local function InitializeStateMonitors()
             or event == "CHALLENGE_MODE_START" or event == "CHALLENGE_MODE_RESET"
             or event == "MINIMAP_UPDATE_ZOOM" or event == "AREA_POIS_UPDATED"
             or event == "CHALLENGE_MODE_COMPLETED" then
+            if event == "PLAYER_ENTERING_WORLD" then
+                RefreshMountedState()
+            end
             local inInstance, instanceType = IsInInstance()
             local _, _, difficultyID, _, _, _, _, instanceID = GetInstanceInfo()
             local mapID, mapGroup = GetPlayerMapState("player")
@@ -1302,7 +1310,7 @@ local function InitializeStateMonitors()
     ExwindTools:RegisterEvent("PLAYER_REGEN_ENABLED", OWNER, UpdateBaseState)
     ExwindTools:RegisterEvent("PLAYER_ENTERING_WORLD", OWNER, UpdateBaseState)
     ExwindTools:RegisterEvent("PLAYER_MOUNT_DISPLAY_CHANGED", OWNER, UpdateBaseState)
-    ExwindTools:RegisterEvent("UNIT_AURA", OWNER .. "_Mounted", UpdateBaseState)
+    ExwindTools:RegisterEvent("COMPANION_UPDATE", OWNER, UpdateBaseState)
     ExwindTools:RegisterEvent("ZONE_CHANGED_NEW_AREA", OWNER, UpdateBaseState)
     ExwindTools:RegisterEvent("ZONE_CHANGED", OWNER, UpdateBaseState)
     ExwindTools:RegisterEvent("ZONE_CHANGED_INDOORS", OWNER, UpdateBaseState)

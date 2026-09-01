@@ -127,8 +127,9 @@ function ExwindTools:RegisterUnitEvent(event, units, owner, func)
         binding = { frame = frame, handlers = {}, units = unitTokens }
         frame:SetScript("OnEvent", function(_, firedEvent, ...)
             local perf = ExwindTools.PerfMonitor
+            local capture = perf and type(perf.IsCaptureActive) == "function" and perf:IsCaptureActive()
             for bindingOwner, bindingFunc in pairs(binding.handlers) do
-                local t0 = perf and debugprofilestop()
+                local t0 = capture and debugprofilestop()
                 local ok, err = pcall(bindingFunc, firedEvent, ...)
                 if t0 then
                     perf:RecordTiming("Event:" .. tostring(firedEvent) .. ":" .. tostring(bindingOwner), debugprofilestop() - t0)
@@ -211,8 +212,9 @@ function ExwindTools:SendEvent(event, ...)
     if not handlers then return end
 
     local perf = self.PerfMonitor
+    local capture = perf and type(perf.IsCaptureActive) == "function" and perf:IsCaptureActive()
     for owner, func in pairs(handlers) do
-        local t0 = perf and debugprofilestop()
+        local t0 = capture and debugprofilestop()
         local ok, err = pcall(func, event, ...)
         if t0 then
             perf:RecordTiming("Event:" .. tostring(event) .. ":" .. tostring(owner), debugprofilestop() - t0)
@@ -229,8 +231,9 @@ ExwindTools.CoreEventFrame:SetScript("OnEvent", function(_, event, ...)
     local handlers = ExwindTools.EventHandlers[event]
     if handlers then
         local perf = ExwindTools.PerfMonitor
+        local capture = perf and type(perf.IsCaptureActive) == "function" and perf:IsCaptureActive()
         for owner, func in pairs(handlers) do
-            local t0 = perf and debugprofilestop()
+            local t0 = capture and debugprofilestop()
             local ok, err = pcall(func, event, ...)
             if t0 then
                 perf:RecordTiming("Event:" .. tostring(event) .. ":" .. tostring(owner), debugprofilestop() - t0)

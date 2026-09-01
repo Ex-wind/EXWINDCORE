@@ -1,13 +1,13 @@
 ---@diagnostic disable: undefined-global, undefined-field, need-check-nil
 -- =============================================================
 -- [[ ExwindTools 副本内 CPU/FPS 性能监控模块 ]]
--- 用途：在 Boss 战斗（ENCOUNTER_START ~ ENCOUNTER_END）期间，按秒采集
+-- 用途：在副本 Boss 战斗与手动开启后的普通战斗期间，按秒采集
 -- ExwindCore / EXBoss / EXAura / ExwindTools 四个插件的 CPU 占用（基于
 -- 12.x 新版 C_AddOnProfiler，不需要旧版 scriptProfile CVar 或 /reload），
 -- 同时记录当下 FPS、副本信息、是否处于 Boss 战斗，用于事后排查"到底是
 -- 哪个插件在战斗中吃 CPU"。
 --
--- 只在 Boss 战斗进行期间采样，不战斗时不跑 ticker，避免这个诊断工具本身
+-- 只在已开启监控的战斗期间采样，不战斗时不跑 ticker，避免这个诊断工具本身
 -- 变成新的常驻开销。默认关闭，需要 /exwindperf on 手动开启。
 -- =============================================================
 
@@ -33,6 +33,11 @@ local db
 local ticker
 local currentEncounter
 
+-- 诊断数据只在已开启的副本战斗内累积；平时不会为事件面板或 TrashCD
+-- 埋点保留不断增长的表。
+PerfMonitor.timingStats = {}
+PerfMonitor.counterStats = {}
+
 local function EnsureDB()
     if db then return db end
     EXCORE12S2 = EXCORE12S2 or {}
@@ -46,6 +51,69 @@ end
 
 local function GetMetric(name, metric)
     return C_AddOnProfiler.GetAddOnMetric(name, metric) or 0
+end
+
+local function ResetCaptureStats()
+    wipe(PerfMonitor.timingStats)
+    wipe(PerfMonitor.counterStats)
+end
+
+local function IsTrashCDDiagnosticKey(key)
+    if type(key) ~= "string" then
+        return false
+    end
+    return key:find("TrashCD.", 1, true) == 1
+        or (key:find("Event:", 1, true) == 1 and key:find("ExBoss_Trash_", 1, true) ~= nil)
+end
+
+local function IsTrashCDRootKey(key)
+    return type(key) == "string"
+        and (key:find("TrashCD.Root.", 1, true) == 1
+            or key == "TrashCD.Scheduler.Tick.Total"
+            or key == "TrashCD.Scheduler.Tick.Empty"
+            or key == "TrashCD.Scheduler.Timer.Trash.Total"
+            or key == "TrashCD.Scheduler.Timer.Other.Total")
+end
+
+local function PrintTrashCDDiagnostic(encounter)
+    local timingRows = {}
+    for key, stat in pairs(PerfMonitor.timingStats) do
+        if IsTrashCDDiagnosticKey(key) and type(stat) == "table" and stat.count > 0 then
+            timingRows[#timingRows + 1] = { key = key, stat = stat }
+        end
+    end
+    table.sort(timingRows, function(a, b)
+        local aRoot = IsTrashCDRootKey(a.key)
+        local bRoot = IsTrashCDRootKey(b.key)
+        if aRoot ~= bRoot then return aRoot end
+        return a.stat.total > b.stat.total
+    end)
+
+    local counterRows = {}
+    for key, count in pairs(PerfMonitor.counterStats) do
+        if IsTrashCDDiagnosticKey(key) and count ~= 0 then
+            counterRows[#counterRows + 1] = { key = key, count = count }
+        end
+    end
+    table.sort(counterRows, function(a, b) return a.key < b.key end)
+
+    print(string.format("|cff33ff99[ExwindPerf][TrashCD]|r 战斗结束：%s，时长 %.1fs",
+        tostring(encounter and encounter.encounterName or "?"), tonumber(encounter and encounter.duration) or 0))
+    if #timingRows == 0 and #counterRows == 0 then
+        print("|cff33ff99[ExwindPerf][TrashCD]|r 本场没有 TrashCD 埋点数据。")
+        return
+    end
+    print("  根账在前（层级统计，不能和后续明细相加）：")
+    for i = 1, #timingRows do
+        local row = timingRows[i]
+        local stat = row.stat
+        print(string.format("  T %s x%d avg=%.3fms max=%.3fms total=%.3fms",
+            row.key, stat.count, stat.total / math.max(1, stat.count), stat.max, stat.total))
+    end
+    for i = 1, #counterRows do
+        local row = counterRows[i]
+        print(string.format("  C %s=%d", row.key, row.count))
+    end
 end
 
 local function StopSampling()
@@ -82,12 +150,14 @@ local function TrimEncounterHistory()
     end
 end
 
-local function OnEncounterStart(encounterID, encounterName, difficultyID, groupSize)
-    if not EnsureDB().enabled then return end
+local function BeginCapture(source, encounterID, encounterName, difficultyID, groupSize)
+    if not EnsureDB().enabled then return false end
+    ResetCaptureStats()
     local _, instanceType, _, difficultyName, _, _, _, instanceMapID = GetInstanceInfo()
     currentEncounter = {
+        source = source,
         encounterID = encounterID,
-        encounterName = encounterName,
+        encounterName = encounterName or "战斗",
         difficultyID = difficultyID,
         difficultyName = difficultyName,
         groupSize = groupSize,
@@ -97,33 +167,73 @@ local function OnEncounterStart(encounterID, encounterName, difficultyID, groupS
         samples = {},
     }
     StartSampling()
+    return true
 end
 
-local function OnEncounterEnd(encounterID, encounterName, difficultyID, groupSize, success)
+local function FinishCapture(success, saveEncounter)
     StopSampling()
-    if not currentEncounter or currentEncounter.encounterID ~= encounterID then
-        currentEncounter = nil
+    if not currentEncounter then
         return
     end
 
     currentEncounter.success = success == 1
     currentEncounter.duration = math.floor((GetTime() - currentEncounter.startTime) * 10) / 10
-    currentEncounter.avgCPU = {}
-    currentEncounter.peakCPU = {}
-    for _, name in ipairs(ADDON_NAMES) do
-        currentEncounter.avgCPU[name] = GetMetric(name, Metric.EncounterAverageTime)
-        currentEncounter.peakCPU[name] = GetMetric(name, Metric.PeakTime)
+    if currentEncounter.source == "encounter" then
+        currentEncounter.avgCPU = {}
+        currentEncounter.peakCPU = {}
+        for _, name in ipairs(ADDON_NAMES) do
+            currentEncounter.avgCPU[name] = GetMetric(name, Metric.EncounterAverageTime)
+            currentEncounter.peakCPU[name] = GetMetric(name, Metric.PeakTime)
+        end
+        currentEncounter.top10 = C_AddOnProfiler.GetTopKAddOnsForMetric(Metric.EncounterAverageTime, 10)
     end
-    currentEncounter.top10 = C_AddOnProfiler.GetTopKAddOnsForMetric(Metric.EncounterAverageTime, 10)
 
-    local list = EnsureDB().encounters
-    list[#list + 1] = currentEncounter
-    TrimEncounterHistory()
+    PrintTrashCDDiagnostic(currentEncounter)
+
+    if saveEncounter == true then
+        local list = EnsureDB().encounters
+        list[#list + 1] = currentEncounter
+        TrimEncounterHistory()
+    end
     currentEncounter = nil
+end
+
+local function OnEncounterStart(encounterID, encounterName, difficultyID, groupSize)
+    if not EnsureDB().enabled then return end
+    if currentEncounter and currentEncounter.source == "combat" then
+        currentEncounter.source = "encounter"
+        currentEncounter.encounterID = encounterID
+        currentEncounter.encounterName = encounterName
+        currentEncounter.difficultyID = difficultyID
+        currentEncounter.groupSize = groupSize
+        return
+    end
+    BeginCapture("encounter", encounterID, encounterName, difficultyID, groupSize)
+end
+
+local function OnEncounterEnd(encounterID, _encounterName, _difficultyID, _groupSize, success)
+    if not currentEncounter or currentEncounter.source ~= "encounter" or currentEncounter.encounterID ~= encounterID then
+        return
+    end
+    FinishCapture(success, true)
+end
+
+local function OnCombatStart()
+    if currentEncounter or not EnsureDB().enabled then return end
+    if type(IsInInstance) == "function" and IsInInstance() ~= true then return end
+    BeginCapture("combat", nil, "普通战斗", nil, nil)
+end
+
+local function OnCombatEnd()
+    if currentEncounter and currentEncounter.source == "combat" then
+        FinishCapture(0, false)
+    end
 end
 
 ExwindTools:RegisterEvent("ENCOUNTER_START", "PerfMonitor", OnEncounterStart)
 ExwindTools:RegisterEvent("ENCOUNTER_END", "PerfMonitor", OnEncounterEnd)
+ExwindTools:RegisterEvent("PLAYER_REGEN_DISABLED", "PerfMonitor_CombatStart", OnCombatStart)
+ExwindTools:RegisterEvent("PLAYER_REGEN_ENABLED", "PerfMonitor_CombatEnd", OnCombatEnd)
 
 -- =========================================================
 -- 公共接口
@@ -153,11 +263,12 @@ end
 -- 任意函数耗时埋点（给其他模块用，比如 TrashCD 的热路径函数）
 -- =========================================================
 
-PerfMonitor.timingStats = {}
-
 --- 记录一次调用耗时。key 是调用方自己起的标识名（比如"TrashCD.BuildCandidates"），
 --- elapsedMs 通常是 debugprofilestop() 两次取差得到的毫秒数。
 function PerfMonitor:RecordTiming(key, elapsedMs)
+    if currentEncounter == nil or type(key) ~= "string" or type(elapsedMs) ~= "number" then
+        return
+    end
     local stat = self.timingStats[key]
     if not stat then
         stat = { count = 0, total = 0, max = 0 }
@@ -170,8 +281,19 @@ function PerfMonitor:RecordTiming(key, elapsedMs)
     end
 end
 
+function PerfMonitor:IncrementCounter(key, amount)
+    if currentEncounter == nil or type(key) ~= "string" then
+        return
+    end
+    self.counterStats[key] = (tonumber(self.counterStats[key]) or 0) + (tonumber(amount) or 1)
+end
+
+function PerfMonitor:IsCaptureActive()
+    return currentEncounter ~= nil
+end
+
 function PerfMonitor:ResetTimingStats()
-    wipe(self.timingStats)
+    ResetCaptureStats()
 end
 
 function PerfMonitor:GetTimingStats()

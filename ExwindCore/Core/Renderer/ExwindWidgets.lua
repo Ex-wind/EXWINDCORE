@@ -50,6 +50,29 @@ local function NumberOr(value, fallback)
     return number or fallback
 end
 
+local function IsSecretValue(value)
+    return type(issecretvalue) == "function" and issecretvalue(value) == true
+end
+
+local function ReadSafeDimension(owner, methodName, fallback)
+    local method = owner and owner[methodName]
+    if type(method) ~= "function" then
+        return fallback
+    end
+
+    local value = method(owner)
+    if IsSecretValue(value) then
+        return fallback
+    end
+
+    value = tonumber(value)
+    if not value then
+        return fallback
+    end
+
+    return math.max(1, value)
+end
+
 local function GetStyleValue(style, key)
     local value = style and style[key]
     if value == nil then value = DEFAULT_TEXT_STYLE[key] end
@@ -137,13 +160,17 @@ local function RefreshTextLayout(widget)
         if fixedWidthEnabled and fixedWidth > 0 then
             width = math.max(1, fixedWidth)
         elseif fixedWidthEnabled and widget._secretText ~= true then
-            width = math.max(1, widget.text:GetStringWidth() or 1)
+            -- 普通 TextWidget 也可能因为父级曾锚定 Secret FontString 而继承受保护的几何值。
+            -- 必须检查 API 的返回值，不能只依赖 _secretText 标记。
+            width = ReadSafeDimension(widget.text, "GetStringWidth", width)
         end
     elseif widget._measureText then
         -- 只有普通文本走尺寸测量。机密文本请使用 SetSecretText + SetBounds，
         -- 全程只交给暴雪 FontString 渲染，不读取其内容或派生数值。
-        width = math.max(1, widget.text:GetStringWidth() or 1)
-        height = math.max(1, widget.text:GetStringHeight() or 1)
+        local currentWidth = ReadSafeDimension(widget, "GetWidth", 1)
+        local currentHeight = ReadSafeDimension(widget, "GetHeight", 1)
+        width = ReadSafeDimension(widget.text, "GetStringWidth", currentWidth)
+        height = ReadSafeDimension(widget.text, "GetStringHeight", currentHeight)
 
         local fixedWidthEnabled = style.unboundedWidth ~= true and (style.fixedWidthEnabled == true or style.autoWidth == false)
         local fixedWidth = NumberOr(style.fixedWidth, 0)
@@ -156,8 +183,8 @@ local function RefreshTextLayout(widget)
         end
     else
         -- 未指定 Bounds 的机密文本维持现有尺寸；首次至少保持一个有效 root。
-        width = math.max(1, widget:GetWidth() or 1)
-        height = math.max(1, widget:GetHeight() or 1)
+        width = ReadSafeDimension(widget, "GetWidth", 1)
+        height = ReadSafeDimension(widget, "GetHeight", 1)
     end
 
     widget:SetSize(width, height)
@@ -284,9 +311,12 @@ end
 local function TextWidgetGetVisualMetrics(widget)
     if widget._secretText == true or widget._durationBindingActive then return nil end
     local text = widget.text
+    local width = ReadSafeDimension(text, "GetStringWidth")
+    local height = ReadSafeDimension(text, "GetStringHeight")
+    if not width or not height then return nil end
     return {
-        width = math.max(1, text:GetStringWidth() or 1),
-        height = math.max(1, text:GetStringHeight() or 1),
+        width = width,
+        height = height,
         justifyH = text:GetJustifyH() or "LEFT",
         justifyV = text:GetJustifyV() or "MIDDLE",
         offsetX = widget._stylePositionOverride and widget._stylePositionOverride.x or NumberOr(GetStyleValue(widget.style, "x"), 0),

@@ -26,6 +26,8 @@ ExwindTools.PerfMonitor = PerfMonitor
 local ADDON_NAMES = { "ExwindCore", "EXBoss", "EXAura", "ExwindTools" }
 local SAMPLE_INTERVAL = 1
 local MAX_ENCOUNTERS = 20
+local SPIKE_THRESHOLD_MS = 2.0
+local MAX_SPIKE_ROWS = 24
 
 local Metric = Enum.AddOnProfilerMetric
 
@@ -37,6 +39,7 @@ local currentEncounter
 -- 埋点保留不断增长的表。
 PerfMonitor.timingStats = {}
 PerfMonitor.counterStats = {}
+PerfMonitor.spikeStats = {}
 
 local function EnsureDB()
     if db then return db end
@@ -56,6 +59,7 @@ end
 local function ResetCaptureStats()
     wipe(PerfMonitor.timingStats)
     wipe(PerfMonitor.counterStats)
+    wipe(PerfMonitor.spikeStats)
 end
 
 local function IsTrashCDDiagnosticKey(key)
@@ -113,6 +117,24 @@ local function PrintTrashCDDiagnostic(encounter)
     for i = 1, #counterRows do
         local row = counterRows[i]
         print(string.format("  C %s=%d", row.key, row.count))
+    end
+    if #PerfMonitor.spikeStats > 0 then
+        local spikeRows = {}
+        for i = 1, #PerfMonitor.spikeStats do
+            spikeRows[i] = PerfMonitor.spikeStats[i]
+        end
+        table.sort(spikeRows, function(a, b)
+            if a.elapsedMs ~= b.elapsedMs then return a.elapsedMs > b.elapsedMs end
+            return a.at < b.at
+        end)
+        print(string.format("  S 单次 >= %.1fms 的尖峰（最多保留最慢 %d 条）：",
+            SPIKE_THRESHOLD_MS, MAX_SPIKE_ROWS))
+        for i = 1, #spikeRows do
+            local row = spikeRows[i]
+            print(string.format("  S +%.3fs %s %.3fms %s",
+                tonumber(row.at) or 0, tostring(row.key or "?"), tonumber(row.elapsedMs) or 0,
+                tostring(row.context or "")))
+        end
     end
 end
 
@@ -286,6 +308,38 @@ function PerfMonitor:IncrementCounter(key, amount)
         return
     end
     self.counterStats[key] = (tonumber(self.counterStats[key]) or 0) + (tonumber(amount) or 1)
+end
+
+--- 记录带时间和上下文的慢调用；只保留当前战斗最慢的有限条目。
+function PerfMonitor:RecordSpike(key, elapsedMs, context)
+    if currentEncounter == nil or type(key) ~= "string" or type(elapsedMs) ~= "number"
+        or elapsedMs < SPIKE_THRESHOLD_MS then
+        return
+    end
+    local text = tostring(context or ""):gsub("[\r\n]+", " ")
+    if #text > 360 then
+        text = text:sub(1, 360)
+    end
+    local row = {
+        at = math.max(0, GetTime() - (tonumber(currentEncounter.startTime) or GetTime())),
+        key = key,
+        elapsedMs = elapsedMs,
+        context = text,
+    }
+    local rows = self.spikeStats
+    if #rows < MAX_SPIKE_ROWS then
+        rows[#rows + 1] = row
+        return
+    end
+    local fastestIndex = 1
+    for i = 2, #rows do
+        if rows[i].elapsedMs < rows[fastestIndex].elapsedMs then
+            fastestIndex = i
+        end
+    end
+    if elapsedMs > rows[fastestIndex].elapsedMs then
+        rows[fastestIndex] = row
+    end
 end
 
 function PerfMonitor:IsCaptureActive()

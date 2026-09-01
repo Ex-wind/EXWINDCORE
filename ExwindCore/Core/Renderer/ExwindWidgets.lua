@@ -2319,7 +2319,7 @@ end
 -- Shared native Duration Object implementation.  Callers choose the public
 -- semantic entry below: SetDurationObject for ordinary data and SetSecretTime
 -- for protected data.  Both hand the object directly to Blizzard rendering.
-local function TimerBarWidgetSetNativeDuration(widget, durationObject, interpolation, direction, mode)
+local function TimerBarWidgetSetNativeDuration(widget, durationObject, interpolation, direction, mode, textOptions)
     if not durationObject then return TimerBarWidgetClearTime(widget) end
     if widget._timerMode and widget._timerMode ~= mode then
         ResetTimerDurationBar(widget, widget._timerMode)
@@ -2350,7 +2350,7 @@ local function TimerBarWidgetSetNativeDuration(widget, durationObject, interpola
         and GetStyleValue(timeStyle, "enabled") ~= false
     if showDigits then
         -- 时间文字直接绑定同一 Duration Object；不再借隐藏 Cooldown 的倒数圈显示数字。
-        widget.timeText:SetDurationBinding(durationObject, {
+        widget.timeText:SetDurationBinding(durationObject, textOptions or {
             property = Enum.DurationTextBindingProperty.RemainingDuration,
         })
         widget.timeText:Show()
@@ -2373,8 +2373,8 @@ end
 -- Ordinary Duration Object entry: no secret classification is implied.  This
 -- is the native alternative to SetTime(start, duration), so it never owns a
 -- Lua timer loop and can safely preserve an external expirationTime.
-local function TimerBarWidgetSetDurationObject(widget, durationObject, interpolation, direction)
-    return TimerBarWidgetSetNativeDuration(widget, durationObject, interpolation, direction, "DURATION")
+local function TimerBarWidgetSetDurationObject(widget, durationObject, interpolation, direction, textOptions)
+    return TimerBarWidgetSetNativeDuration(widget, durationObject, interpolation, direction, "DURATION", textOptions)
 end
 
 -- Secret Duration entry: values remain opaque from this point onward.  The

@@ -13,7 +13,15 @@ local L = (ExwindTools and ExwindTools.L)
     or setmetatable({}, { __index = function(_, key) return key end })
 
 local EXUI = ExwindTools and ExwindTools.UI
-if not EXUI then return end
+local EXFactory = _G.ExwindFactory
+if not EXUI or not EXFactory then return end
+
+local ITEM_ROOT_POOL = "RuntimeTimerBarCollectionItemRoot"
+
+EXFactory:InitPool(ITEM_ROOT_POOL, "Frame", nil, function(root)
+    root:EnableMouse(false)
+    root:SetSize(1, 1)
+end)
 
 local function ApplyIcon(widget, icon)
     if type(icon) == "table" and icon.mode == "SECRET" then
@@ -102,7 +110,7 @@ local function ApplyTime(collection, widget, time)
         -- An ordinary Duration Object has its own explicit path.  It is not
         -- Secret data and must not fall through to the legacy start/duration
         -- timer, which owns a Lua OnUpdate.
-        widget:SetDurationObject(time.duration, time.interpolation, time.direction)
+        widget:SetDurationObject(time.duration, time.interpolation, time.direction, time.textOptions)
         return true
     end
     if type(time) == "table" and time.start ~= nil and time.duration ~= nil then
@@ -529,11 +537,30 @@ local function ReleaseInteractionOverlays(item)
     item.interactionOverlays = {}
 end
 
-local function NewItem(collection, itemID)
-    local root = CreateFrame("Frame", nil, collection.layout)
+local function AcquireItemRoot(parent)
+    local root = EXFactory:Acquire(ITEM_ROOT_POOL, parent)
     root:EnableMouse(false)
     root:SetSize(1, 1)
+    root:ClearAllPoints()
     root:Hide()
+    return root
+end
+
+local function ReleaseItemRoot(root)
+    if not root then return end
+    root:SetScript("OnUpdate", nil)
+    root:SetScript("OnShow", nil)
+    root:SetScript("OnHide", nil)
+    root:EnableMouse(false)
+    root:Hide()
+    root:ClearAllPoints()
+    root:SetSize(1, 1)
+    root:SetParent(UIParent)
+    EXFactory:Release(ITEM_ROOT_POOL, root)
+end
+
+local function NewItem(collection, itemID)
+    local root = AcquireItemRoot(collection.layout)
 
     local item = {
         id = itemID,
@@ -662,6 +689,19 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks, s
         return item
     end
 
+    -- Runtime timer corrections must not pay the cost of a complete presentation
+    -- projection.  This narrow path only rebinds the time owner on an existing
+    -- widget; style, icon, regions, interaction overlays, geometry and layout are
+    -- deliberately untouched.
+    function collection:UpdateItemTime(item, time)
+        if self.released or not item or not item.widget then return false end
+        if type(item.presentation) == "table" then
+            item.presentation.time = time
+        end
+        ApplyTime(self, item.widget, time)
+        return true
+    end
+
     function collection:SetItems(items, layout)
         local wanted = {}
         for _, item in ipairs(items or {}) do
@@ -755,8 +795,8 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks, s
             item.widget:Release()
         end
         item.widget = nil
-        item.root:Hide()
-        item.root:ClearAllPoints()
+        ReleaseItemRoot(item.root)
+        item.root = nil
         item.regions = nil
         item.interactionOverlays = nil
         item.presentation = nil

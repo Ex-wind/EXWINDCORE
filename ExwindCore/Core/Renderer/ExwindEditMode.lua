@@ -23,20 +23,20 @@ if settings.overlayVisible == nil then settings.overlayVisible = true end
 -- 编辑覆盖层色板只能在唯一 Core 定义。模块只能声明 addon，不能传入任何颜色或绘制信息。
 local OVERLAY_PROFILES = {
     EXBoss = {
-        fill = { r = 0.32, g = 0.72, b = 1.00, a = 0.18 },
-        border = { r = 0.50, g = 0.88, b = 1.00, a = 1.00 },
+        fill = { r = 1.00, g = 0.80, b = 0.30, a = 0.18 },
+        border = { r = 1.00, g = 0.92, b = 0.68, a = 1.00 },
         borderSize = 2,
-        title = { r = 0.72, g = 0.94, b = 1.00, a = 1.00 },
+        title = { r = 1.00, g = 0.97, b = 0.84, a = 1.00 },
         titleOutline = "THICKOUTLINE",
-        titleShadow = { r = 0.02, g = 0.08, b = 0.16, a = 1.00, x = 2, y = -2 },
+        titleShadow = { r = 0.20, g = 0.12, b = 0.02, a = 1.00, x = 2, y = -2 },
     },
     ExwindTools = {
-        fill = { r = 0.10, g = 0.72, b = 0.86, a = 0.16 },
-        border = { r = 0.42, g = 0.94, b = 1.00, a = 1.00 },
+        fill = { r = 0.52, g = 0.28, b = 0.88, a = 0.18 },
+        border = { r = 0.84, g = 0.66, b = 1.00, a = 1.00 },
         borderSize = 2,
-        title = { r = 0.80, g = 0.98, b = 1.00, a = 1.00 },
+        title = { r = 0.92, g = 0.84, b = 1.00, a = 1.00 },
         titleOutline = "OUTLINE",
-        titleShadow = { r = 0.00, g = 0.10, b = 0.14, a = 1.00, x = 2, y = -2 },
+        titleShadow = { r = 0.12, g = 0.03, b = 0.24, a = 1.00, x = 2, y = -2 },
     },
     EXAura = {
         fill = { r = 0.56, g = 0.25, b = 0.88, a = 0.16 },
@@ -421,6 +421,9 @@ local function SetEnabled(enabled)
         if state.phase == "ACTIVE" then return end
         state.phase = "ENTERING"
         state.phase = "ACTIVE"
+        -- 控制面板只在每次新的编辑会话开始时回到中心；本会话内允许玩家拖动，
+        -- 但不把位置写入任何 SavedVariables，退出后不会留下屏幕外坐标。
+        if EXUI.EditModeControlPanel then EXUI.EditModeControlPanel.__resetPositionOnNextRefresh = true end
         RefreshAll()
         SyncToggleButton()
     else
@@ -1205,27 +1208,75 @@ function EXUI:SetEditModeOverlayVisible(shown)
     EXUI:RefreshEditModeControlPanel()
 end
 
+local EDIT_PANEL_GROUPS = {
+    {
+        addon = "EXBoss",
+        label = L["EXBOSS"],
+        fill = { 0.78, 0.58, 0.14, 0.14 },
+        title = { 1.00, 0.91, 0.62, 1.00 },
+    },
+    {
+        addon = "ExwindTools",
+        label = L["EXTOOLS"],
+        fill = { 0.48, 0.24, 0.80, 0.15 },
+        title = { 0.88, 0.70, 1.00, 1.00 },
+    },
+}
+
+local function SetAddonModulesVisible(addon, shown)
+    local changed = false
+    for _, module in pairs(state.modules) do
+        if module.addon == addon then
+            local id = ModuleID(module)
+            if shown == true then
+                if settings.visibleByKey[id] ~= nil then changed = true end
+                settings.visibleByKey[id] = nil
+            else
+                if settings.visibleByKey[id] ~= false then changed = true end
+                settings.visibleByKey[id] = false
+            end
+        end
+    end
+    if changed then RefreshAll() end
+end
+
+local function AreAddonModulesVisible(entries)
+    if #entries == 0 then return false end
+    for _, module in ipairs(entries) do
+        if settings.visibleByKey[ModuleID(module)] == false then return false end
+    end
+    return true
+end
+
 local function EnsurePanel()
     if EXUI.EditModeControlPanel then return EXUI.EditModeControlPanel end
     local panel = CreateFrame("Frame", "ExwindEditModeControlPanel", UIParent, "BackdropTemplate")
-    panel:SetSize(330, 160)
-    panel:SetPoint("CENTER", UIParent, "CENTER", 0, 120)
+    panel:SetSize(520, 500)
+    panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
     panel:SetFrameStrata("FULLSCREEN_DIALOG")
     panel:SetFrameLevel(200)
+    panel:EnableMouse(true)
     panel:SetMovable(true)
     panel:SetClampedToScreen(false)
-    panel:EnableMouse(true)
     panel:RegisterForDrag("LeftButton")
     panel:SetScript("OnDragStart", panel.StartMoving)
     panel:SetScript("OnDragStop", panel.StopMovingOrSizing)
-    panel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12, insets = { left = 3, right = 3, top = 3, bottom = 3 } })
-    panel:SetBackdropColor(0.05, 0.06, 0.08, 0.96)
-    panel:SetBackdropBorderColor(0.92, 0.56, 0.24, 0.88)
-    panel.rows = {}
+    panel:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+    panel:SetBackdropColor(0.055, 0.045, 0.085, 0.98)
+    panel:SetBackdropBorderColor(0.62, 0.42, 0.90, 0.92)
+    panel.groups = {}
 
-    local title = panel:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 14, -14)
+    local title = EXUI:CreateVisualFontString(panel, _G.EXFONTFRAME, "GameFontNormalLarge")
+    title:SetPoint("TOPLEFT", 16, -13)
     title:SetText(L["EXWIND 编辑模式"])
+    title:SetTextColor(0.94, 0.86, 1.00, 1.00)
+    panel.title = title
+
+    local subtitle = EXUI:CreateVisualFontString(panel, _G.EXFONTFRAME, "GameFontHighlightSmall")
+    subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -3)
+    subtitle:SetText(L["选择需要显示的模块；左键拖拽模块，右键打开设置"])
+    subtitle:SetTextColor(0.60, 0.55, 0.70, 1.00)
+    panel.subtitle = subtitle
 
     -- 关闭键沿用暴雪标准模板，这是项目里统一面板等处一贯的做法，不算需要
     -- 换成 EXUI 封装的"设置控件"。其余交互控件（勾选框、按钮）以下全部改用
@@ -1237,67 +1288,169 @@ local function EnsurePanel()
     local overlay = EXUI:CreateCheckbox(panel, L["显示覆盖层"], state.overlayVisible, function(checked)
         EXUI:SetEditModeOverlayVisible(checked)
     end)
-    overlay:SetPoint("TOPLEFT", title, "BOTTOMLEFT", -4, -12)
+    overlay:SetSize(146, 28)
+    overlay:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -42, -12)
     panel.overlay = overlay
+
+    local scrollFrame = CreateFrame("ScrollFrame", nil, panel, "ScrollFrameTemplate")
+    scrollFrame:EnableMouseWheel(true)
+    scrollFrame:SetPoint("TOPLEFT", 12, -58)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 50)
+    local content = CreateFrame("Frame", nil, scrollFrame)
+    content:SetSize(470, 1)
+    scrollFrame:SetScrollChild(content)
+    panel.scrollFrame = scrollFrame
+    panel.content = content
 
     local showAll = EXUI:CreateSmallButton(panel, L["全部显示"], function()
         for id in pairs(settings.visibleByKey) do settings.visibleByKey[id] = nil end
         RefreshAll()
     end)
-    showAll:SetSize(88, 22)
-    showAll:SetPoint("BOTTOMLEFT", 14, 12)
+    showAll:SetSize(118, 24)
+    showAll:SetPoint("BOTTOMLEFT", 14, 14)
     panel.showAll = showAll
 
     local exit = EXUI:CreateSmallButton(panel, L["退出编辑模式"], function()
         EXUI:ToggleEditMode(false)
     end)
     exit:SetSize(118, 24)
+    exit:SetPoint("BOTTOMRIGHT", -14, 14)
     panel.exit = exit
-
-    local footer = panel:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    footer:SetPoint("BOTTOMRIGHT", -14, 18)
-    footer:SetText(L["左拖移动整体，右键打开设置"])
-    panel.footer = footer
 
     panel:Hide()
     EXUI.EditModeControlPanel = panel
     return panel
 end
 
+local function EnsurePanelGroup(panel, definition)
+    local group = panel.groups[definition.addon]
+    if group then return group end
+    local content = panel.content
+    group = { addon = definition.addon, definition = definition, rows = {} }
+    group.background = content:CreateTexture(nil, "BACKGROUND")
+    group.background:SetTexture("Interface\\Buttons\\WHITE8X8")
+    group.header = EXUI:CreateCheckbox(content, definition.label, true, nil)
+    group.header:SetSize(220, 28)
+    group.header.label:SetTextColor(unpack(definition.title))
+    panel.groups[definition.addon] = group
+    return group
+end
+
+local function ConfigurePanelRow(row, module)
+    row.label:SetText(module.name)
+    row.label:SetTextColor(0.88, 0.86, 0.94, 1.00)
+    row.label:SetWidth(184)
+    row:SetChecked(settings.visibleByKey[ModuleID(module)] ~= false)
+    row.checkbox:SetScript("OnClick", function(button)
+        PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+        EXUI:SetEditModeModuleVisible(module.addon, module.key, button:GetChecked() == true)
+    end)
+end
+
 function EXUI:RefreshEditModeControlPanel()
     local panel = EnsurePanel()
     panel.overlay:SetChecked(state.overlayVisible)
-    local entries = {}
-    for _, module in pairs(state.modules) do
-        entries[#entries + 1] = module
-    end
-    table.sort(entries, function(a, b) return ModuleID(a) < ModuleID(b) end)
-    local y = -62
-    for index, module in ipairs(entries) do
-        local row = panel.rows[index]
-        if not row then
-            row = EXUI:CreateCheckbox(panel, "", true, nil)
-            panel.rows[index] = row
-        end
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", 14, y)
-        row.label:SetText(module.addon .. " - " .. module.name)
-        row:SetChecked(settings.visibleByKey[ModuleID(module)] ~= false)
-        -- 每次刷新都重新绑定，确保闭包捕获的是当前这次排序后的 module，
-        -- 不依赖 CreateCheckbox 内部的一次性 onClick。
-        row.checkbox:SetScript("OnClick", function(button)
-            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
-            EXUI:SetEditModeModuleVisible(module.addon, module.key, button:GetChecked() == true)
-        end)
-        row:Show()
-        y = y - 24
-    end
-    for index = #entries + 1, #panel.rows do panel.rows[index]:Hide() end
 
-    panel.showAll:ClearAllPoints(); panel.showAll:SetPoint("TOPLEFT", 14, y - 4)
-    panel.exit:ClearAllPoints(); panel.exit:SetPoint("TOPRIGHT", -14, y - 4)
-    panel.footer:ClearAllPoints(); panel.footer:SetPoint("TOPLEFT", 14, y - 36)
-    panel:SetHeight(math.max(172, -y + 58))
+    local byAddon = {}
+    for _, module in pairs(state.modules) do
+        byAddon[module.addon] = byAddon[module.addon] or {}
+        byAddon[module.addon][#byAddon[module.addon] + 1] = module
+    end
+
+    local ordered = {}
+    for _, definition in ipairs(EDIT_PANEL_GROUPS) do
+        if byAddon[definition.addon] then
+            ordered[#ordered + 1] = definition
+            byAddon[definition.addon] = nil
+        end
+    end
+    local extraAddons = {}
+    for addon in pairs(byAddon) do extraAddons[#extraAddons + 1] = addon end
+    table.sort(extraAddons)
+    for _, addon in ipairs(extraAddons) do
+        ordered[#ordered + 1] = {
+            addon = addon,
+            label = addon,
+            fill = { 0.32, 0.32, 0.38, 0.12 },
+            title = { 0.86, 0.86, 0.92, 1.00 },
+        }
+    end
+
+    local content = panel.content
+    local y = -8
+    local usedGroups = {}
+    for _, definition in ipairs(ordered) do
+        local addon = definition.addon
+        local entries = byAddon[definition.addon]
+        if not entries then
+            entries = {}
+            for _, module in pairs(state.modules) do
+                if module.addon == definition.addon then entries[#entries + 1] = module end
+            end
+        end
+        table.sort(entries, function(a, b) return ModuleID(a) < ModuleID(b) end)
+        local group = EnsurePanelGroup(panel, definition)
+        usedGroups[definition.addon] = true
+
+        group.header:ClearAllPoints()
+        group.header:SetPoint("TOPLEFT", content, "TOPLEFT", 10, y)
+        group.header.label:SetText(definition.label)
+        group.header.label:SetTextColor(unpack(definition.title))
+        group.header:SetChecked(AreAddonModulesVisible(entries))
+        group.header.checkbox:SetScript("OnClick", function(button)
+            PlaySound(SOUNDKIT.IG_MAINMENU_OPTION_CHECKBOX_ON)
+            SetAddonModulesVisible(addon, button:GetChecked() == true)
+        end)
+        group.header:Show()
+
+        local rowsTop = y - 30
+        for index, module in ipairs(entries) do
+            local row = group.rows[index]
+            if not row then
+                row = EXUI:CreateCheckbox(content, "", true, nil)
+                row:SetSize(220, 26)
+                group.rows[index] = row
+            end
+            local column = (index - 1) % 2
+            local rowIndex = math.floor((index - 1) / 2)
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", content, "TOPLEFT", column == 0 and 10 or 242, rowsTop - rowIndex * 26)
+            ConfigurePanelRow(row, module)
+            row:Show()
+        end
+        for index = #entries + 1, #group.rows do group.rows[index]:Hide() end
+
+        local rowCount = math.ceil(#entries / 2)
+        local groupHeight = 36 + rowCount * 26
+        group.background:ClearAllPoints()
+        group.background:SetPoint("TOPLEFT", content, "TOPLEFT", 4, y + 4)
+        group.background:SetPoint("TOPRIGHT", content, "TOPRIGHT", -4, y + 4)
+        group.background:SetHeight(groupHeight)
+        group.background:SetVertexColor(unpack(definition.fill))
+        group.background:Show()
+        y = y - groupHeight - 8
+    end
+    for addon, group in pairs(panel.groups) do
+        if not usedGroups[addon] then
+            group.background:Hide()
+            group.header:Hide()
+            for _, row in ipairs(group.rows) do row:Hide() end
+        end
+    end
+
+    local contentHeight = math.max(1, -y + 4)
+    content:SetSize(470, contentHeight)
+    -- 两列布局优先完整展示所有模块；只有当前屏幕确实容纳不下时，ScrollFrame
+    -- 才成为兜底，避免为了固定窗口高度而平白让玩家滚动。
+    local desiredHeight = contentHeight + 108
+    local screenHeight = tonumber(UIParent:GetHeight()) or desiredHeight
+    local maxHeight = math.max(320, screenHeight - 48)
+    panel:SetHeight(math.min(desiredHeight, maxHeight))
+    if panel.__resetPositionOnNextRefresh then
+        panel:ClearAllPoints()
+        panel:SetPoint("CENTER", UIParent, "CENTER", 0, 0)
+        panel.__resetPositionOnNextRefresh = nil
+    end
     if state.phase == "ACTIVE" then panel:Show() else panel:Hide() end
 end
 

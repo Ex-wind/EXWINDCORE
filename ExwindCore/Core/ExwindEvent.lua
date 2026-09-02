@@ -126,14 +126,8 @@ function ExwindTools:RegisterUnitEvent(event, units, owner, func)
         local frame = CreateFrame("Frame")
         binding = { frame = frame, handlers = {}, units = unitTokens }
         frame:SetScript("OnEvent", function(_, firedEvent, ...)
-            local perf = ExwindTools.PerfMonitor
-            local capture = perf and type(perf.IsCaptureActive) == "function" and perf:IsCaptureActive()
             for bindingOwner, bindingFunc in pairs(binding.handlers) do
-                local t0 = capture and debugprofilestop()
                 local ok, err = pcall(bindingFunc, firedEvent, ...)
-                if t0 then
-                    perf:RecordTiming("Event:" .. tostring(firedEvent) .. ":" .. tostring(bindingOwner), debugprofilestop() - t0)
-                end
                 if not ok then
                     ExwindTools:LogError(string.format("UnitEvent[%s][%s]", firedEvent, bindingOwner), err)
                     print(string.format(L["|cffff0000[ExwindTools] 单位事件错误 [%s][%s]: %s|r"], firedEvent,
@@ -211,14 +205,8 @@ function ExwindTools:SendEvent(event, ...)
     local handlers = self.EventHandlers[event]
     if not handlers then return end
 
-    local perf = self.PerfMonitor
-    local capture = perf and type(perf.IsCaptureActive) == "function" and perf:IsCaptureActive()
     for owner, func in pairs(handlers) do
-        local t0 = capture and debugprofilestop()
         local ok, err = pcall(func, event, ...)
-        if t0 then
-            perf:RecordTiming("Event:" .. tostring(event) .. ":" .. tostring(owner), debugprofilestop() - t0)
-        end
         if not ok then
             self:LogError(string.format("SendEvent[%s][%s]", event, owner), err)
             print(string.format(L["|cffff0000[ExwindTools] SendEvent 错误 [%s][%s]: %s|r"], event, owner, tostring(err)))
@@ -230,14 +218,8 @@ end
 ExwindTools.CoreEventFrame:SetScript("OnEvent", function(_, event, ...)
     local handlers = ExwindTools.EventHandlers[event]
     if handlers then
-        local perf = ExwindTools.PerfMonitor
-        local capture = perf and type(perf.IsCaptureActive) == "function" and perf:IsCaptureActive()
         for owner, func in pairs(handlers) do
-            local t0 = capture and debugprofilestop()
             local ok, err = pcall(func, event, ...)
-            if t0 then
-                perf:RecordTiming("Event:" .. tostring(event) .. ":" .. tostring(owner), debugprofilestop() - t0)
-            end
             if not ok then
                 ExwindTools:LogError(string.format("Event[%s][%s]", event, owner), err)
                 print(string.format(L["|cffff0000[ExwindTools] 事件错误 [%s][%s]: %s|r"], event, owner, tostring(err)))

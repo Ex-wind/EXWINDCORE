@@ -730,32 +730,18 @@ EXDB.NPCNameByID = EXDB.NPCNameSource
 -- END GENERATED S2 NPC LOCALES
 
 EXDB.InstanceNoteInstanceSource = {
-    --{ mapID = 658, instanceID = 658, challengeModeID = 556, kind = "party", name = "萨隆矿坑", nameEN = "Pit of Saron", zhTW = "薩隆礦坑", zhCNShort = "萨隆", enUSShort = "POS", category = "mplus_s1" },
-    --{ mapID = 1209, instanceID = 1209, challengeModeID = 161, kind = "party", name = "通天峰", nameEN = "Skyreach", zhTW = "通天峰", zhCNShort = "通天", enUSShort = "SR", category = "mplus_s1" },
-    --{ mapID = 1753, instanceID = 1753, challengeModeID = 239, kind = "party", name = "执政团之座", nameEN = "Seat of the Triumvirate", zhTW = "執政團之座", zhCNShort = "执政", enUSShort = "SEAT", category = "mplus_s1" },
-    --{ mapID = 2526, instanceID = 2526, challengeModeID = 402, kind = "party", name = "艾杰斯亚学院", nameEN = "Algeth'ar Academy", zhTW = "艾傑斯亞學院", zhCNShort = "学院", enUSShort = "AA", category = "mplus_s1" },
-    --{ mapID = 2805, instanceID = 2805, challengeModeID = 557, kind = "party", name = "风行者之塔", nameEN = "Windrunner Spire", zhTW = "風行者之塔", zhCNShort = "风行", enUSShort = "WS", category = "mplus_s1" },
-    --{ mapID = 2811, instanceID = 2811, challengeModeID = 558, kind = "party", name = "魔导师平台", nameEN = "Magister's Terrace", zhTW = "魔導師平臺", zhCNShort = "魔导", enUSShort = "MT", category = "mplus_s1" },
+
     { mapID = 1762, instanceID = 1762, challengeModeID = 249, kind = "party", name = "诸王之眠", nameEN = "Kings' Rest", zhCNShort = "诸王", enUSShort = "KR", category = "other_1200" },
     { mapID = 1877, instanceID = 1877, challengeModeID = 250, kind = "party", name = "塞塔里斯神庙", nameEN = "Temple of Sethraliss", zhCNShort = "神庙", enUSShort = "ToS", category = "other_1200" },
     { mapID = 2521, instanceID = 2521, challengeModeID = 399, kind = "party", name = "红玉新生法池", nameEN = "Ruby Life Pools", zhCNShort = "红玉", enUSShort = "RLP", category = "other_1200" },
     { mapID = 2813, instanceID = 2813, challengeModeID = 587, kind = "party", name = "密谋小径", nameEN = "Murder Row", zhCNShort = "密谋", enUSShort = "MR", category = "other_1200" },
     { mapID = 2825, instanceID = 2825, challengeModeID = 586, kind = "party", name = "纳洛拉克的洞穴", nameEN = "Den of Nalorakk", zhCNShort = "洞穴", enUSShort = "DoN", category = "other_1200" },
     { mapID = 2859, instanceID = 2859, challengeModeID = 584, kind = "party", name = "夺目谷", nameEN = "The Blinding Vale", zhCNShort = "夺目", enUSShort = "BV", category = "other_1200" },
-    --{ mapID = 2874, instanceID = 2874, challengeModeID = 560, kind = "party", name = "迈萨拉洞窟", nameEN = "Maisara Caverns", zhTW = "邁薩拉洞窟", zhCNShort = "洞窟", enUSShort = "MC", category = "mplus_s1" },
-    --{ mapID = 2912, instanceID = 2912, kind = "raid", name = "虚影尖塔", nameEN = "The Voidspire", zhTW = "虛影尖塔", category = "raid_s1" },
-    --{ mapID = 2913, instanceID = 2913, kind = "raid", name = "进军奎尔丹纳斯", nameEN = "March on Quel'Danas", zhTW = "進軍奎爾丹納斯", category = "raid_s1" },
-    --{ mapID = 2915, instanceID = 2915, challengeModeID = 559, kind = "party", name = "节点希纳斯", nameEN = "Nexus-Point Xenas", zhTW = "節點希納斯", zhCNShort = "节点", enUSShort = "NPX", category = "mplus_s1" },
     { mapID = 2923, instanceID = 2923, challengeModeID = 585, kind = "party", name = "虚空之痕竞技场", nameEN = "Voidscar Arena", zhCNShort = "虚空", enUSShort = "VA", category = "other_1200" },
-    --{ mapID = 2939, instanceID = 2939, kind = "raid", name = "梦境裂隙", nameEN = "The Dreamrift", zhTW = "夢境裂隙", category = "raid_s1" },
     { mapID = 2993, instanceID = 2993, challengeModeID = 588, kind = "party", name = "毒牙祭坛", nameEN = "Altar of Fangs", zhCNShort = "毒牙", enUSShort = "AoF", category = "other_1200" },
     { mapID = 1592, instanceID = 1592, kind = "raid", name = "孢陨幽境", nameEN = "Sporefall", category = "raid_s1" },
-
-
-    -- BEGIN GENERATED S2 RAID INSTANCE LOCALES
     { mapID = 3004, instanceID = 3004, kind = "raid", category = "raid_s2", name = "烈毒之渊", nameEN = "The Venomous Abyss" },
     { mapID = 2987, instanceID = 2987, kind = "raid", category = "raid_s2", name = "潮缚石窟", nameEN = "The Tidebound Grotto" },
-    -- END GENERATED S2 RAID INSTANCE LOCALES
 }
 
 -- BEGIN GENERATED S2 MAP LOCALES

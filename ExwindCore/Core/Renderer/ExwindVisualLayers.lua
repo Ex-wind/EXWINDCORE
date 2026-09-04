@@ -28,10 +28,10 @@ local profiles = {
     previewChild  = { id = "previewChild",  drawLayer = "OVERLAY",   subLevel = 6, frameLevelOffset = 20 },
     previewEditor = { id = "previewEditor", drawLayer = "HIGHLIGHT", subLevel = 7, frameLevelOffset = 30 },
 
-    -- 所有 EXWIND 编辑模式共用的一套前景覆盖视觉。背景、边框与唯一模块名都承载在
-    -- 同一份 visual-layer 记录内，确保它们压过条/图标/children；它不拥有鼠标，也不
-    -- 区分产品家族。标题使用独立的最高级文本承载 Frame，只为避开 StatusBar/Cooldown
-    -- 等子 Frame 的跨 Frame 绘制排序；它不是第二套 Overlay，也没有第二个标题。
+    -- 所有 EXWIND 编辑模式共用的一套选择视觉。填充属于宿主背景，不能遮挡模块内容；
+    -- 边框与唯一模块名保持前景。它不拥有鼠标，也不区分产品家族。标题使用独立的
+    -- 最高级文本承载 Frame，只为避开 StatusBar/Cooldown 等子 Frame 的跨 Frame 绘制
+    -- 排序；它不是第二套 Overlay，也没有第二个标题。
     editModeOverlay    = { id = "editModeOverlay",    drawLayer = "HIGHLIGHT", subLevel = 7, frameLevelOffset = 100 },
     editModeBackground = { id = "editModeBackground", drawLayer = "BACKGROUND", subLevel = 0, frameLevelOffset = 30 },
     editModeBorder     = { id = "editModeBorder",     drawLayer = "OVERLAY",    subLevel = 7, frameLevelOffset = 30 },
@@ -124,7 +124,9 @@ function EXUI:EnsureEditModeVisualLayer(host)
         layer.frame:SetAllPoints(host)
         self:ApplyVisualLayer(layer.frame, profiles.editModeOverlay, host)
 
-        layer.background = self:CreateVisualTexture(layer.frame, profiles.editModeBackground)
+        -- 填充由宿主的 BACKGROUND 层绘制；selection frame 只在前景承载边框
+        -- 和输入范围，避免半透明填充压住名称、倒数数字等实际预览内容。
+        layer.background = self:CreateVisualTexture(host, profiles.editModeBackground)
         layer.background:SetTexture("Interface\\Buttons\\WHITE8X8")
         for _, edge in ipairs({ "top", "bottom", "left", "right" }) do
             local border = self:CreateVisualTexture(layer.frame, profiles.editModeBorder)

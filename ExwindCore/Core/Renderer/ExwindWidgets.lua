@@ -1077,11 +1077,17 @@ end
 local function ApplySecretSafeIconBorder(widget)
     local border = widget.secretSafeBorder
     if not border then return end
+
+    -- Secret-safe and Backdrop borders are mutually exclusive. A newly
+    -- acquired IconWidget first applies DEFAULT_ICON_STYLE, which can leave
+    -- the Backdrop border visible before this presentation mode is selected.
+    widget.border:Hide()
+
     if IconStyleValue(widget.iconStyle, "showBorder") == false then
         border:Hide()
         return
     end
-    widget.border:Hide()
+
     border:Show()
 end
 

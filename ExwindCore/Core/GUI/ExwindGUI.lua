@@ -706,7 +706,7 @@ function EXUI:CreateDropdown(parent, width, label, items, currentValue, onSelect
 
     if EXFactory then
         -- 从池获取
-        dropdown = EXFactory:Acquire("GridDropdown", parent)
+        dropdown = self:AcquireControl("GridDropdown", parent)
     else
         -- 兜底：传统创建
         dropdown = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
@@ -821,7 +821,7 @@ function EXUI:CreateLSMDropdown(parent, mediaType, width, label, currentValue, o
 
     if EXFactory then
         -- 复用 GridLSMDropdown 池
-        dropdown = EXFactory:Acquire("GridLSMDropdown", parent)
+        dropdown = self:AcquireControl("GridLSMDropdown", parent)
     else
         -- 兜底
         dropdown = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
@@ -893,7 +893,7 @@ function EXUI:CreateLSMTextureDropdown(parent, mediaType, width, label, currentV
 
     if EXFactory then
         -- 复用 GridLSMDropdown 池
-        dropdown = EXFactory:Acquire("GridLSMDropdown", parent)
+        dropdown = self:AcquireControl("GridLSMDropdown", parent)
     else
         -- 兜底
         dropdown = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
@@ -984,7 +984,7 @@ function EXUI:CreateLSMSoundDropdown(parent, width, label, currentValue, onSelec
     local EXFactory = _G.ExwindFactory
     local dropdown
     if EXFactory then
-        dropdown = EXFactory:Acquire("GridLSMDropdown", parent)
+        dropdown = self:AcquireControl("GridLSMDropdown", parent)
     else
         dropdown = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
         dropdown.labelText = EXUI:CreateVisualFontString(dropdown, EXFONTFRAME, "GameFontHighlight")
@@ -1091,7 +1091,7 @@ function EXUI:CreateMultiSelectDropdown(parent, width, label, options, selection
 
     if EXFactory then
         -- 复用 GridDropdown 池 (它本身就是 DropdownButton + Label)
-        dropdown = EXFactory:Acquire("GridDropdown", parent)
+        dropdown = self:AcquireControl("GridDropdown", parent)
     else
         -- 兜底
         dropdown = CreateFrame("DropdownButton", nil, parent, "WowStyle1DropdownTemplate")
@@ -1199,7 +1199,7 @@ function EXUI:CreateButton(parent, width, height, text, onClick)
 
     if EXFactory then
         -- 从池获取
-        btn = EXFactory:Acquire("GridButton", parent)
+        btn = self:AcquireControl("GridButton", parent)
         -- 清理旧的 OnClick
         btn:SetScript("OnClick", nil)
         btn:SetScript("PreClick", nil)
@@ -1311,7 +1311,7 @@ function EXUI:CreateCheckbox(parent, text, initialValue, onClick)
 
     if EXFactory then
         -- 从池获取（池中已预创建 checkbox 和 label）
-        container = EXFactory:Acquire("GridCheckbox", parent)
+        container = self:AcquireControl("GridCheckbox", parent)
     else
         -- 兜底：传统创建
         container = CreateFrame("Frame", nil, parent)
@@ -1376,7 +1376,7 @@ function EXUI:CreateSlider(parent, width, label, minVal, maxVal, curVal, step, f
     local slider
 
     if EXFactory then
-        slider = EXFactory:Acquire("GridSlider", parent)
+        slider = self:AcquireControl("GridSlider", parent)
     else
         slider = CreateFrame("Slider", nil, parent, "MinimalSliderWithSteppersTemplate")
     end
@@ -1744,7 +1744,7 @@ function EXUI:CreateHeader(parent, text, width)
 
     if EXFactory then
         -- 从池获取（池中已预创建 Title 和 Line）
-        container = EXFactory:Acquire("GridHeader", parent)
+        container = self:AcquireControl("GridHeader", parent)
     else
         -- 兜底：传统创建
         container = CreateFrame("Frame", nil, parent)
@@ -1821,7 +1821,7 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
     local btn
 
     if EXFactory then
-        btn = EXFactory:Acquire("GridColorButton", parent)
+        btn = self:AcquireControl("GridColorButton", parent)
     else
         btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
         if not btn.swatch then
@@ -2146,6 +2146,9 @@ end
 
 local function CreateCompositePopupHost(owner, width, height)
     local popup = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    if EXUI.SetControlAppearance then
+        EXUI:SetControlAppearance(popup, EXUI:GetControlAppearance(owner))
+    end
     popup:SetSize(width, height)
     -- 主面板和它的 ModalLayer 同样在 DIALOG；弹窗必须明显高于二者，
     -- 而其下拉列表再由 FULLSCREEN_DIALOG 覆盖。
@@ -3627,7 +3630,7 @@ function EXUI:CreateEditBox(parent, text, w, h, labelText, options)
 
     -- [v4.3.2] 单行模式走池化通道
     if EXFactory and not isMultiLine then
-        local container = EXFactory:Acquire("GridInput", parent)
+        local container = self:AcquireControl("GridInput", parent)
 
         -- 清理旧回调
         container:SetScript("OnTextChanged", nil)

@@ -1701,6 +1701,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         if ele.type ~= "card" and ele.type ~= "custom" then
             EXUI:UpdateLabelStyle(widget, ele.labelSize, ele.labelPos)
         end
+        if EXUI.ApplyControlAppearance then EXUI:ApplyControlAppearance(widget) end
 
         if self.IsLiveEditing and self.LiveContainer == container then
             self:WrapWidgetForEdit(widget, ele.key, container)

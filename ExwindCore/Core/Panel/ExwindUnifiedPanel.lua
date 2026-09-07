@@ -381,6 +381,10 @@ end
 -- Provider 顶端 Tab 的稳定宿主。Shell 只负责按钮与选中视觉；route、页面状态、
 -- Renderer 调用仍由 Provider 自己拥有。Tools 不使用此 API；EXBoss/EXAura 可复用。
 function Panel:ClearTopTabs()
+    if self.TopChoiceGroup then
+        self.TopChoiceGroup:Release()
+        self.TopChoiceGroup = nil
+    end
     for _, button in ipairs(self.TopTabButtons or {}) do
         button:Hide()
         button:SetScript("OnClick", nil)
@@ -389,10 +393,28 @@ function Panel:ClearTopTabs()
     self.TopTabButtons = self.TopTabButtons or {}
 end
 
-function Panel:SetTopTabs(providerID, tabs, activeKey, onSelect)
+function Panel:SetTopTabs(providerID, tabs, activeKey, onSelect, options)
     if not self.TopTabHost then return false end
     self:ClearTopTabs()
     self.TopTabOwner = providerID
+    if options and options.choiceGroup then
+        local items = {}
+        for _, tab in ipairs(tabs or {}) do
+            items[#items + 1] = { id = tab.key, label = tab.label, disabled = tab.disabled }
+        end
+        local group = EXUI:CreateTabGroup(self.TopTabHost, {
+            items = items, value = activeKey, sizing = "content", itemHeight = Layout.TOP_TAB_HEIGHT - 2,
+            width = math.max(1, self.TopTabHost:GetWidth() - 28),
+            onChange = function(key)
+                if self.TopTabOwner ~= providerID then return false end
+                if onSelect then return onSelect(key) end
+            end,
+        })
+        group:SetPoint("TOPLEFT", 14, -1)
+        group:SetPoint("TOPRIGHT", -14, -1)
+        self.TopChoiceGroup = group
+        return true
+    end
     local previous
 
     for index, tab in ipairs(tabs or {}) do

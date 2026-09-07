@@ -48,6 +48,8 @@ Core\Renderer\ExwindEditMode.lua
 Core\GUI\ExwindFramePool.lua
 Core\GUI\ExwindVirtualList.lua
 Core\GUI\ExwindGUI.lua
+Core\GUI\ExwindControlAppearance.lua
+Core\GUI\ExwindChoiceGroup.lua
 Core\Renderer\ExwindWidgets.lua
 Core\Renderer\ExwindRegionElements.lua
 Core\Renderer\ExwindPreviewWorkspace.lua

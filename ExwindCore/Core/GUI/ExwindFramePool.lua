@@ -153,6 +153,9 @@ local function StandardReset(pool, frame)
     frame._options = nil
     frame._selections = nil
     frame._onUpdate = nil
+    frame._exControlAppearance = nil
+    frame._exControlFontSize = nil
+    frame._exControlFontStyle = nil
 end
 
 -------------------------------------------------------
@@ -167,6 +170,7 @@ function EXFactory:InitPool(type, frameType, template, customInit)
 
     local pool = CreateFramePool(frameType or "Frame", UIParent, template, StandardReset)
     pool.customInit = customInit
+    pool.exFrameType, pool.exTemplate = frameType or "Frame", template
     self.Pools[type] = pool
 end
 
@@ -179,6 +183,7 @@ end
 -------------------------------------------------------
 function EXFactory:InitCompositePool(type, template)
     self:InitPool(type, "Frame", template or "BackdropTemplate")
+    self.Pools[type].exComposite = true
 end
 
 function EXFactory:AcquireCompositeHost(type, parent)
@@ -206,7 +211,10 @@ end
 -------------------------------------------------------
 -- API: 借用 (Acquire)
 -------------------------------------------------------
-function EXFactory:Acquire(type, parent)
+function EXFactory:Acquire(type, parent, appearance)
+    if EXUI.ResolveControlPool then
+        type = EXUI:ResolveControlPool(type, parent, appearance)
+    end
     local pool = self.Pools[type]
     if not pool then
         -- 如果没初始化 尝试建立一个默认的

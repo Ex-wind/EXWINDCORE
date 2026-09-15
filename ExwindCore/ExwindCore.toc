@@ -65,6 +65,7 @@ Core\Renderer\ExwindStandardPreview.lua
 Core\Renderer\ExwindStandardTimerBar.lua
 Core\Renderer\ExwindGlow.lua
 Core\GUI\ExwindGrid.lua
+Core\GUI\ExwindSettingsPages.lua
 Core\GUI\ExwindToolsUI.lua
 Core\Renderer\ExwindModuleDefinition.lua
 Core\Renderer\ExwindCentralRender.lua
@@ -90,6 +91,7 @@ Core\ExwindExport.lua
 # 5. 开发调试工具 (可选载入)
  Core\ExwindDevMonitor.lua
  Core\ExwindDevTest.lua
+ Core\ExwindQinglanRoundedLab.lua
 # Core\ExwindGlowPreview.lua
 
 #打包发布时删除结束

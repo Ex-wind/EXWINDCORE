@@ -376,8 +376,16 @@ function EXUI:FocusModuleGridKey(moduleKey, gridKey, scrollFrame, container)
     if not scrollFrame or type(scrollFrame.SetVerticalScroll) ~= "function" or not container then return false end
     local grid = _G.ExwindGrid
     if not grid or type(grid.ContainerStates) ~= "table" then return false end
+    local cardSession = container._exMountedCardSession
+    if not cardSession and EXUI.ActiveCardSession and EXUI.ActiveCardSession.parent == container then
+        cardSession = EXUI.ActiveCardSession
+    end
 
     local function ResolveTarget()
+        if cardSession then
+            if cardSession.released or cardSession.context.moduleKey ~= moduleKey then return nil end
+            return grid:GetSessionWidget(cardSession, gridKey)
+        end
         local state = grid.ContainerStates[container]
         if not state or state.moduleKey ~= moduleKey then return nil end
         local target = state.widgets and state.widgets[gridKey]
@@ -1488,7 +1496,7 @@ end
 -- =========================================================
 function EXUI:ReleaseModuleSettingsPage(page)
     page = page or EXUI._InternalPageFrame
-    if not page or not page._exGridPage then
+    if not page or (not page._exGridPage and not page._exCardPage) then
         return false
     end
 
@@ -1504,7 +1512,23 @@ function EXUI:ReleaseModuleSettingsPage(page)
         grid.LiveContainer = nil
     end
 
-    grid:ReleaseContainerWidgets(page)
+    if page._exCardSession then
+        page._exCardSession:Release()
+        page._exCardSession = nil
+        if EXUI.ActiveCardSession and EXUI.ActiveCardSession.released then EXUI.ActiveCardSession = nil end
+    else
+        grid:ReleaseContainerWidgets(page)
+    end
+    if page._exResetButton then
+        page._exResetButton:SetScript("OnClick", nil)
+        page._exResetButton:Hide()
+        page._exResetButton:SetParent(nil)
+        page._exResetButton = nil
+    end
+    if page._exResetCard then
+        page._exResetCard:Release()
+        page._exResetCard = nil
+    end
 
     -- Grid 之外由设置页直接创建的操作按钮同样不能被 PageCache root 强引用。
     -- 它们不是对象池控件，离页时解绑回调并脱离页面；下次进入时按当前模块状态重建。
@@ -2200,9 +2224,8 @@ function EXUI:ApplyModuleCardState(card, isEnabled)
     if card.SettingsBtn then
         local key = card._moduleKey
         local controller = type(EXUI.GetCentralModuleController) == "function" and EXUI:GetCentralModuleController(key) or nil
-        local ready = isEnabled and (ExwindTools.RegisteredLayouts[key] ~= nil
-            or (ExwindTools.ModuleDefinitions and ExwindTools.ModuleDefinitions[key] ~= nil)
-            or controller ~= nil)
+        local ready = isEnabled and type(EXUI.GetModuleSettingsPageID) == "function"
+            and EXUI:GetModuleSettingsPageID(key) ~= nil
         card.SettingsBtn:SetEnabled(ready == true)
         card.SettingsBtn:SetAlpha(ready and 1 or 0.35)
     end
@@ -2425,14 +2448,15 @@ function EXUI:ShowModuleSettingsPage()
 
     EXUI.SwitchingModule = true
 
-    -- 现有 ModuleDefinition / legacy layout 与 Central basicIcon 是三条显式
-    -- 路线；Central 不会被包装或回退进前两者。
+    -- 所有设置页只消费 gui.version=1 的唯一登记。Central / ModuleDefinition
+    -- 仍各自持有业务与预览 owner，但不再输出旧 layout。
     local definition = ExwindTools.ModuleDefinitions and ExwindTools.ModuleDefinitions[EXUI.CurrentModule]
     local centralController = type(EXUI.GetCentralModuleController) == "function"
         and EXUI:GetCentralModuleController(EXUI.CurrentModule) or nil
-    local layoutData = centralController and centralController:BuildGridLayout()
-        or (definition and definition:GetLayout() or ExwindTools.RegisteredLayouts[EXUI.CurrentModule])
-    if layoutData and _G.ExwindGrid then
+    local pageID = type(EXUI.GetModuleSettingsPageID) == "function"
+        and EXUI:GetModuleSettingsPageID(EXUI.CurrentModule) or nil
+    local pageDeclaration = pageID and EXUI:GetSettingsPage(pageID) or nil
+    if pageDeclaration and _G.ExwindGrid then
         EXUI.RightPanel:Show()
         -- [Fix] 这里的 MainFrame 就是原生 Frame 了，不再需要 .frame
         EXUI.RightPanel:SetFrameLevel(EXUI.MainFrame:GetFrameLevel() + 10)
@@ -2500,11 +2524,8 @@ function EXUI:ShowModuleSettingsPage()
 
         -- 获取或创建 Grid 容器页面 (挂载到 ScrollChild 上)
         local page, isNew = EXUI:GetCachedPage("ModuleGrid_" .. EXUI.CurrentModule, EXUI.ModuleScrollChild)
-        page._exGridPage = true
-        if EXUI.ShellPanel and _G.ExwindGrid then
-            local metrics = EXUI.ShellPanel:GetMetrics()
-            _G.ExwindGrid:SetContainerCols(page, metrics.splitGridCols)
-        end
+        page._exGridPage = nil
+        page._exCardPage = true
         EXUI.ActivePageFrame = page
         EXUI._InternalPageFrame = page
 
@@ -2519,13 +2540,56 @@ function EXUI:ShowModuleSettingsPage()
         -- 渲染布局前先隐藏提示标签
         if EXUI.NoLayoutLabel then EXUI.NoLayoutLabel:Hide() end
 
-        -- 渲染布局
-        local config = centralController and centralController:GetConfig() or ExwindTools:GetModuleDB(EXUI.CurrentModule)
+        -- 每张卡片拥有真实 Body 与独立 Grid state。页面滚动高度只消费
+        -- session 汇总，不用旧 Render 的整页 +80 高度。
+        local config = centralController and centralController:GetConfig()
+            or (definition and definition:GetConfig() or ExwindTools:GetModuleDB(EXUI.CurrentModule))
         local currentModuleKey = EXUI.CurrentModule
-        _G.ExwindGrid:Render(page, layoutData, config, currentModuleKey, function()
-            -- Render 完成后通知当前模块面板已刷新（各模块可订阅此事件更新动态内容）
-            ExwindTools:UpdateState(currentModuleKey .. ".PanelRendered", GetTime())
-        end)
+        local binding = centralController and centralController.binding
+            or (type(EXUI.GetStandardConfigBinding) == "function" and EXUI:GetStandardConfigBinding(currentModuleKey))
+            or {
+                moduleKey = currentModuleKey,
+                getConfig = function() return config end,
+                notify = function(path, phase) EXUI:NotifyModuleValueChanged(currentModuleKey, path, phase) end,
+            }
+        local cardHost = CreateFrame("Frame", nil, page)
+        cardHost:SetPoint("TOPLEFT")
+        cardHost:SetPoint("TOPRIGHT")
+        cardHost:SetHeight(1)
+        page._exCardHost = cardHost
+        local namedBindings = type(EXUI.ResolveSettingsPageBindings) == "function"
+            and EXUI:ResolveSettingsPageBindings(pageID) or nil
+        local session
+        session = _G.ExwindGrid:MountCards(cardHost, pageDeclaration, {
+            pageId = pageID,
+            regionId = "main",
+            moduleKey = currentModuleKey,
+            scrollFrame = EXUI.ModuleScrollFrame,
+            defaultBinding = binding,
+            bindings = namedBindings,
+            resolveCompositeOptions = function(component, _, opts)
+                local lower = string.lower(component)
+                local spec = centralController and centralController.spec
+                if lower == "anchorgroup" and spec and spec.anchor then
+                    opts.bindRoot = spec.anchor.bindRoot == true
+                    opts.offsetXKey, opts.offsetYKey = spec.anchor.xKey, spec.anchor.yKey
+                    opts.defaultOffsetX, opts.defaultOffsetY = spec.anchor.defaultX or 0, spec.anchor.defaultY or 0
+                    opts.attachEnabledKey, opts.attachTargetKey = spec.anchor.attachEnabledKey, spec.anchor.attachTargetKey
+                    opts.onPickFrame = function() return centralController.anchor:StartFramePicker() end
+                elseif lower == "icongroup" then
+                    opts.hideIconID = true
+                end
+                return opts
+            end,
+            onContentHeightChanged = function(height)
+                if page._exCardSession ~= session then return end
+                local footerHeight = page._exResetCard and ((page._exResetCard:GetHeight() or 0) + 12) or 0
+                page:SetHeight(math.max(1, height + footerHeight))
+            end,
+        })
+        page._exCardSession = session
+        EXUI.ActiveCardSession = session
+        ExwindTools:UpdateState(currentModuleKey .. ".PanelRendered", GetTime())
 
         -- Render 已同步创建并激活 currentModuleKey 的 ContainerState；仅此时标准
         -- PreviewSurface 才能绑定正确的 Grid 容器，避免模块切换时读取旧模块状态。
@@ -2554,39 +2618,29 @@ function EXUI:ShowModuleSettingsPage()
             EXUI.PendingModuleScrollRestore = nil
         end
 
-        local resetBtn = EXUI:CreateSmallButton(page, L["重置当前模块设置"], function()
+        local resetCard = EXUI:CreateSettingsCard(page, {})
+        local resetBody = resetCard:GetBody()
+        local resetBtn = EXUI:CreateSmallButton(resetBody, L["重置当前模块设置"], function()
             local moduleName = (moduleMeta and moduleMeta.Name) or EXUI.CurrentModule or L["当前模块"]
             local message = string.format(L["你将重置%s模块设置，并重载。是否确定？"], moduleName)
             StaticPopup_Show("EXWIND_CONFIRM_RESET_MODULE", message, nil, { moduleKey = EXUI.CurrentModule })
         end)
-        resetBtn:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -20, 16)
-        resetBtn:SetFrameLevel(page:GetFrameLevel() + 50)
+        resetBtn:SetPoint("TOPRIGHT", resetBody, "TOPRIGHT", 0, 0)
+        resetBtn:SetSize(180, 30)
+        resetBtn:SetFrameLevel(resetCard:GetFrameLevel() + 5)
         resetBtn._exModuleSettingsTransient = true
-        page:SetHeight((page:GetHeight() or 1) + 52)
-
-        -- [New v4.2] 如果处于开发者模式，在右上角显示“编辑”按钮
-        if ExwindTools.State.DevMode then
-            local editBtn = EXUI:CreateSmallButton(page, L["|cff00ff00编辑布局|r"], function()
-                _G.ExwindGrid:ToggleLiveEdit(page, EXUI.CurrentModule)
-            end)
-            editBtn:SetPoint("TOPRIGHT", page, "TOPRIGHT", -20, -5)
-            editBtn:SetFrameLevel(page:GetFrameLevel() + 50)
-            editBtn._exModuleSettingsTransient = true
-        end
+        page._exResetButton = resetBtn
+        resetCard:SetContentHeight(30)
+        resetCard:ClearAllPoints()
+        resetCard:SetPoint("TOPLEFT", cardHost, "BOTTOMLEFT", 0, -12)
+        resetCard:SetPoint("TOPRIGHT", cardHost, "BOTTOMRIGHT", 0, -12)
+        page._exResetCard = resetCard
+        page:SetHeight((cardHost:GetHeight() or 1) + (resetCard:GetHeight() or 0) + 12)
     else
-        -- 模块未注册 Grid 布局，显示提示
+        -- 已加载且应有 GUI 的模块不能显示旧页或提示占位冒充成功。
         EXUI:ReleaseMountedModulePreview()
-        EXUI.RightPanel:Show()
-        EXUI.RightPanel:SetFrameLevel(EXUI.MainFrame:GetFrameLevel() + 10)
-
-        if not EXUI.NoLayoutLabel then
-            local lbl = EXUI:CreateVisualFontString(EXUI.RightPanel, EXFONTFRAME, "GameFontHighlightLarge")
-            lbl:SetPoint("CENTER", EXUI.RightPanel, "CENTER", 0, 0)
-            EXUI.NoLayoutLabel = lbl
-        end
-        EXUI.NoLayoutLabel:SetText("|cffff8800[" ..
-            moduleMeta.Name .. L["]|r\n\n 插件内容意外缺失\n 请在插件更新器重新安装插件\n 如重新安装无法解决，请通知插件作者\n\nPlugin content is unexpectedly missing.\nPlease reinstall the addon using the addon updater.\nIf reinstalling does not resolve the issue, please contact the addon author."])
-        EXUI.NoLayoutLabel:Show()
+        EXUI.SwitchingModule = nil
+        error("[EXUI Settings] routed module has no gui.version=1 page: " .. tostring(EXUI.CurrentModule), 2)
     end
 
 

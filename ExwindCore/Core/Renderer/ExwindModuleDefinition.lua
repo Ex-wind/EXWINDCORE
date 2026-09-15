@@ -3,7 +3,7 @@
 --
 -- 新模块唯一入口。一个 ModuleDefinition 同时声明设置页、Panel Preview、
 -- 输入事务与正式显示同步；它绝不经过 RegisterModuleLayout / RegisterModulePreview。
--- 旧注册表仍仅供未迁移模块使用，不能与本入口混用。
+-- Retired page layouts are not accepted as a fallback.
 -- =========================================================
 
 local ExwindTools = _G.ExwindTools
@@ -64,12 +64,7 @@ function Controller:GetConfig()
     return config
 end
 
-function Controller:GetLayout()
-    local layout = self.definition.settings.layout
-    layout = type(layout) == "function" and layout(self:GetConfig()) or layout
-    if type(layout) ~= "table" then error("ModuleDefinition settings.layout must resolve to table: " .. self.moduleKey, 2) end
-    return layout
-end
+function Controller:GetSettingsPageID() return self.settingsPageID end
 
 function Controller:MountPreview(dock)
     if self.panel and self.dock ~= dock then self:ReleasePreview() end
@@ -111,29 +106,30 @@ function Controller:RefreshActiveSurfaces(changedPath, phase)
     return self.definition.RefreshActiveSurfaces(self, changedPath, phase)
 end
 
--- 新模块唯一公开注册。注册后模块页从 definition.settings.layout 自动取得，
+-- 新模块唯一公开注册。注册后模块页从 definition.settings.gui 自动登记，
 -- Preview 也只由本 controller 管理；禁止与任一旧注册表并存。
 function ExwindTools:RegisterModule(definition)
     if type(definition) ~= "table" then error("RegisterModule requires definition table", 2) end
     local moduleKey = RequireModuleKey(definition.moduleKey, "RegisterModule")
     if self.ModuleDefinitions[moduleKey] then error("RegisterModule duplicate moduleKey: " .. moduleKey, 2) end
-    if self.RegisteredLayouts and self.RegisteredLayouts[moduleKey] then
-        error("RegisterModule cannot coexist with RegisterModuleLayout: " .. moduleKey, 2)
-    end
     if self.ModulePreviewRenderers and self.ModulePreviewRenderers[moduleKey] then
         error("RegisterModule cannot coexist with RegisterModulePreview: " .. moduleKey, 2)
     end
     RequireFunction(definition.getConfig, "getConfig")
-    if type(definition.settings) ~= "table" or definition.settings.layout == nil then
-        error("RegisterModule requires settings.layout", 2)
+    if type(definition.settings) ~= "table" or type(definition.settings.gui) ~= "table" then
+        error("RegisterModule requires settings.gui using gui.version=1/cards", 2)
     end
     if type(definition.display) ~= "table" then error("RegisterModule requires display table", 2) end
     RequireFunction(definition.display.buildPanel, "display.buildPanel")
     RequireFunction(definition.RefreshActiveSurfaces, "RefreshActiveSurfaces")
     definition.display.kind = definition.display.kind or "icon"
 
-    local controller = setmetatable({ moduleKey = moduleKey, definition = definition }, Controller)
+    local pageID = "ExwindTools:" .. moduleKey
+    EXUI:ValidateSettingsPageDeclaration(pageID, definition.settings.gui)
+    local controller = setmetatable({ moduleKey = moduleKey, definition = definition, settingsPageID = pageID }, Controller)
     self.ModuleDefinitions[moduleKey] = controller
+    EXUI:RegisterSettingsPage(pageID, definition.settings.gui, { addon = "ExwindTools", moduleKey = moduleKey })
+    EXUI:RegisterModuleSettingsPage(moduleKey, pageID)
     EXUI:RegisterModuleValueController(moduleKey, controller)
     if definition.editable ~= nil then
         if type(definition.editable) ~= "table" then error("RegisterModule editable must be table", 2) end
@@ -295,19 +291,19 @@ function EXUI:RegisterBasicTimerBar(declaration)
         _basicSchema = schema,
         _basicState = { active = false },
         settings = {
-            layout = {
-                { key = "header", type = "header", x = 1, y = 1, w = 197, h = 8,
-                    label = "EXUI Standard TimerBar Test", labelSize = 25 },
-                { key = "description", type = "description", x = 1, y = 14, w = 197, h = 10,
-                    label = "/run extoolstest(\"timerbar\", 5, \"text\", 8, \"atlas\")" },
-                { key = schema.timerBarKey, type = "timerbargroup", x = 1, y = 27, w = 197, h = 56,
-                    measure = true, label = "TimerBar", opts = {} },
-                { key = schema.textA.key, type = "fontgroup", x = 1, y = 87, w = 197, h = 50,
-                    measure = true, label = L["法术名称"], opts = {} },
-                { key = schema.textB.key, type = "fontgroup", x = 1, y = 141, w = 197, h = 50,
-                    measure = true, label = L["目标名称"], opts = {} },
-                { key = schema.textC.key, type = "fontgroup", x = 1, y = 195, w = 197, h = 50,
-                    measure = true, label = L["时间"], opts = {} },
+            gui = {
+                version = 1,
+                title = "EXUI Standard TimerBar Test",
+                cards = {
+                    { id = "usage", title = "EXUI Standard TimerBar Test", content = { kind = "grid", items = {
+                        { key = "description", type = "description", x = 1, y = 1, w = 196, h = 10,
+                            label = "/run extoolstest(\"timerbar\", 5, \"text\", 8, \"atlas\")" },
+                    } } },
+                    { id = "bar", title = "TimerBar", content = { kind = "composite", component = "timerbargroup", key = schema.timerBarKey } },
+                    { id = "textA", title = L["法术名称"], content = { kind = "composite", component = "fontgroup", key = schema.textA.key } },
+                    { id = "textB", title = L["目标名称"], content = { kind = "composite", component = "fontgroup", key = schema.textB.key } },
+                    { id = "textC", title = L["时间"], content = { kind = "composite", component = "fontgroup", key = schema.textC.key } },
+                },
             },
         },
         display = {

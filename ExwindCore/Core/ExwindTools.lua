@@ -428,7 +428,6 @@ _G.EXDebug = EXDebug
 --========================== 模块状态报告 ===============================
 --=======================================================================
 ExwindTools.ModuleStatus = {}
-ExwindTools.RegisteredLayouts = {}
 -- 模块默认值声明是源码唯一真源：模块作者可直接粘贴 Grid 导出的 EX_DEFAULTS。
 -- 它只在首次取得 ModuleDB 时编译为运行时扁平结构；运行时不存在第二份映射或转发。
 ExwindTools.ModuleDefaultDeclarations = {}
@@ -858,9 +857,7 @@ function ExwindTools:GetModuleDB(moduleKey, defaults)
 end
 
 function ExwindTools:RegisterModuleLayout(moduleKey, layoutData)
-    if type(moduleKey) == "string" and type(layoutData) == "table" then
-        self.RegisteredLayouts[moduleKey] = layoutData
-    end
+    error("RegisterModuleLayout is retired; register a gui.version=1 settings page for " .. tostring(moduleKey), 2)
 end
 
 local function OwnerBelongsToModule(owner, moduleKey)

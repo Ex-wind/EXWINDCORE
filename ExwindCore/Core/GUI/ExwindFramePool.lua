@@ -44,6 +44,10 @@ local function StandardReset(pool, frame)
     if not isDropdown then
         frame:SetScript("OnEnter", nil)
         frame:SetScript("OnLeave", nil)
+        -- SetScript clears only the primary handler. HookScript callbacks are
+        -- attached for the frame lifetime and cannot be removed, so their
+        -- installation markers must remain set across pool leases; clearing the
+        -- markers here would append another identical hook on every reuse.
     end
 
     -- [Fix] 只有按钮才有 OnClick，先判断类型再操作
@@ -117,8 +121,8 @@ local function StandardReset(pool, frame)
             frame.checkbox:SetScript("OnShow", nil)
             frame.checkbox:SetScript("OnHide", nil)
         end
-        -- 共享外观只安装一次、且闭包只引用这个持久 checkbox/container；
-        -- StandardReset 不尝试移除 HookScript，业务 OnClick 仍由每次借用重绑。
+        -- Checkbox 外观由持久的只读子 Frame 观察原生状态，不依赖这里被清理的
+        -- OnEnter/OnLeave；业务 OnClick 仍由每次借用重绑。
         if frame.checkbox.SetChecked then
             frame.checkbox:SetChecked(false)
         end
@@ -362,9 +366,9 @@ EXFactory:InitPool("IconTextCard", "Frame", "BackdropTemplate", function(f)
     f:SetSize(130, 65)
     f:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 14,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 }
     })
     f:SetBackdropColor(1, 1, 1, 0.05)
     f:SetBackdropBorderColor(1, 1, 1, 0.25)
@@ -401,9 +405,9 @@ EXFactory:InitPool("RunRow", "Frame", "BackdropTemplate", function(f)
     f:SetSize(300, 40)
     f:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 14,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 }
     })
     f:SetBackdropColor(1, 1, 1, 0.03)
     f:SetBackdropBorderColor(1, 1, 1, 0.25)

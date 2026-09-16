@@ -130,7 +130,7 @@ local function EnsureInteractionHighlight(overlay)
     if overlay.highlight then return overlay.highlight end
     local highlight = CreateFrame("Frame", nil, overlay, "BackdropTemplate")
     highlight:SetAllPoints(overlay)
-    highlight:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 2 })
+    highlight:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
     highlight:SetBackdropBorderColor(0.32, 0.82, 1.00, 0.95)
     highlight:SetBackdropColor(0.20, 0.65, 1.00, 0.10)
     highlight:Hide()

@@ -20,7 +20,7 @@ local function SetInteractionOverlayVisual(overlay, visible, dragging)
         overlay:SetBackdrop(nil)
         return
     end
-    overlay:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 2 })
+    overlay:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
     if dragging then
         overlay:SetBackdropBorderColor(1.00, 0.82, 0.20, 1.00)
         overlay:SetBackdropColor(1.00, 0.72, 0.12, 0.18)

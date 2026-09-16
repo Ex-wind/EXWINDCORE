@@ -65,6 +65,7 @@ Core\Renderer\ExwindStandardPreview.lua
 Core\Renderer\ExwindStandardTimerBar.lua
 Core\Renderer\ExwindGlow.lua
 Core\GUI\ExwindGrid.lua
+Core\GUI\ExwindGridCardShowcase.lua
 Core\GUI\ExwindGUIShowcase.lua
 Core\GUI\ExwindToolsUI.lua
 Core\Renderer\ExwindModuleDefinition.lua
@@ -92,5 +93,6 @@ Core\ExwindExport.lua
  Core\ExwindDevMonitor.lua
  Core\ExwindDevTest.lua
 # Core\ExwindGlowPreview.lua
+Core\GUI\ExwindGlassDemo.lua
 
 #打包发布时删除结束

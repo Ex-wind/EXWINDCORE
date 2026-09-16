@@ -27,6 +27,9 @@ local Grid = {
     ContainerCols = setmetatable({}, { __mode = "k" }),
     ContainerPadding = setmetatable({}, { __mode = "k" }),
     ContainerStates = setmetatable({}, { __mode = "k" }),
+    CardSessions = setmetatable({}, { __mode = "k" }),
+    CardSessionOwners = setmetatable({}, { __mode = "k" }),
+    CardScrollSessions = setmetatable({}, { __mode = "k" }),
     _effectiveCols = 50,
 }
 
@@ -362,7 +365,7 @@ function Grid:ApplyPixelLayout(widget, container, element)
 
     local px, py, pw, ph = self:GetPixelRect(element.x, element.y, element.w, element.h, container)
     local width = widget._exGridWidth or pw
-    local height = widget._exGridFixedHeight or ph
+    local height = widget._exGridFixedHeight or widget._exGridCardMeasuredHeight or ph
 
     widget:ClearAllPoints()
     SetPhysicalPoint(widget, "TOPLEFT", container, "TOPLEFT", px, py)
@@ -414,10 +417,14 @@ function Grid:EnsurePixelLayoutHooks(container)
     container._exGridPixelLayoutHooksInstalled = true
 
     container:HookScript("OnShow", function(host)
-        Grid:RefreshPixelLayout(host)
+        if not Grid:RequestReflow(host) then
+            Grid:RefreshPixelLayout(host)
+        end
     end)
     container:HookScript("OnSizeChanged", function(host)
-        Grid:RefreshPixelLayout(host)
+        if not Grid:RequestReflow(host) then
+            Grid:RefreshPixelLayout(host)
+        end
     end)
 
     if not self._pixelLayoutWatcher then
@@ -427,7 +434,9 @@ function Grid:EnsurePixelLayoutHooks(container)
         watcher:SetScript("OnEvent", function()
             for host in pairs(Grid.ContainerStates) do
                 if host and host.IsShown and host:IsShown() then
-                    Grid:RefreshPixelLayout(host)
+                    if not Grid:RequestReflow(host) then
+                        Grid:RefreshPixelLayout(host)
+                    end
                 end
             end
         end)
@@ -468,9 +477,15 @@ function Grid:ReleaseWidgetInstance(widget)
     ReleaseEditOverlay(widget)
     ReleaseCardOutline(widget)
     local renderer = widget._customRenderer
+    local rendererReleaseReason
     if renderer and type(renderer.release) == "function" then
-        renderer.release(widget, widget._customContext)
+        local released, reason = pcall(renderer.release, widget, widget._customContext)
+        if not released then rendererReleaseReason = reason end
     end
+    widget._customRenderer = nil
+    widget._customRendererKey = nil
+    widget._customContext = nil
+    widget._exGridCardMeasuredHeight = nil
     local EXFactory = _G.ExwindFactory
     -- A few historical composite shells (the two GlowSettings definitions)
     -- are intentionally not pooled, but their standard child controls are.
@@ -488,6 +503,7 @@ function Grid:ReleaseWidgetInstance(widget)
     -- 回调/DB 引用，再归还外层宿主；不能把带旧闭包的控件直接塞回通用池。
     if EXFactory and widget._isCompositeHost then
         EXFactory:ReleaseCompositeHost(widget)
+        if rendererReleaseReason then error(rendererReleaseReason, 0) end
         return
     end
     if EXFactory and widget._gridType then
@@ -496,6 +512,7 @@ function Grid:ReleaseWidgetInstance(widget)
         widget:Hide()
         widget:SetParent(nil)
     end
+    if rendererReleaseReason then error(rendererReleaseReason, 0) end
 end
 
 -- 布局导出无法从运行时 table 反查其 Lua 局部变量名。模块可显式登记规格表
@@ -518,16 +535,19 @@ function Grid:ReleaseContainerWidgets(container)
     end
     local instances = state.instances or {}
     local released = {}
+    local firstReleaseReason
     for i = #instances, 1, -1 do
         local widget = instances[i]
+        instances[i] = nil
         if widget and not released[widget] then
             released[widget] = true
-            self:ReleaseWidgetInstance(widget)
+            local ok, reason = pcall(self.ReleaseWidgetInstance, self, widget)
+            if not ok and firstReleaseReason == nil then firstReleaseReason = reason end
         end
-        instances[i] = nil
     end
     table.wipe(state.widgets)
     table.wipe(state.widgetMap)
+    if firstReleaseReason ~= nil then error(firstReleaseReason, 0) end
     return true
 end
 
@@ -1222,6 +1242,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
             local EXFactory = _G.ExwindFactory
             if EXFactory then
                 widget = EXFactory:Acquire("GridCustomHost", container)
+                widget._gridType = "GridCustomHost"
             else
                 widget = CreateFrame("Frame", nil, container, "BackdropTemplate")
             end
@@ -1247,10 +1268,63 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
                 currentValue = curVal,
                 setter = Setter,
                 value = curVal,
+                _layoutWidth = pw,
+                _layoutHeight = ph,
             }
 
+            -- Card custom content keeps the established renderer signature, but
+            -- receives geometry notification helpers through the same ctx.  The
+            -- owner lookup is container-scoped so pooled custom hosts never keep
+            -- a previous card/session closure after ReleaseContainerWidgets.
+            local cardOwner = self.CardSessionOwners[container]
+            if cardOwner and cardOwner.session and cardOwner.card then
+                local contentGeneration = cardOwner.card.contentGeneration
+                local function IsCurrentCardContent()
+                    return not cardOwner.session.released
+                        and cardOwner.card.contentGeneration == contentGeneration
+                end
+                ctx.session = cardOwner.session
+                ctx.cardId = cardOwner.card.id
+                ctx.pageId = cardOwner.session.context and cardOwner.session.context.pageId
+                ctx.regionId = cardOwner.session.context and cardOwner.session.context.regionId
+                ctx.IsCurrent = IsCurrentCardContent
+                local activeSetter = ctx.setter
+                ctx.setter = function(first, second)
+                    if not IsCurrentCardContent() then return false end
+                    local value
+                    if first == ctx then value = second else value = first end
+                    return activeSetter(value)
+                end
+                ctx.SetContentHeight = function(first, second)
+                    if not IsCurrentCardContent() then return false end
+                    local height
+                    if first == ctx then height = second else height = first end
+                    return cardOwner.session:_SetReportedContentHeight(cardOwner.card, height)
+                end
+                ctx.GetContentWidth = function()
+                    if not IsCurrentCardContent() then return 0 end
+                    return tonumber(ctx._layoutWidth) or pw
+                end
+                ctx.RequestReflow = function()
+                    if not IsCurrentCardContent() then return false end
+                    return self:RequestReflow(container)
+                end
+            end
+
             if widget._customRendererKey ~= rendererKey and widget._customRenderer and type(widget._customRenderer.release) == "function" then
-                widget._customRenderer.release(widget, widget._customContext)
+                local released, releaseReason = pcall(widget._customRenderer.release,
+                    widget, widget._customContext)
+                if not released then
+                    widget._customRenderer = nil
+                    widget._customRendererKey = nil
+                    widget._customContext = nil
+                    local cleaned, cleanupReason = pcall(self.ReleaseWidgetInstance, self, widget)
+                    if not cleaned then
+                        error(tostring(releaseReason) .. "; stale custom cleanup failed: "
+                            .. tostring(cleanupReason), 0)
+                    end
+                    error(releaseReason, 0)
+                end
             end
 
             widget._customRenderer = renderer
@@ -1258,7 +1332,15 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
             widget._customContext = ctx
 
             if type(renderer.mount) == "function" then
-                renderer.mount(widget, ctx)
+                local mounted, mountReason = pcall(renderer.mount, widget, ctx)
+                if not mounted then
+                    local cleaned, cleanupReason = pcall(self.ReleaseWidgetInstance, self, widget)
+                    if not cleaned then
+                        error(tostring(mountReason) .. "; custom cleanup failed: "
+                            .. tostring(cleanupReason), 0)
+                    end
+                    error(mountReason, 0)
+                end
             end
         else
             widget = EXUI:CreateHeader(container, L["未注册的自定义组件"], pw)
@@ -1608,10 +1690,21 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
             widget._customContext = widget._customContext or {}
             widget._customContext.currentValue = curVal
             widget._customContext.value = curVal
+            local updated, updateReason = true
             if type(widget._customRenderer.update) == "function" then
-                widget._customRenderer.update(widget, widget._customContext)
+                updated, updateReason = pcall(widget._customRenderer.update,
+                    widget, widget._customContext)
             elseif type(widget._customRenderer.render) == "function" then
-                widget._customRenderer.render(widget, widget._customContext)
+                updated, updateReason = pcall(widget._customRenderer.render,
+                    widget, widget._customContext)
+            end
+            if not updated then
+                local cleaned, cleanupReason = pcall(self.ReleaseWidgetInstance, self, widget)
+                if not cleaned then
+                    error(tostring(updateReason) .. "; custom cleanup failed: "
+                        .. tostring(cleanupReason), 0)
+                end
+                error(updateReason, 0)
             end
         end
 
@@ -1686,6 +1779,1162 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
     return widget
 end
 
+-- =========================================================
+-- Settings Card containers (gui.version = 1)
+-- =========================================================
+-- This is an explicit opt-in path. Historical type="card" Grid items remain
+-- plain background widgets and are never promoted into content owners.
+
+Grid.CardLayoutDefaults = Grid.CardLayoutDefaults or {
+    gap = 12,
+    left = 0,
+    right = 0,
+    top = 0,
+    bottom = 0,
+}
+
+local CARD_GRID_COLS = 200
+local CARD_CONTAINER_TARGET = "$container"
+local CARD_POINT_FACTORS = {
+    TOPLEFT = { 0, 0 }, TOP = { 0.5, 0 }, TOPRIGHT = { 1, 0 },
+    LEFT = { 0, 0.5 }, CENTER = { 0.5, 0.5 }, RIGHT = { 1, 0.5 },
+    BOTTOMLEFT = { 0, 1 }, BOTTOM = { 0.5, 1 }, BOTTOMRIGHT = { 1, 1 },
+}
+
+local CardSessionMixin = {}
+
+local function CopyShallow(source)
+    local copy = {}
+    for key, value in pairs(type(source) == "table" and source or {}) do
+        copy[key] = value
+    end
+    return copy
+end
+
+local function CardLocation(context, cardId)
+    context = type(context) == "table" and context or {}
+    return tostring(context.pageId or "<page>") .. "/"
+        .. tostring(context.regionId or "<region>") .. "/"
+        .. tostring(cardId or "<card>")
+end
+
+local function ValidateGridCardItems(items, location)
+    if type(items) ~= "table" then
+        return nil, location .. ": grid content requires an items array"
+    end
+    for index, item in ipairs(items) do
+        local itemLocation = location .. "/item[" .. tostring(index) .. "]"
+        if type(item) ~= "table" then
+            return nil, itemLocation .. ": item must be a table"
+        end
+        if type(item.type) ~= "string" or item.type == "" then
+            return nil, itemLocation .. ": item.type must be a non-empty string"
+        end
+        if item.key == nil then
+            return nil, itemLocation .. ": item.key is required"
+        end
+        for _, field in ipairs({ "x", "y", "w", "h" }) do
+            if type(item[field]) ~= "number" or item[field] <= 0 then
+                return nil, itemLocation .. ": item." .. field .. " must be greater than zero"
+            end
+        end
+        if item.children then
+            local ok, reason = ValidateGridCardItems(item.children, itemLocation)
+            if not ok then return nil, reason end
+        end
+    end
+    return true
+end
+
+local function ValidateCardContent(grid, content, location)
+    if type(content) ~= "table" then
+        return nil, location .. ": content must be a table"
+    end
+    local kind = content.kind
+    if kind ~= "grid" and kind ~= "composite" and kind ~= "custom" then
+        return nil, location .. ": content.kind must be grid, composite, or custom"
+    end
+    if kind == "grid" then
+        if content.component ~= nil or content.renderer ~= nil then
+            return nil, location .. ": grid content cannot declare component or renderer"
+        end
+        return ValidateGridCardItems(content.items, location)
+    end
+    if kind == "composite" then
+        if content.items ~= nil or content.renderer ~= nil then
+            return nil, location .. ": composite content cannot declare items or renderer"
+        end
+        if type(content.component) ~= "string" or content.component == "" then
+            return nil, location .. ": composite content requires component"
+        end
+        local measures = EXUI and EXUI.GridComponentMeasures
+        if type(measures) ~= "table" or type(measures[string.lower(content.component)]) ~= "function" then
+            return nil, location .. ": composite component has no registered Grid measure: "
+                .. tostring(content.component)
+        end
+        if content.key == nil then
+            return nil, location .. ": composite content requires key"
+        end
+        return true
+    end
+    if content.items ~= nil or content.component ~= nil then
+        return nil, location .. ": custom content cannot declare items or component"
+    end
+    if type(content.renderer) ~= "string" or content.renderer == "" then
+        return nil, location .. ": custom content requires renderer"
+    end
+    if not grid:GetCustomRenderer(content.renderer) then
+        return nil, location .. ": unregistered custom renderer: " .. tostring(content.renderer)
+    end
+    if content.height ~= nil and (type(content.height) ~= "number" or content.height < 0) then
+        return nil, location .. ": custom content.height must be zero or greater"
+    end
+    if content.height ~= nil and content.measure ~= nil then
+        return nil, location .. ": custom content cannot declare both height and measure"
+    end
+    if content.measure ~= nil and type(content.measure) ~= "function"
+        and type(content.measure) ~= "table" and content.measure ~= true then
+        return nil, location .. ": custom content.measure must be true, a function, or a table"
+    end
+    return true
+end
+
+function Grid:ValidateCardDeclaration(declaration, context)
+    context = type(context) == "table" and context or {}
+    if type(declaration) ~= "table" then
+        return nil, "[ExwindGrid] settings-card declaration must be a table"
+    end
+    if declaration.version ~= 1 then
+        return nil, "[ExwindGrid] settings-card declaration requires version = 1"
+    end
+    if type(declaration.cards) ~= "table" then
+        return nil, "[ExwindGrid] settings-card declaration requires cards"
+    end
+
+    local arrayCount, maxIndex = 0, 0
+    for key in pairs(declaration.cards) do
+        if type(key) ~= "number" or key < 1 or key ~= math.floor(key) then
+            return nil, "[ExwindGrid] settings-card cards must be an ordered array"
+        end
+        arrayCount = arrayCount + 1
+        maxIndex = math.max(maxIndex, key)
+    end
+    if maxIndex ~= arrayCount then
+        return nil, "[ExwindGrid] settings-card cards array cannot contain holes"
+    end
+
+    local ids = {}
+    for index, definition in ipairs(declaration.cards) do
+        local definitionId = type(definition) == "table" and definition.id or nil
+        local base = "[ExwindGrid] " .. CardLocation(context, definitionId)
+        if type(definition) ~= "table" then
+            return nil, base .. ": card entry " .. tostring(index) .. " must be a table"
+        end
+        if type(definition.id) ~= "string" or definition.id == "" then
+            return nil, base .. ": card.id must be a non-empty string"
+        end
+        if ids[definition.id] then return nil, base .. ": duplicate card.id" end
+        ids[definition.id] = true
+        if definition.collapsed == true and definition.collapsible ~= true then
+            return nil, base .. ": collapsed=true requires collapsible=true"
+        end
+        if definition.minBodyHeight ~= nil and type(definition.minBodyHeight) ~= "number" then
+            return nil, base .. ": minBodyHeight must be a number"
+        end
+        if definition.maxBodyHeight ~= nil and type(definition.maxBodyHeight) ~= "number" then
+            return nil, base .. ": maxBodyHeight must be a number"
+        end
+        local minimum = definition.minBodyHeight or 0
+        local maximum = definition.maxBodyHeight
+        if minimum < 0 or (maximum and maximum < 0) or (maximum and minimum > maximum) then
+            return nil, base .. ": invalid minBodyHeight/maxBodyHeight"
+        end
+        local placement = definition.placement
+        if placement ~= nil then
+            if type(placement) ~= "table" then return nil, base .. ": placement must be a table" end
+            if placement.target ~= nil and type(placement.target) ~= "string" then
+                return nil, base .. ": placement.target must be a string"
+            end
+            if placement.side ~= nil and placement.side ~= "below" and placement.side ~= "right" then
+                return nil, base .. ": placement.side must be below or right"
+            end
+            if placement.align ~= nil
+                and placement.align ~= "start" and placement.align ~= "center" and placement.align ~= "end" then
+                return nil, base .. ": placement.align must be start, center, or end"
+            end
+            if placement.point ~= nil and not CARD_POINT_FACTORS[placement.point] then
+                return nil, base .. ": unknown placement.point"
+            end
+            if placement.relativePoint ~= nil and not CARD_POINT_FACTORS[placement.relativePoint] then
+                return nil, base .. ": unknown placement.relativePoint"
+            end
+            for _, field in ipairs({ "x", "y", "gap" }) do
+                if placement[field] ~= nil and type(placement[field]) ~= "number" then
+                    return nil, base .. ": placement." .. field .. " must be a number"
+                end
+            end
+            if placement.gap ~= nil and placement.gap < 0 then
+                return nil, base .. ": placement.gap cannot be negative"
+            end
+            local width = placement.width
+            if width ~= nil then
+                if type(width) == "number" then
+                    if width <= 0 then return nil, base .. ": placement.width must be greater than zero" end
+                elseif type(width) == "table" then
+                    if type(width.ratio) ~= "number" or width.ratio <= 0 then
+                        return nil, base .. ": placement.width.ratio must be greater than zero"
+                    end
+                    if width.offset ~= nil and type(width.offset) ~= "number" then
+                        return nil, base .. ": placement.width.offset must be a number"
+                    end
+                else
+                    return nil, base .. ": placement.width must be a number or { ratio, offset }"
+                end
+            end
+        end
+        local ok, reason = ValidateCardContent(self, definition.content, base)
+        if not ok then return nil, reason end
+    end
+    return true
+end
+
+local function ResolveCardBinding(session, definition, content)
+    local context = session.context
+    local bindingName = definition.binding
+    if bindingName == nil then bindingName = context.defaultBinding end
+    local binding
+    if type(bindingName) == "table" then
+        binding = bindingName
+    elseif bindingName ~= nil then
+        binding = type(context.bindings) == "table" and context.bindings[bindingName] or nil
+        if not binding then
+            error("[ExwindGrid] " .. CardLocation(context, definition.id)
+                .. ": binding not found: " .. tostring(bindingName), 0)
+        end
+    else
+        binding = context.binding or context
+    end
+    if type(binding) ~= "table" then
+        error("[ExwindGrid] " .. CardLocation(context, definition.id)
+            .. ": binding must be a table", 0)
+    end
+
+    local config
+    if type(binding.getConfig) == "function" then
+        config = binding.getConfig(binding, context, definition.id)
+    else
+        config = binding.config
+    end
+    if config == nil and binding == context then config = context.config end
+    if config == nil and content.kind == "custom" then
+        session._emptyConfig = session._emptyConfig or {}
+        config = session._emptyConfig
+    end
+    if type(config) ~= "table" then
+        error("[ExwindGrid] " .. CardLocation(context, definition.id)
+            .. ": content binding must resolve to a table", 0)
+    end
+    return {
+        source = binding,
+        config = config,
+        moduleKey = binding.moduleKey or context.moduleKey,
+    }
+end
+
+local function BuildCardContentSource(cardState, content)
+    if content.kind == "grid" then return content.items end
+
+    local opts = CopyShallow(content.opts)
+    if content.kind == "composite" then opts.bodyOnly = true end
+    local item = {
+        type = content.kind == "composite" and string.lower(content.component) or "custom",
+        key = content.key or ("__card_custom_" .. cardState.id),
+        renderer = content.renderer,
+        label = content.label or cardState.definition.title,
+        x = 1, y = 1, w = CARD_GRID_COLS, h = 1,
+        opts = opts,
+        parentKey = content.parentKey,
+        subKey = content.subKey,
+        setKey = content.setKey,
+        _exCardState = cardState,
+    }
+    if content.kind == "composite" then
+        item.measure = true
+    elseif content.height ~= nil then
+        item.measure = { preferredHeight = content.height, minHeight = content.height }
+    elseif content.measure ~= nil then
+        item.measure = content.measure
+    else
+        item.measure = true
+    end
+    return { item }
+end
+
+local function CardContentOwnsScroll(content)
+    return type(content) == "table" and content.kind == "custom"
+        and content.ownsScroll == true
+end
+
+-- Card bodies deliberately do not use CopyMeasuredItems: every relayout starts
+-- from the immutable declaration and never accumulates the previous pass's y/h
+-- offsets. Fixed Grid rows remain fixed; shared slots contribute one maximum
+-- bottom edge instead of being summed repeatedly.
+local function BuildCardMeasuredItems(grid, container, sourceItems, config, contextPath, cardState)
+    local measured = {}
+    for _, source in ipairs(sourceItems or {}) do
+        local item = CopyShallow(source)
+        local currentPath = contextPath
+        if item.parentKey then
+            currentPath = currentPath and (currentPath .. "." .. item.parentKey) or item.parentKey
+        end
+        local scopedDB = currentPath and GetConfigPath(config, currentPath) or config
+        local isEditorModuleCommonCard = item.type == "modulecommonsettings"
+            and type(item.key) == "string" and item.key:match("^modulecommonsettings_%d+$") ~= nil
+        if isEditorModuleCommonCard then item.measure = false end
+        if item.measure == nil and item.type == "modulecommonsettings"
+            and type(item.opts) == "table" and (tonumber(item.w) or 0) == grid._effectiveCols then
+            item.measure = true
+        end
+        if item.measure == nil and item.type == "slider" then item.measure = true end
+
+        local pixelHeight
+        if item._exCardState == cardState and cardState.reportedHeight ~= nil then
+            pixelHeight = cardState.reportedHeight
+        else
+            local _, _, pixelWidth = grid:GetPixelRect(item.x, item.y, item.w, item.h, container)
+            pixelHeight = NormalizeMeasuredHeight(GetMeasureResult(grid, item, pixelWidth, scopedDB))
+        end
+        if pixelHeight and pixelHeight >= 0 and grid.CellSize > 0 then
+            item._declaredH = math.max(1, tonumber(source.h) or 1)
+            item.h = math.max(1, math.ceil((pixelHeight + grid.Padding) / grid.CellSize))
+            item._exMeasuredPixelHeight = pixelHeight
+        end
+        if source.children then
+            item.children = BuildCardMeasuredItems(grid, container, source.children, config, currentPath, cardState)
+        end
+        measured[#measured + 1] = item
+    end
+    return measured
+end
+
+local function WalkRenderableCardItems(grid, items, config, contextPath, callback)
+    for _, item in ipairs(items or {}) do
+        local currentPath = contextPath
+        if item.parentKey then
+            currentPath = currentPath and (currentPath .. "." .. item.parentKey) or item.parentKey
+        end
+        if not currentPath or grid:ValidateContext(config, currentPath) then
+            if item.type == "TableGroup" then
+                if item.label then callback(item, currentPath) end
+                if item.children then
+                    WalkRenderableCardItems(grid, item.children, config, currentPath, callback)
+                end
+            else
+                callback(item, currentPath)
+            end
+        end
+    end
+end
+
+local function CurrentCardItemValue(config, item, fullPath)
+    if item.setKey then return config[item.setKey] end
+    return GetConfigPath(config, fullPath)
+end
+
+local function CardItemIdentity(item, contextPath)
+    local function Part(value)
+        return type(value) .. ":" .. tostring(value)
+    end
+    local dataKey = item.subKey or item.key
+    local fullPath
+    if contextPath then
+        fullPath = contextPath .. "." .. tostring(dataKey)
+    elseif item.parentKey then
+        fullPath = tostring(item.parentKey) .. "." .. tostring(dataKey)
+    else
+        fullPath = tostring(dataKey)
+    end
+    return table.concat({
+        Part(item.type),
+        Part(item.key),
+        Part(item.subKey),
+        Part(item.setKey),
+        Part(item.renderer or item.customType or item.widgetType),
+        Part(fullPath),
+    }, "\30")
+end
+
+local function ReflowCardBody(grid, cardState, bodyWidth)
+    local body = cardState.body
+    local state = GetContainerState(grid, body)
+    grid:SetContainerCols(body, CARD_GRID_COLS)
+    grid:SetContainerPadding(body, { left = 0, right = 0, top = 0, bottom = 0 })
+    grid:UpdateMetrics(math.max(1, bodyWidth), body)
+
+    local layout = BuildCardMeasuredItems(grid, body, cardState.sourceItems,
+        cardState.binding.config, nil, cardState)
+    state.config = cardState.binding.config
+    state.moduleKey = cardState.binding.moduleKey
+
+    local renderables = {}
+    WalkRenderableCardItems(grid, layout, cardState.binding.config, nil, function(item, contextPath)
+        renderables[#renderables + 1] = {
+            item = item,
+            identity = CardItemIdentity(item, contextPath),
+        }
+    end)
+    if #renderables ~= cardState.renderableCount then
+        cardState.session:_Diagnostic(cardState, "structure",
+            "content structure changed; call ReplaceCardContent(cardId, content) to rebuild only this card")
+        return cardState.lastContentHeight or 0
+    end
+    for ordinal, entry in ipairs(renderables) do
+        if cardState.identityByOrdinal[ordinal] ~= entry.identity then
+            cardState.session:_Diagnostic(cardState, "structure",
+                "content identity changed; call ReplaceCardContent(cardId, content) to rebuild only this card")
+            return cardState.lastContentHeight or 0
+        end
+    end
+
+    state.layout = layout
+    local maxBottom = 0
+    for ordinal, entry in ipairs(renderables) do
+        local item = entry.item
+        local widget = cardState.widgetsByOrdinal[ordinal]
+        local _, py, pw, ph = grid:GetPixelRect(item.x, item.y, item.w, item.h, body)
+        if widget then
+            if type(widget._exCompositeReflow) == "function" then
+                widget._exGridWidth = pw
+                widget:_exCompositeReflow(pw, item._exMeasuredPixelHeight or ph)
+            end
+            widget._exGridCardMeasuredHeight = widget._exGridFixedHeight == nil
+                and item._exMeasuredPixelHeight or nil
+            widget._exGridPixelElement = item
+            grid:ApplyPixelLayout(widget, body, item)
+            if item.type == "custom" and widget._customRenderer then
+                local ctx = widget._customContext or {}
+                ctx._layoutWidth = pw
+                ctx._layoutHeight = item._exMeasuredPixelHeight or ph
+                if type(widget._customRenderer.layout) == "function" then
+                    widget._customRenderer.layout(widget, ctx,
+                        ctx._layoutWidth, ctx._layoutHeight)
+                end
+            end
+            local actualHeight = item._exMeasuredPixelHeight
+                or widget._exGridFixedHeight
+                or (widget.GetHeight and widget:GetHeight())
+                or ph
+            maxBottom = math.max(maxBottom, -py + math.max(0, tonumber(actualHeight) or ph))
+        end
+    end
+    return math.max(0, maxBottom)
+end
+
+local function MountCardBody(grid, cardState)
+    local body = cardState.body
+    local state = GetContainerState(grid, body)
+    cardState.contentGeneration = (cardState.contentGeneration or 0) + 1
+    grid:ReleaseContainerWidgets(body)
+    state.layout = nil
+    state.config = cardState.binding.config
+    state.moduleKey = cardState.binding.moduleKey
+    ActivateContainerState(grid, body, state)
+    grid:SetContainerCols(body, CARD_GRID_COLS)
+    grid:SetContainerPadding(body, { left = 0, right = 0, top = 0, bottom = 0 })
+    grid:UpdateMetrics(math.max(1, body:GetWidth()), body)
+    cardState.widgetsByOrdinal = {}
+    cardState.identityByOrdinal = {}
+    cardState.renderableCount = 0
+
+    local layout = BuildCardMeasuredItems(grid, body, cardState.sourceItems,
+        cardState.binding.config, nil, cardState)
+    state.layout = layout
+    WalkRenderableCardItems(grid, layout, cardState.binding.config, nil, function(item, contextPath)
+        cardState.renderableCount = cardState.renderableCount + 1
+        local widget = grid:CreateWidget(body, item, cardState.binding.config,
+            cardState.binding.moduleKey, contextPath)
+        cardState.widgetsByOrdinal[cardState.renderableCount] = widget or false
+        cardState.identityByOrdinal[cardState.renderableCount] = CardItemIdentity(item, contextPath)
+    end)
+    grid:EnsurePixelLayoutHooks(body)
+end
+
+local function CardLayoutMetrics(session)
+    local defaults = Grid.CardLayoutDefaults
+    local shared = type(EXUI.GetSettingsCardLayoutDefaults) == "function"
+        and EXUI:GetSettingsCardLayoutDefaults() or nil
+    shared = type(shared) == "table" and shared or {}
+    local supplied = type(session.context.layoutDefaults) == "table" and session.context.layoutDefaults or {}
+    local function Metric(key)
+        local value = supplied[key]
+        if value == nil then value = shared[key] end
+        if value == nil then value = defaults[key] end
+        return tonumber(value) or 0
+    end
+    return {
+        gap = math.max(0, Metric("gap")),
+        left = math.max(0, Metric("left")),
+        right = math.max(0, Metric("right")),
+        top = math.max(0, Metric("top")),
+        bottom = math.max(0, Metric("bottom")),
+    }
+end
+
+local function ResolveDeclaredWidth(widthDeclaration, availableWidth)
+    if type(widthDeclaration) == "number" then return math.max(1, widthDeclaration) end
+    if type(widthDeclaration) == "table" then
+        return math.max(1, availableWidth * widthDeclaration.ratio + (tonumber(widthDeclaration.offset) or 0))
+    end
+    return nil
+end
+
+function CardSessionMixin:_Diagnostic(cardState, code, detail)
+    if self.released then return end
+    local key = tostring(cardState and cardState.id) .. ":" .. tostring(code)
+    if self._diagnosticKeys[key] then return end
+    self._diagnosticKeys[key] = true
+    local message = "[ExwindGrid] " .. CardLocation(self.context, cardState and cardState.id)
+        .. ": " .. tostring(detail)
+    self.diagnostics[#self.diagnostics + 1] = {
+        cardId = cardState and cardState.id,
+        code = code,
+        message = message,
+    }
+    if type(self.context.onDiagnostic) == "function" then
+        self.context.onDiagnostic(message, cardState and cardState.id, code)
+    elseif _G.print then
+        _G.print(message)
+    end
+end
+
+function CardSessionMixin:GetDiagnostics()
+    local result = {}
+    for index, diagnostic in ipairs(self.diagnostics) do result[index] = diagnostic end
+    return result
+end
+
+function CardSessionMixin:_SetReportedContentHeight(cardState, height)
+    if self.released or not cardState then return false end
+    height = tonumber(height)
+    if not height or height ~= height or height < 0 then
+        self:_Diagnostic(cardState, "height", "SetContentHeight requires a finite value >= 0")
+        return false
+    end
+    if cardState.reportedHeight ~= nil and math.abs(cardState.reportedHeight - height) < 0.01 then
+        return false
+    end
+    cardState.reportedHeight = height
+    self.grid:RequestReflow(cardState.body)
+    return true
+end
+
+function CardSessionMixin:_QueueRelayout()
+    if self.released then return false end
+    if self.reflowBusy then
+        self.reflowPending = true
+        return true
+    end
+    if self.reflowScheduled then return true end
+    self.reflowScheduled = true
+    self.reflowTicket = (self.reflowTicket or 0) + 1
+    local ticket = self.reflowTicket
+    local generation = self.generation
+    local function Run()
+        if self.released or self.generation ~= generation or self.reflowTicket ~= ticket then return end
+        self.reflowScheduled = nil
+        self:Relayout()
+    end
+    if _G.C_Timer and type(_G.C_Timer.After) == "function" then
+        _G.C_Timer.After(0, Run)
+    else
+        Run()
+    end
+    return true
+end
+
+function Grid:RequestReflow(container)
+    local owner = container and self.CardSessionOwners[container]
+    local session = owner and owner.session or (container and self.CardSessions[container])
+    if not session or session.released then return false end
+    return session:_QueueRelayout()
+end
+
+local function RestoreGridActivation(grid, snapshot)
+    grid.CellSize = snapshot.cellSize
+    grid._effectiveCols = snapshot.cols
+    grid._activeContainer = snapshot.container
+    grid.Widgets = snapshot.widgets
+    grid.WidgetInstances = snapshot.instances
+    grid.WidgetMap = snapshot.widgetMap
+    grid.ActiveLayout = snapshot.layout
+    grid.LastConfig = snapshot.config
+    grid.ModuleKey = snapshot.moduleKey
+end
+
+local function SnapshotGridActivation(grid)
+    return {
+        cellSize = grid.CellSize,
+        cols = grid._effectiveCols,
+        container = grid._activeContainer,
+        widgets = grid.Widgets,
+        instances = grid.WidgetInstances,
+        widgetMap = grid.WidgetMap,
+        layout = grid.ActiveLayout,
+        config = grid.LastConfig,
+        moduleKey = grid.ModuleKey,
+    }
+end
+
+local function SetCardWidth(card, width)
+    local PixelUtil = _G.PixelUtil
+    if PixelUtil and PixelUtil.SetWidth then
+        PixelUtil.SetWidth(card, width, 1)
+    else
+        card:SetWidth(width)
+    end
+end
+
+local function SetCardHeight(card, height)
+    local PixelUtil = _G.PixelUtil
+    height = math.max(1, height)
+    if PixelUtil and PixelUtil.SetHeight then
+        PixelUtil.SetHeight(card, height, 1)
+    else
+        card:SetHeight(height)
+    end
+end
+
+local function MeasureSessionCards(session, availableWidth)
+    local grid = session.grid
+    for _, cardState in ipairs(session.cards) do
+        local placement = cardState.definition.placement or {}
+        local width = ResolveDeclaredWidth(placement.width, availableWidth)
+        if not width then width = availableWidth end
+        cardState.width = math.max(1, width)
+        SetCardWidth(cardState.card, cardState.width)
+
+        local bodyWidth = cardState.body:GetWidth()
+        if not bodyWidth or bodyWidth <= 1 then bodyWidth = cardState.width end
+        local contentHeight = ReflowCardBody(grid, cardState, bodyWidth)
+        if cardState.lastContentHeight == nil
+            or math.abs(cardState.lastContentHeight - contentHeight) >= 0.01 then
+            cardState.lastContentHeight = contentHeight
+            cardState.card:SetContentHeight(contentHeight)
+        end
+        local preferred = cardState.card:GetPreferredHeight(cardState.width)
+        if type(preferred) ~= "number" or preferred ~= preferred or preferred <= 0 then
+            error("[ExwindGrid] " .. CardLocation(session.context, cardState.id)
+                .. ": Card:GetPreferredHeight(width) returned an invalid height", 0)
+        end
+        cardState.outerHeight = preferred
+        cardState.layoutHeight = cardState.visible and preferred or 0
+        SetCardHeight(cardState.card, preferred)
+    end
+end
+
+local function SetRelativeCardAnchor(cardState, target, placement, gap, parent)
+    local side = placement.side or "below"
+    local align = placement.align or "start"
+    local x = tonumber(placement.x) or 0
+    local y = tonumber(placement.y) or 0
+    if side == "right" then
+        cardState.x = target.x + target.width + gap + x
+        if align == "center" then
+            cardState.y = target.y + (target.layoutHeight - cardState.layoutHeight) * 0.5 - y
+        elseif align == "end" then
+            cardState.y = target.y + target.layoutHeight - cardState.layoutHeight - y
+        else
+            cardState.y = target.y - y
+        end
+    else
+        if align == "center" then
+            cardState.x = target.x + (target.width - cardState.width) * 0.5 + x
+        elseif align == "end" then
+            cardState.x = target.x + target.width - cardState.width + x
+        else
+            cardState.x = target.x + x
+        end
+        cardState.y = target.y + target.layoutHeight + gap - y
+    end
+    cardState.card:ClearAllPoints()
+    cardState.card:SetPoint("TOPLEFT", parent, "TOPLEFT", cardState.x, -cardState.y)
+end
+
+local function ResolveSessionPositions(session, metrics, parentWidth, parentHeight)
+    local status = {}
+    local gap = metrics.gap
+    local contentWidth = math.max(1, parentWidth - metrics.left - metrics.right)
+    local contentHeight = math.max(1, parentHeight - metrics.top - metrics.bottom)
+    for _, cardState in ipairs(session.cards) do cardState.usedFallback = nil end
+
+    local function Fallback(cardState, code, detail)
+        session:_Diagnostic(cardState, code, detail)
+        cardState.usedFallback = true
+        status[cardState] = "done"
+    end
+
+    local Resolve
+    Resolve = function(cardState)
+        if status[cardState] == "done" then return end
+        if status[cardState] == "visiting" then
+            Fallback(cardState, "cycle", "card placement cycle detected; using safe vertical fallback")
+            return
+        end
+        status[cardState] = "visiting"
+        local placement = cardState.definition.placement
+        local targetId
+        if placement then
+            targetId = placement.target or CARD_CONTAINER_TARGET
+        elseif cardState.previous then
+            targetId = cardState.previous.id
+            placement = { target = targetId, side = "below", align = "start" }
+        else
+            targetId = CARD_CONTAINER_TARGET
+            placement = {
+                target = targetId,
+                point = "TOPLEFT",
+                relativePoint = "TOPLEFT",
+                x = 0,
+                y = 0,
+            }
+        end
+
+        if targetId ~= CARD_CONTAINER_TARGET then
+            if targetId == cardState.id then
+                Fallback(cardState, "self",
+                    "card placement cannot target itself; using safe vertical fallback")
+                return
+            end
+            local target = session.byId[targetId]
+            if not target then
+                Fallback(cardState, "missing", "card placement target not found: "
+                    .. tostring(targetId) .. "; using safe vertical fallback")
+                return
+            end
+            Resolve(target)
+            if status[cardState] == "done" then return end
+            if target.usedFallback then
+                Fallback(cardState, "dependency",
+                    "card placement target used fallback; using the same safe vertical fallback")
+                return
+            end
+            local actualGap = placement.gap ~= nil and placement.gap or gap
+            SetRelativeCardAnchor(cardState, target, placement, actualGap, session.parent)
+        else
+            local point = placement.point or "TOPLEFT"
+            local relativePoint = placement.relativePoint or point
+            local x, y = tonumber(placement.x) or 0, tonumber(placement.y) or 0
+            local ownFactor = CARD_POINT_FACTORS[point]
+            local relativeFactor = CARD_POINT_FACTORS[relativePoint]
+            cardState.x = metrics.left + contentWidth * relativeFactor[1]
+                + x - cardState.width * ownFactor[1]
+            cardState.y = metrics.top + contentHeight * relativeFactor[2] - y
+                - cardState.layoutHeight * ownFactor[2]
+            cardState.card:ClearAllPoints()
+            cardState.card:SetPoint("TOPLEFT", session.parent, "TOPLEFT", cardState.x, -cardState.y)
+        end
+        status[cardState] = "done"
+    end
+
+    for _, cardState in ipairs(session.cards) do Resolve(cardState) end
+
+    local fallbackY = metrics.top
+    for _, cardState in ipairs(session.cards) do
+        if not cardState.usedFallback and cardState.visible then
+            fallbackY = math.max(fallbackY, cardState.y + cardState.layoutHeight + gap)
+        end
+    end
+    for _, cardState in ipairs(session.cards) do
+        if cardState.usedFallback then
+            cardState.card:ClearAllPoints()
+            cardState.card:SetPoint("TOPLEFT", session.parent, "TOPLEFT", metrics.left, -fallbackY)
+            cardState.x, cardState.y = metrics.left, fallbackY
+            if cardState.layoutHeight > 0 then fallbackY = fallbackY + cardState.layoutHeight + gap end
+        end
+    end
+end
+
+local function ClampSessionScroll(session, totalHeight)
+    local scrollFrame = session.context.scrollFrame
+    if not scrollFrame or type(scrollFrame.GetVerticalScroll) ~= "function"
+        or type(scrollFrame.SetVerticalScroll) ~= "function" then return end
+    local current = tonumber(scrollFrame:GetVerticalScroll()) or 0
+    local viewport = type(scrollFrame.GetHeight) == "function" and scrollFrame:GetHeight() or 0
+    local maximum = math.max(0, totalHeight - (tonumber(viewport) or 0))
+    local clamped = math.max(0, math.min(current, maximum))
+    if math.abs(clamped - current) >= 0.01 then scrollFrame:SetVerticalScroll(clamped) end
+end
+
+local function PerformSessionRelayout(session)
+    local parent = session.parent
+    local parentWidth = math.max(1, parent:GetWidth())
+    local metrics = CardLayoutMetrics(session)
+    local availableWidth = math.max(1, parentWidth - metrics.left - metrics.right)
+    local parentHeight = tonumber(session.context.viewportHeight)
+        or (session.context.scrollFrame and session.context.scrollFrame:GetHeight())
+        or parent:GetHeight()
+        or 1
+
+    local snapshot = SnapshotGridActivation(session.grid)
+    local measured, measureReason = pcall(MeasureSessionCards, session, availableWidth)
+    RestoreGridActivation(session.grid, snapshot)
+    if not measured then error(measureReason, 0) end
+    ResolveSessionPositions(session, metrics, parentWidth, math.max(1, parentHeight))
+
+    local maxBottom = metrics.top
+    for _, cardState in ipairs(session.cards) do
+        cardState.card:SetShown(cardState.visible)
+        if cardState.visible then
+            maxBottom = math.max(maxBottom, cardState.y + cardState.layoutHeight)
+        end
+    end
+    local totalHeight = math.max(1, maxBottom + metrics.bottom)
+    if session.totalHeight == nil or math.abs(session.totalHeight - totalHeight) >= 0.01 then
+        session.totalHeight = totalHeight
+        SetCardHeight(parent, totalHeight)
+        if type(session.context.onContentHeightChanged) == "function" then
+            session.context.onContentHeightChanged(totalHeight, session)
+        end
+    end
+    ClampSessionScroll(session, totalHeight)
+end
+
+function CardSessionMixin:Relayout()
+    if self.released then return false end
+    if self.reflowBusy then
+        self.reflowPending = true
+        return false
+    end
+    self.reflowScheduled = nil
+    self.reflowTicket = (self.reflowTicket or 0) + 1
+    self.reflowBusy = true
+    local ok, reason = pcall(PerformSessionRelayout, self)
+    self.reflowBusy = nil
+    if not ok then error(reason, 0) end
+    if self.reflowPending then
+        self.reflowPending = nil
+        self:_QueueRelayout()
+    end
+    return true
+end
+
+function CardSessionMixin:RefreshValues()
+    if self.released then return false end
+    for _, cardState in ipairs(self.cards) do
+        self.grid:RefreshContainerControlsFromDB(cardState.body)
+        local state = self.grid.ContainerStates[cardState.body]
+        for _, widget in ipairs(state and state.instances or {}) do
+            if widget._customRenderer then
+                local ctx = widget._customContext or {}
+                local meta = state.widgetMap and state.widgetMap[widget]
+                ctx.currentValue = CurrentCardItemValue(cardState.binding.config,
+                    ctx.element or {}, meta and meta.path)
+                ctx.value = ctx.currentValue
+                if type(widget._customRenderer.update) == "function" then
+                    widget._customRenderer.update(widget, ctx)
+                elseif type(widget._customRenderer.render) == "function" then
+                    widget._customRenderer.render(widget, ctx)
+                end
+            end
+        end
+    end
+    return true
+end
+
+function CardSessionMixin:GetWidget(cardId, widgetKey)
+    if self.released then return nil end
+    local cardState = self.byId[cardId]
+    if not cardState then return nil end
+    local state = self.grid.ContainerStates[cardState.body]
+    return state and state.widgets and state.widgets[widgetKey] or nil
+end
+
+function CardSessionMixin:FindWidget(widgetKey)
+    if self.released then return nil end
+    local found, foundCardId
+    for _, cardState in ipairs(self.cards) do
+        local state = self.grid.ContainerStates[cardState.body]
+        local widget = state and state.widgets and state.widgets[widgetKey]
+        if widget then
+            if found and found ~= widget then
+                error("[ExwindGrid] widget key is not unique across cards: "
+                    .. tostring(widgetKey) .. "; pass cardId to GetWidget", 2)
+            end
+            found, foundCardId = widget, cardState.id
+        end
+    end
+    return found, foundCardId
+end
+
+local function ReleaseCardBody(session, cardState)
+    cardState.contentGeneration = (cardState.contentGeneration or 0) + 1
+    local released, releaseReason = pcall(session.grid.ReleaseContainerWidgets,
+        session.grid, cardState.body)
+    session.grid.ContainerStates[cardState.body] = nil
+    session.grid:ClearContainerCols(cardState.body)
+    session.grid:ClearContainerPadding(cardState.body)
+    cardState.widgetsByOrdinal = {}
+    cardState.identityByOrdinal = {}
+    cardState.renderableCount = 0
+    cardState.reportedHeight = nil
+    cardState.lastContentHeight = nil
+    if not released then error(releaseReason, 0) end
+end
+
+function CardSessionMixin:ReplaceCardContent(cardId, content)
+    if self.released then return false end
+    local cardState = self.byId[cardId]
+    if not cardState then error("[ExwindGrid] unknown cardId: " .. tostring(cardId), 2) end
+    local ok, reason = ValidateCardContent(self.grid, content,
+        "[ExwindGrid] " .. CardLocation(self.context, cardId))
+    if not ok then error(reason, 2) end
+    if CardContentOwnsScroll(content) ~= CardContentOwnsScroll(cardState.content) then
+        error("[ExwindGrid] " .. CardLocation(self.context, cardId)
+            .. ": changing content.ownsScroll requires releasing and remounting the card session", 2)
+    end
+    local previousContent = cardState.content
+    local previousBinding = cardState.binding
+    local previousSourceItems = cardState.sourceItems
+    local nextBinding = ResolveCardBinding(self, cardState.definition, content)
+    local nextSourceItems = BuildCardContentSource(cardState, content)
+    local released, releaseReason = pcall(ReleaseCardBody, self, cardState)
+    if not released then
+        local activation = SnapshotGridActivation(self.grid)
+        local restored, restoreReason = pcall(MountCardBody, self.grid, cardState)
+        RestoreGridActivation(self.grid, activation)
+        if not restored then
+            error(tostring(releaseReason) .. "; rollback failed: " .. tostring(restoreReason), 2)
+        end
+        error(releaseReason, 2)
+    end
+    cardState.content = content
+    cardState.binding = nextBinding
+    cardState.sourceItems = nextSourceItems
+    local activation = SnapshotGridActivation(self.grid)
+    local mounted, mountReason = pcall(MountCardBody, self.grid, cardState)
+    RestoreGridActivation(self.grid, activation)
+    if not mounted then
+        ReleaseCardBody(self, cardState)
+        cardState.content = previousContent
+        cardState.binding = previousBinding
+        cardState.sourceItems = previousSourceItems
+        activation = SnapshotGridActivation(self.grid)
+        local restored, restoreReason = pcall(MountCardBody, self.grid, cardState)
+        RestoreGridActivation(self.grid, activation)
+        if not restored then
+            error(tostring(mountReason) .. "; rollback failed: " .. tostring(restoreReason), 2)
+        end
+        error(mountReason, 2)
+    end
+    self.grid:RequestReflow(cardState.body)
+    return true
+end
+
+function CardSessionMixin:RebindCardContent(cardId)
+    if self.released then return false end
+    local cardState = self.byId[cardId]
+    if not cardState then error("[ExwindGrid] unknown cardId: " .. tostring(cardId), 2) end
+    return self:ReplaceCardContent(cardId, cardState.content)
+end
+
+function CardSessionMixin:SetCardVisible(cardId, visible)
+    if self.released then return false end
+    local cardState = self.byId[cardId]
+    if not cardState then error("[ExwindGrid] unknown cardId: " .. tostring(cardId), 2) end
+    visible = visible ~= false
+    if cardState.visible == visible then return false end
+    cardState.visible = visible
+    self.grid:RequestReflow(cardState.card)
+    return true
+end
+
+function CardSessionMixin:SetCardCollapsed(cardId, collapsed, silent)
+    if self.released then return false end
+    local cardState = self.byId[cardId]
+    if not cardState then error("[ExwindGrid] unknown cardId: " .. tostring(cardId), 2) end
+    cardState.card:SetCollapsed(collapsed == true, silent == true)
+    if silent == true then self.grid:RequestReflow(cardState.card) end
+    return true
+end
+
+function CardSessionMixin:Release()
+    if self.released then return false end
+    self.released = true
+    self.generation = self.generation + 1
+    self.reflowScheduled = nil
+    self.reflowPending = nil
+    self.reflowTicket = (self.reflowTicket or 0) + 1
+    local scrollFrame = self.context and self.context.scrollFrame
+    local scrollSessions = scrollFrame and self.grid.CardScrollSessions[scrollFrame]
+    if scrollSessions then scrollSessions[self] = nil end
+    local firstReleaseReason
+    local function Capture(ok, reason)
+        if not ok and firstReleaseReason == nil then firstReleaseReason = reason end
+    end
+    for index = #self.cards, 1, -1 do
+        local cardState = self.cards[index]
+        if type(cardState.card.SetLayoutInvalidationHandler) == "function" then
+            Capture(pcall(cardState.card.SetLayoutInvalidationHandler, cardState.card, nil))
+        end
+        Capture(pcall(ReleaseCardBody, self, cardState))
+        self.grid.CardSessionOwners[cardState.body] = nil
+        self.grid.CardSessionOwners[cardState.card] = nil
+        if type(cardState.card.Release) == "function" then
+            Capture(pcall(cardState.card.Release, cardState.card))
+        end
+        self.cards[index] = nil
+    end
+    if self.grid.CardSessions[self.parent] == self then self.grid.CardSessions[self.parent] = nil end
+    self.grid.CardSessionOwners[self.parent] = nil
+    self.byId = {}
+    if firstReleaseReason ~= nil then error(firstReleaseReason, 0) end
+    return true
+end
+
+function Grid:MountCards(parent, declaration, context)
+    if not parent then error("[ExwindGrid] MountCards requires parent", 2) end
+    context = type(context) == "table" and context or {}
+    local ok, reason = self:ValidateCardDeclaration(declaration, context)
+    if not ok then error(reason, 2) end
+    if type(EXUI.CreateSettingsCard) ~= "function" then
+        error("[ExwindGrid] EXUI:CreateSettingsCard is not available", 2)
+    end
+    local existing = self.CardSessions[parent]
+    if existing and not existing.released then
+        error("[ExwindGrid] parent already owns an active card session; Release it before remounting", 2)
+    end
+
+    local session = setmetatable({
+        grid = self,
+        parent = parent,
+        declaration = declaration,
+        context = context,
+        cards = {},
+        byId = {},
+        diagnostics = {},
+        _diagnosticKeys = {},
+        generation = 1,
+    }, { __index = CardSessionMixin })
+    self.CardSessions[parent] = session
+    self.CardSessionOwners[parent] = { session = session }
+
+    local snapshot = SnapshotGridActivation(self)
+    local mounted, mountReason = pcall(function()
+        local previous
+        for _, definition in ipairs(declaration.cards) do
+            local card = EXUI:CreateSettingsCard(parent, {
+                id = definition.id,
+                title = definition.title,
+                collapsible = definition.collapsible == true,
+                collapsed = definition.collapsed == true,
+                minBodyHeight = tonumber(definition.minBodyHeight) or 0,
+                maxBodyHeight = definition.maxBodyHeight and tonumber(definition.maxBodyHeight) or nil,
+                ownsScroll = CardContentOwnsScroll(definition.content),
+            })
+            if not card then
+                error("[ExwindGrid] " .. CardLocation(context, definition.id)
+                    .. ": CreateSettingsCard returned nil", 0)
+            end
+            if type(card.GetBody) ~= "function"
+                or type(card.SetContentHeight) ~= "function"
+                or type(card.SetLayoutInvalidationHandler) ~= "function"
+                or type(card.GetPreferredHeight) ~= "function"
+                or type(card.SetCollapsed) ~= "function"
+                or type(card.Release) ~= "function" then
+                if type(card.Release) == "function" then
+                    pcall(card.Release, card)
+                else
+                    if type(card.Hide) == "function" then pcall(card.Hide, card) end
+                    if type(card.SetParent) == "function" then pcall(card.SetParent, card, nil) end
+                end
+                error("[ExwindGrid] " .. CardLocation(context, definition.id)
+                    .. ": SettingsCard does not implement the required layout contract", 0)
+            end
+            local gotBody, body = pcall(card.GetBody, card)
+            if not gotBody or not body then
+                pcall(card.Release, card)
+                error("[ExwindGrid] " .. CardLocation(context, definition.id)
+                    .. ": SettingsCard:GetBody() did not return a body frame", 0)
+            end
+            local cardState = {
+                session = session,
+                id = definition.id,
+                definition = definition,
+                content = definition.content,
+                card = card,
+                body = body,
+                previous = previous,
+                visible = definition.hidden ~= true and definition.visible ~= false,
+                widgetsByOrdinal = {},
+            }
+            session.cards[#session.cards + 1] = cardState
+            session.byId[cardState.id] = cardState
+            previous = cardState
+            self.CardSessionOwners[card] = { session = session, card = cardState }
+            self.CardSessionOwners[body] = { session = session, card = cardState }
+            cardState.binding = ResolveCardBinding(session, definition, definition.content)
+            cardState.sourceItems = BuildCardContentSource(cardState, definition.content)
+            card:SetCollapsed(definition.collapsed == true, true)
+            card:SetLayoutInvalidationHandler(function()
+                self:RequestReflow(card)
+            end)
+            card:ClearAllPoints()
+            card:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
+            SetCardWidth(card, math.max(1, parent:GetWidth()))
+            card:SetShown(cardState.visible)
+            MountCardBody(self, cardState)
+        end
+    end)
+    RestoreGridActivation(self, snapshot)
+    if not mounted then
+        local released, releaseReason = pcall(session.Release, session)
+        if not released then
+            error(tostring(mountReason) .. "; session cleanup failed: "
+                .. tostring(releaseReason), 0)
+        end
+        error(mountReason, 0)
+    end
+
+    if not parent._exCardSessionSizeHook then
+        parent._exCardSessionSizeHook = true
+        parent:HookScript("OnSizeChanged", function(host, width)
+            local owner = Grid.CardSessionOwners[host]
+            local active = owner and owner.session
+            if active and not active.released then
+                width = tonumber(width) or host:GetWidth()
+                if active._lastParentWidth == nil
+                    or math.abs(active._lastParentWidth - width) >= 0.01 then
+                    active._lastParentWidth = width
+                    Grid:RequestReflow(host)
+                end
+            end
+        end)
+    end
+    session._lastParentWidth = parent:GetWidth()
+
+    local scrollFrame = context.scrollFrame
+    if scrollFrame and type(scrollFrame.HookScript) == "function" then
+        local scrollSessions = self.CardScrollSessions[scrollFrame]
+        if not scrollSessions then
+            scrollSessions = setmetatable({}, { __mode = "k" })
+            self.CardScrollSessions[scrollFrame] = scrollSessions
+        end
+        scrollSessions[session] = true
+        if not scrollFrame._exGridCardSessionSizeHook then
+            scrollFrame._exGridCardSessionSizeHook = true
+            scrollFrame:HookScript("OnSizeChanged", function(host)
+                local activeSessions = Grid.CardScrollSessions[host]
+                if not activeSessions then return end
+                for active in pairs(activeSessions) do
+                    if not active.released then Grid:RequestReflow(active.parent) end
+                end
+            end)
+        end
+    end
+    session:Relayout()
+    return session
+end
+
 function Grid:ToggleLiveEdit(container)
     if container then
         local state = GetContainerState(self, container)
@@ -1749,9 +2998,9 @@ function Grid:ShowRowContextMenu(row, x, y)
         cm:SetSize(140, 75)
         cm:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 12,
-            insets = { left = 3, right = 3, top = 3, bottom = 3 }
+            edgeFile = "Interface\\Buttons\\WHITE8X8",
+            edgeSize = 1,
+            insets = { left = 1, right = 1, top = 1, bottom = 1 }
         })
         cm:SetBackdropColor(0.05, 0.05, 0.1, 0.95)
 
@@ -2054,7 +3303,7 @@ function Grid:ShowToolbar()
     local tb = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     tb:SetSize(500, 44)
     tb:SetPoint("TOP", 0, -10)
-    tb:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12 })
+    tb:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
     tb:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
     tb:SetFrameStrata("HIGH")
 
@@ -2083,7 +3332,7 @@ function Grid:ShowPalette()
         self.Palette:Show(); return
     end
     local p = CreateFrame("Frame", nil, UIParent, "BackdropTemplate"); p:SetSize(160, 500); p:SetPoint("RIGHT", -20, 0); p
-        :SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12 }); p
+        :SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 }); p
         :SetBackdropColor(0.1, 0.1, 0.1, 0.95); p:SetFrameStrata("HIGH"); p:EnableMouse(true); p:SetMovable(true); p
         :RegisterForDrag("LeftButton"); p:SetScript("OnDragStart", p.StartMoving); p:SetScript("OnDragStop",
         p.StopMovingOrSizing)
@@ -2157,7 +3406,7 @@ end
 function Grid:CreatePropertyPanel()
     if self.PropPanel then return end
     local p = CreateFrame("Frame", nil, UIParent, "BackdropTemplate"); p:SetSize(320, 780); p:SetPoint("LEFT", 20, 0); p
-        :SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border", edgeSize = 12 }); p
+        :SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 }); p
         :SetBackdropColor(0.05, 0.05, 0.1, 0.98); p:SetFrameStrata("DIALOG"); p:EnableMouse(true); p:SetMovable(true); p
         :RegisterForDrag("LeftButton"); p:SetScript("OnDragStart", p.StartMoving); p:SetScript("OnDragStop",
         p.StopMovingOrSizing)

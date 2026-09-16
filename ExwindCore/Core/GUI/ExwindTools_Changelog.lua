@@ -31,11 +31,11 @@ local PANEL_THEME = {
 
 local PANEL_BACKDROP = {
     bgFile = "Interface\\Buttons\\WHITE8X8",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    edgeFile = "Interface\\Buttons\\WHITE8X8",
     tile = true,
     tileSize = 16,
-    edgeSize = 14,
-    insets = { left = 4, right = 4, top = 4, bottom = 4 },
+    edgeSize = 1,
+    insets = { left = 1, right = 1, top = 1, bottom = 1 },
 }
 
 local FONT_PATH = (GameFontNormal and select(1, GameFontNormal:GetFont())) or STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF"

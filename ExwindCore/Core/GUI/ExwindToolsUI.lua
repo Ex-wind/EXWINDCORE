@@ -410,7 +410,7 @@ function EXUI:FocusModuleGridKey(moduleKey, gridKey, scrollFrame, container)
             flash:SetAllPoints(target)
             flash:SetFrameLevel((target:GetFrameLevel() or 0) + 50)
             flash:EnableMouse(false)
-            flash:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 2 })
+            flash:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
             target._exPreviewFocusFlash = flash
         end
         flash:SetBackdropBorderColor(1, 0.82, 0.12, 1)

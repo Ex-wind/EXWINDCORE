@@ -2093,11 +2093,11 @@ end
 
 local function SetTimelineOverlayVisual(overlay, visible, dragging)
     if dragging then
-        overlay:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 2 })
+        overlay:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
         overlay:SetBackdropBorderColor(1.00, 0.82, 0.20, 1.00)
         overlay:SetBackdropColor(1.00, 0.72, 0.12, 0.18)
     elseif visible then
-        overlay:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 2 })
+        overlay:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
         overlay:SetBackdropBorderColor(0.32, 0.82, 1.00, 0.95)
         overlay:SetBackdropColor(0.20, 0.65, 1.00, 0.10)
     else

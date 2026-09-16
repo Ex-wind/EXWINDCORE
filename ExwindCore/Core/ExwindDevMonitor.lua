@@ -28,11 +28,11 @@ local THEME = {
 
 local BACKDROP = {
     bgFile = "Interface\\Buttons\\WHITE8X8",
-    edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+    edgeFile = "Interface\\Buttons\\WHITE8X8",
     tile = true,
     tileSize = 16,
-    edgeSize = 12,
-    insets = { left = 3, right = 3, top = 3, bottom = 3 }
+    edgeSize = 1,
+    insets = { left = 1, right = 1, top = 1, bottom = 1 }
 }
 
 local UPDATE_INTERVAL = 0.5 -- 仪表盘刷新间隔（秒）

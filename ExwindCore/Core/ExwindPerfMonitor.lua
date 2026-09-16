@@ -200,9 +200,9 @@ local function CreatePanel()
     f:SetScript("OnDragStop", f.StopMovingOrSizing)
     f:SetBackdrop({
         bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+        edgeFile = "Interface/Buttons/WHITE8X8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     f:SetBackdropColor(0, 0, 0, 0.9)
     f:SetFrameStrata("HIGH")
@@ -329,9 +329,9 @@ local function CreateCopyBox()
     f:SetScript("OnDragStop", f.StopMovingOrSizing)
     f:SetBackdrop({
         bgFile = "Interface/Tooltips/UI-Tooltip-Background",
-        edgeFile = "Interface/Tooltips/UI-Tooltip-Border",
-        edgeSize = 12,
-        insets = { left = 3, right = 3, top = 3, bottom = 3 },
+        edgeFile = "Interface/Buttons/WHITE8X8",
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 },
     })
     f:SetBackdropColor(0, 0, 0, 0.95)
 

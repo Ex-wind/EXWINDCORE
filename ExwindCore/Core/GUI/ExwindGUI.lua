@@ -394,22 +394,48 @@ local function StripCheckButtonStateTextures(button)
     button._exModernNativeCheckStripped = true
 end
 
+local modernSurfaceFrames = setmetatable({}, { __mode = "k" })
+local modernSurfaceScaleWatcher
+
+local function TrackModernSurfaceFrame(frame)
+    modernSurfaceFrames[frame] = true
+    if modernSurfaceScaleWatcher then return end
+    modernSurfaceScaleWatcher = CreateFrame("Frame")
+    modernSurfaceScaleWatcher:RegisterEvent("UI_SCALE_CHANGED")
+    modernSurfaceScaleWatcher:RegisterEvent("DISPLAY_SIZE_CHANGED")
+    modernSurfaceScaleWatcher:SetScript("OnEvent", function()
+        -- UI scale may change without changing a control's logical width/height.
+        -- Re-run every cached surface layout so its logical inset continues to
+        -- resolve to one physical pixel at the new effective scale.
+        for owner in pairs(modernSurfaceFrames) do
+            for _, cachedSkin in pairs(owner._exModernSurfaces or {}) do
+                if cachedSkin.Layout then cachedSkin.Layout() end
+            end
+        end
+    end)
+end
+
 local function GetModernSurface(frame, radius)
     frame._exModernSurfaces = frame._exModernSurfaces or {}
     local skin = frame._exModernSurfaces[radius]
-    if skin then return skin end
+    if skin then
+        TrackModernSurfaceFrame(frame)
+        return skin
+    end
 
     local fillFile = "FillR" .. radius .. ".tga"
-    local borderFile = "BorderR" .. radius .. ".tga"
     local u = { 0, (6 + radius) / 256, (250 - radius) / 256, 1 }
     local v = { 0, (23 + radius) / 128, (105 - radius) / 128, 1 }
     skin = { pieces = {}, radius = radius }
     frame._exModernSurfaces[radius] = skin
+    TrackModernSurfaceFrame(frame)
     for layer = 1, 2 do
         for row = 1, 3 do
             for col = 1, 3 do
+                -- 外层画边框色，内层缩进一个物理像素后画填充色。
+                -- 两层共用圆角填充蒙版，避免旧 BorderR 贴图自带的粗边。
                 local texture = frame:CreateTexture(nil, layer == 1 and "BACKGROUND" or "BORDER")
-                texture:SetTexture(MODERN_MEDIA .. (layer == 1 and fillFile or borderFile), "CLAMP", "CLAMP", "LINEAR")
+                texture:SetTexture(MODERN_MEDIA .. fillFile, "CLAMP", "CLAMP", "LINEAR")
                 texture:SetTexCoord(u[col], u[col + 1], v[row], v[row + 1])
                 if texture.SetSnapToPixelGrid then texture:SetSnapToPixelGrid(false) end
                 if texture.SetTexelSnappingBias then texture:SetTexelSnappingBias(0) end
@@ -420,11 +446,36 @@ local function GetModernSurface(frame, radius)
     skin.Layout = function()
         local width, height = frame:GetWidth(), frame:GetHeight()
         if not width or not height or width <= 0 or height <= 0 then return end
-        local scale = math.min(1, width / (radius * 2), height / (radius * 2))
-        local corner = radius * scale
-        local xs = { -6 * scale, corner, width - corner, width + 6 * scale }
-        local ys = { -23 * scale, corner, height - corner, height + 23 * scale }
+        local effectiveScale = frame.GetEffectiveScale and frame:GetEffectiveScale() or 1
+        effectiveScale = type(effectiveScale) == "number" and effectiveScale > 0 and effectiveScale or 1
+        local pixelUtil = _G.PixelUtil
+        local pixel = pixelUtil and pixelUtil.GetNearestPixelSize
+            and pixelUtil.GetNearestPixelSize(1, effectiveScale, 1)
+            or (1 / effectiveScale)
+        pixel = type(pixel) == "number" and pixel > 0 and pixel or (1 / effectiveScale)
         for _, piece in ipairs(skin.pieces) do
+            local inset = piece.layer == 2 and math.min(pixel, width / 2, height / 2) or 0
+            local innerWidth, innerHeight = width - inset * 2, height - inset * 2
+            local targetRadius = math.max(0, radius - inset)
+            local scale = math.min(
+                1,
+                targetRadius / radius,
+                innerWidth / (radius * 2),
+                innerHeight / (radius * 2)
+            )
+            local corner = radius * scale
+            local xs = {
+                inset - 6 * scale,
+                inset + corner,
+                width - inset - corner,
+                width - inset + 6 * scale,
+            }
+            local ys = {
+                inset - 23 * scale,
+                inset + corner,
+                height - inset - corner,
+                height - inset + 23 * scale,
+            }
             local pieceWidth = xs[piece.col + 1] - xs[piece.col]
             local pieceHeight = ys[piece.row + 1] - ys[piece.row]
             piece.texture:ClearAllPoints()
@@ -449,7 +500,7 @@ function EXUI:SetControlSurface(frame, radius, fill, border)
     end
     local skin = GetModernSurface(frame, radius)
     for _, piece in ipairs(skin.pieces) do
-        piece.texture:SetVertexColor(unpack(piece.layer == 1 and (fill or MC.input) or (border or MC.border)))
+        piece.texture:SetVertexColor(unpack(piece.layer == 1 and (border or MC.border) or (fill or MC.input)))
         piece.texture:Show()
     end
     skin.Layout()
@@ -471,6 +522,7 @@ end
 local function PaintModernButton(frame)
     local enabled = not frame.IsEnabled or frame:IsEnabled()
     local variant = frame._exButtonVariant or "neutral"
+    local isColorButton = frame._gridType == "GridColorButton"
     local fill, edge, text = MC.raised, MC.border, MC.text
     if variant == "primary" then fill, edge, text = MC.blue, MC.blue, MC.text
     elseif variant == "soft" then fill, edge, text = MC.blueSoft, MC.border, MC.lightBlue end
@@ -487,18 +539,47 @@ local function PaintModernButton(frame)
     EXUI:SetControlSurface(frame, (frame:GetWidth() or 0) <= 30 and 4 or 4, fill, edge)
     local label = frame.GetFontString and frame:GetFontString() or frame.label
     if label then label:SetTextColor(unpack(text)) end
+    -- 颜色按钮除了整块底色，也让预览色块的细边框一起响应。
+    -- 这样即使背景色差在某些显示器上不明显，鼠标提示仍然清楚。
+    if isColorButton and frame.swatchBorder then
+        if not enabled then
+            frame.swatchBorder:SetBackdropBorderColor(unpack(MC.disabled))
+        elseif frame._exModernPressed or frame._exModernHover then
+            frame.swatchBorder:SetBackdropBorderColor(unpack(MC.focus))
+        else
+            frame.swatchBorder:SetBackdropBorderColor(unpack(MC.border))
+        end
+    end
 end
 
 local function ApplyModernButton(frame)
-    if not frame._exModernButtonHooks then
-        frame._exModernButtonHooks = true
+    -- 点击与悬停在新客户端可分别受控。颜色按钮过去只恢复了 EnableMouse，
+    -- 因而在部分池化复用路径里会出现“可以点击但没有 OnEnter/OnLeave”。
+    -- 这里在所有 EXUI 按钮的共用入口一次补齐，保持事件驱动，不增加 OnUpdate。
+    if frame.EnableMouse then frame:EnableMouse(true) end
+    if frame.SetMouseMotionEnabled then frame:SetMouseMotionEnabled(true) end
+    if frame.SetMouseClickEnabled then frame:SetMouseClickEnabled(true) end
+    -- HookScript callbacks live for the frame lifetime; StandardReset only
+    -- clears primary SetScript handlers. Keep this marker across pool leases so
+    -- pointer painters are installed exactly once instead of accumulating.
+    if not frame._exModernButtonPointerHooks then
+        frame._exModernButtonPointerHooks = true
         frame:HookScript("OnEnter", function(self) self._exModernHover = true; PaintModernButton(self) end)
         frame:HookScript("OnLeave", function(self) self._exModernHover = false; self._exModernPressed = false; PaintModernButton(self) end)
         frame:HookScript("OnMouseDown", function(self, button) if button == "LeftButton" then self._exModernPressed = true; PaintModernButton(self) end end)
         frame:HookScript("OnMouseUp", function(self) self._exModernPressed = false; PaintModernButton(self) end)
+    end
+    -- These slots are not cleared by the pool and therefore remain lifetime
+    -- hooks. Keeping a separate marker prevents duplicate callbacks on reuse.
+    if not frame._exModernButtonLifecycleHooks then
+        frame._exModernButtonLifecycleHooks = true
         frame:HookScript("OnEnable", PaintModernButton)
         frame:HookScript("OnDisable", PaintModernButton)
         frame:HookScript("OnShow", PaintModernButton)
+        frame:HookScript("OnHide", function(self)
+            self._exModernHover = nil
+            self._exModernPressed = nil
+        end)
     end
     HideControlSkin(frame)
     frame:SetPushedTextOffset(0, -1)
@@ -590,12 +671,10 @@ local function PaintModernCheckbox(container)
     local enabled, selected = box:IsEnabled(), box:GetChecked() == true
     local hover = enabled and box._exModernHover
     local fill = selected and (hover and MC.blueHover or MC.blue) or (hover and MC.hover or MC.input)
-    box._exModernCheckFill:SetVertexColor(unpack(fill))
-    box._exModernCheckBorder:SetVertexColor(unpack(hover and MC.focus or MC.border))
+    EXUI:SetControlSurface(box._exModernCheckSurface, 4, fill, hover and MC.focus or MC.border)
     box._exModernCheckMark:SetShown(selected)
     box._exModernCheckMark:SetVertexColor(unpack(enabled and MC.text or MC.disabled))
-    box._exModernCheckFill:SetAlpha(enabled and 1 or .55)
-    box._exModernCheckBorder:SetAlpha(enabled and 1 or .55)
+    box._exModernCheckSurface:SetAlpha(enabled and 1 or .55)
     if container.label then
         container.label:SetTextColor(unpack(enabled and (hover and MC.lightBlue or MC.text) or MC.disabled))
     end
@@ -605,17 +684,16 @@ local function ApplyModernCheckbox(container)
     local box = container.checkbox
     if not box then return end
     StripCheckButtonStateTextures(box)
-    if not box._exModernCheckFill then
-        local function Glyph(name, layer)
-            local texture = box:CreateTexture(nil, layer)
-            texture:SetTexture(MODERN_MEDIA .. name .. ".tga", "CLAMP", "CLAMP", "LINEAR")
-            texture:SetSize(20, 20)
-            texture:SetPoint("LEFT", box, "LEFT", 0, 0)
-            return texture
-        end
-        box._exModernCheckFill = Glyph("CheckFill", "BACKGROUND")
-        box._exModernCheckBorder = Glyph("CheckBorder", "BORDER")
-        box._exModernCheckMark = Glyph("GlyphCheck", "OVERLAY")
+    if not box._exModernCheckSurface then
+        local surface = CreateFrame("Frame", nil, box)
+        surface:SetSize(20, 20)
+        surface:SetPoint("LEFT", box, "LEFT", 0, 0)
+        surface:EnableMouse(false)
+        box._exModernCheckSurface = surface
+        local mark = surface:CreateTexture(nil, "OVERLAY")
+        mark:SetTexture(MODERN_MEDIA .. "GlyphCheck.tga", "CLAMP", "CLAMP", "LINEAR")
+        mark:SetAllPoints(surface)
+        box._exModernCheckMark = mark
         -- Native checked state remains the source of truth. Do not attach
         -- appearance updates to OnClick: callers legitimately replace it.
         local visual = CreateFrame("Frame", nil, box)
@@ -706,12 +784,23 @@ local function ApplyModernSlider(frame)
             thumb:SetTexCoord(118 / 256, 138 / 256, 52 / 128, 76 / 128)
             thumb:SetSize(18, 10)
         end
+    end
+    -- Slider hover hooks are also lifetime hooks. The pool may clear the primary
+    -- OnEnter/OnLeave handlers, but must retain this marker because HookScript
+    -- callbacks themselves remain attached.
+    if not frame._exModernSliderHoverHooks then
+        frame._exModernSliderHoverHooks = true
         interactive:HookScript("OnEnter", function(self) self._exModernHover = true; PaintModernSlider(frame) end)
         interactive:HookScript("OnLeave", function(self)
             self._exModernHover = false
             if not frame._exDragging then self._exModernPressed = false end
             PaintModernSlider(frame)
         end)
+    end
+    -- Pointer/lifecycle slots are preserved by the pool for Slider widgets, so
+    -- they stay attached for the frame lifetime and must not be duplicated.
+    if not frame._exModernSliderLifetimeHooks then
+        frame._exModernSliderLifetimeHooks = true
         interactive:HookScript("OnMouseDown", function(self, button)
             if button == nil or button == "LeftButton" then self._exModernPressed = true; PaintModernSlider(frame) end
         end)
@@ -797,26 +886,40 @@ if _G.MenuStyleMixin and _G.CreateFromMixins then
         local radius = 10
         local u = { 0, (6 + radius) / 256, (250 - radius) / 256, 1 }
         local v = { 0, (23 + radius) / 128, (105 - radius) / 128, 1 }
-        local function Anchor(texture, row, col)
-            if row == 1 and col == 1 then texture:SetPoint("TOPLEFT", -6, 23); texture:SetSize(16, 33)
-            elseif row == 1 and col == 2 then texture:SetPoint("TOPLEFT", 10, 23); texture:SetPoint("TOPRIGHT", -10, 23); texture:SetHeight(33)
-            elseif row == 1 and col == 3 then texture:SetPoint("TOPRIGHT", 6, 23); texture:SetSize(16, 33)
-            elseif row == 2 and col == 1 then texture:SetPoint("TOPLEFT", -6, -10); texture:SetPoint("BOTTOMLEFT", -6, 10); texture:SetWidth(16)
-            elseif row == 2 and col == 2 then texture:SetPoint("TOPLEFT", 10, -10); texture:SetPoint("BOTTOMRIGHT", -10, 10)
-            elseif row == 2 and col == 3 then texture:SetPoint("TOPRIGHT", 6, -10); texture:SetPoint("BOTTOMRIGHT", 6, 10); texture:SetWidth(16)
-            elseif row == 3 and col == 1 then texture:SetPoint("BOTTOMLEFT", -6, -23); texture:SetSize(16, 33)
-            elseif row == 3 and col == 2 then texture:SetPoint("BOTTOMLEFT", 10, -23); texture:SetPoint("BOTTOMRIGHT", -10, -23); texture:SetHeight(33)
-            else texture:SetPoint("BOTTOMRIGHT", 6, -23); texture:SetSize(16, 33) end
+        local effectiveScale = _G.UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or 1
+        effectiveScale = type(effectiveScale) == "number" and effectiveScale > 0 and effectiveScale or 1
+        local pixelUtil = _G.PixelUtil
+        local physicalPixel = pixelUtil and pixelUtil.GetNearestPixelSize
+            and pixelUtil.GetNearestPixelSize(1, effectiveScale, 1)
+            or (1 / effectiveScale)
+        physicalPixel = type(physicalPixel) == "number" and physicalPixel > 0
+            and physicalPixel or (1 / effectiveScale)
+        local function Anchor(texture, row, col, inset)
+            local targetRadius = math.max(0, radius - inset)
+            local scale = targetRadius / radius
+            local padX, padY = 6 * scale, 23 * scale
+            local outsideX = inset - padX
+            local outsideY = inset - padY
+            local inside = inset + targetRadius
+            local pieceWidth, pieceHeight = targetRadius + padX, targetRadius + padY
+            if row == 1 and col == 1 then texture:SetPoint("TOPLEFT", outsideX, -outsideY); texture:SetSize(pieceWidth, pieceHeight)
+            elseif row == 1 and col == 2 then texture:SetPoint("TOPLEFT", inside, -outsideY); texture:SetPoint("TOPRIGHT", -inside, -outsideY); texture:SetHeight(pieceHeight)
+            elseif row == 1 and col == 3 then texture:SetPoint("TOPRIGHT", -outsideX, -outsideY); texture:SetSize(pieceWidth, pieceHeight)
+            elseif row == 2 and col == 1 then texture:SetPoint("TOPLEFT", outsideX, -inside); texture:SetPoint("BOTTOMLEFT", outsideX, inside); texture:SetWidth(pieceWidth)
+            elseif row == 2 and col == 2 then texture:SetPoint("TOPLEFT", inside, -inside); texture:SetPoint("BOTTOMRIGHT", -inside, inside)
+            elseif row == 2 and col == 3 then texture:SetPoint("TOPRIGHT", -outsideX, -inside); texture:SetPoint("BOTTOMRIGHT", -outsideX, inside); texture:SetWidth(pieceWidth)
+            elseif row == 3 and col == 1 then texture:SetPoint("BOTTOMLEFT", outsideX, outsideY); texture:SetSize(pieceWidth, pieceHeight)
+            elseif row == 3 and col == 2 then texture:SetPoint("BOTTOMLEFT", inside, outsideY); texture:SetPoint("BOTTOMRIGHT", -inside, outsideY); texture:SetHeight(pieceHeight)
+            else texture:SetPoint("BOTTOMRIGHT", -outsideX, outsideY); texture:SetSize(pieceWidth, pieceHeight) end
         end
         for layer = 1, 2 do
             for row = 1, 3 do
                 for col = 1, 3 do
                     local texture = self:AttachTexture()
-                    texture:SetTexture(MODERN_MEDIA .. (layer == 1 and "FillR10.tga" or "BorderR10.tga"),
-                        "CLAMP", "CLAMP", "LINEAR")
+                    texture:SetTexture(MODERN_MEDIA .. "FillR10.tga", "CLAMP", "CLAMP", "LINEAR")
                     texture:SetTexCoord(u[col], u[col + 1], v[row], v[row + 1])
-                    texture:SetVertexColor(unpack(layer == 1 and MC.raised or MC.border))
-                    Anchor(texture, row, col)
+                    texture:SetVertexColor(unpack(layer == 1 and MC.border or MC.raised))
+                    Anchor(texture, row, col, layer == 2 and physicalPixel or 0)
                 end
             end
         end
@@ -2695,6 +2798,15 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
     if btn.EnableMouse then
         btn:EnableMouse(true)
     end
+    if btn.SetMouseMotionEnabled then
+        btn:SetMouseMotionEnabled(true)
+    end
+    if btn.SetMouseClickEnabled then
+        btn:SetMouseClickEnabled(true)
+    end
+    if btn.RegisterForClicks then
+        btn:RegisterForClicks("LeftButtonUp")
+    end
 
     -- 2. 左侧预览色块
     local swatch = btn.swatch
@@ -2708,6 +2820,9 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
     if not btn.swatchBorder then
         btn.swatchBorder = CreateFrame("Frame", nil, btn, "BackdropTemplate")
         btn.swatchBorder:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
+        btn.swatchBorder:EnableMouse(false)
+        if btn.swatchBorder.SetMouseMotionEnabled then btn.swatchBorder:SetMouseMotionEnabled(false) end
+        if btn.swatchBorder.SetMouseClickEnabled then btn.swatchBorder:SetMouseClickEnabled(false) end
     end
     btn.swatchBorder:ClearAllPoints()
     btn.swatchBorder:SetPoint("TOPLEFT", swatch, -1, 1)
@@ -3222,6 +3337,7 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         if db[field] == nil then db[field] = value end
     end
     local groupWidth, groupHeight = width or 750, 220
+    local fontGroupOuterBorder = { 0.78, 0.81, 0.88, 0.32 }
     local group, isNew = AcquireCompositeGroup("CompositeFontGroup", parent)
     group._exCompositeLabel = label or L["文字设置"]
     BindCompositeGroup(group, db, onUpdate, opts)
@@ -3229,6 +3345,7 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         if group._exSetUnboundedWidthControls then group:_exSetUnboundedWidthControls(opts) end
         AttachCompositeRelease(group)
         ReflowCompositeGroup(group, groupWidth, groupHeight)
+        EXUI:SetControlSurface(group, 10, MC.panel, fontGroupOuterBorder)
         return group
     end
     local proxy = CreateCompositeProxy(group)
@@ -3496,9 +3613,7 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         return slider
     end
     group:SetSize(groupWidth, groupHeight)
-    group:SetBackdrop(flatBackdrop)
-    group:SetBackdropColor(unpack(palette.panel))
-    group:SetBackdropBorderColor(unpack(palette.borderSoft))
+    EXUI:SetControlSurface(group, 10, palette.panel, fontGroupOuterBorder)
 
     local header = CreateFrame("Frame", nil, group)
     header:SetSize(groupWidth, 40)
@@ -3529,16 +3644,30 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     local metricCardHeight = 60
     local controlX = padding + metricsWidth + controlsGap
 
+    -- 三栏各用一整块低对比度底色建立语义分组。相比每个控件一张小卡片，
+    -- 它不会产生“卡片套卡片”的重量；相比只画分隔线，也不会让控件悬空。
+    local sectionHeight = math.abs(row3 - row1) + metricCardHeight
+    local sectionFill = { palette.card[1], palette.card[2], palette.card[3], 0.72 }
+    local sectionBorder = { 0.78, 0.81, 0.88, 0.36 }
+    local function CreateSectionSurface(x, sectionWidth)
+        local surface = CreateFrame("Frame", nil, content)
+        surface:EnableMouse(false)
+        surface:SetPoint("TOPLEFT", content, "TOPLEFT", x, row1)
+        surface:SetSize(sectionWidth, sectionHeight)
+        EXUI:SetControlSurface(surface, 10, sectionFill, sectionBorder)
+        return surface
+    end
+    local appearanceSurface = CreateSectionSurface(col1, itemWidth)
+    local positionSurface = CreateSectionSurface(col2, itemWidth)
+    local utilitySurface = CreateSectionSurface(controlX, controlWidth)
+
     local function CreateMetricCard(x, y)
-        local card = CreateFrame("Frame", nil, content, "BackdropTemplate")
-        card:SetPoint("TOPLEFT", x, y)
-        card:SetSize(itemWidth, metricCardHeight)
-        card:SetBackdrop(flatBackdrop)
-        card:SetBackdropColor(unpack(palette.card))
-        -- Backdrop 不再画边，避免它与物理像素四边叠加/采样不一致。
-        card:SetBackdropBorderColor(0, 0, 0, 0)
-        InstallMetricCardPhysicalOutline(card)
-        return card
+        -- 外层 FontGroup 已经提供完整卡片边界。内部这里只保留透明的布局宿主，
+        -- 让真正可交互的按钮、下拉框和滑条自己表达边界，避免“卡片套卡片”。
+        local slot = CreateFrame("Frame", nil, content)
+        slot:SetPoint("TOPLEFT", x, y)
+        slot:SetSize(itemWidth, metricCardHeight)
+        return slot
     end
 
     -- 三行两列：颜色/大小、字体/X、描边/Y。
@@ -3576,12 +3705,10 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     local ySlider = CreateFontSlider(yCard, sliderWidth, L["Y 轴偏移"], "y", offsetMin, offsetMax, db.y, 1)
     ySlider:SetPoint("TOPLEFT", 10, -8)
 
-    local controlCard = CreateFrame("Frame", nil, content, "BackdropTemplate")
+    -- 右侧功能区同样只作为布局宿主；背景由整栏的 section surface 负责。
+    local controlCard = CreateFrame("Frame", nil, content)
     controlCard:SetPoint("TOPLEFT", controlX, row1)
-    controlCard:SetSize(controlWidth, math.abs(row3 - row1) + metricCardHeight)
-    controlCard:SetBackdrop(flatBackdrop)
-    controlCard:SetBackdropColor(unpack(palette.utility))
-    controlCard:SetBackdropBorderColor(1, 1, 1, 0.16)
+    controlCard:SetSize(controlWidth, sectionHeight)
 
     local showText = self:CreateCheckbox(controlCard, L["显示文字"], db.enabled, function(v)
         CommitFontValue("enabled", v)
@@ -3758,6 +3885,12 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         xCard:ClearAllPoints(); xCard:SetPoint("TOPLEFT", content, "TOPLEFT", nextCol2, row2)
         outlineCard:ClearAllPoints(); outlineCard:SetPoint("TOPLEFT", content, "TOPLEFT", col1, row3)
         yCard:ClearAllPoints(); yCard:SetPoint("TOPLEFT", content, "TOPLEFT", nextCol2, row3)
+        appearanceSurface:ClearAllPoints(); appearanceSurface:SetPoint("TOPLEFT", content, "TOPLEFT", col1, row1)
+        appearanceSurface:SetSize(nextItemWidth, sectionHeight)
+        positionSurface:ClearAllPoints(); positionSurface:SetPoint("TOPLEFT", content, "TOPLEFT", nextCol2, row1)
+        positionSurface:SetSize(nextItemWidth, sectionHeight)
+        utilitySurface:ClearAllPoints(); utilitySurface:SetPoint("TOPLEFT", content, "TOPLEFT", nextControlX, row1)
+        utilitySurface:SetSize(nextControlWidth, sectionHeight)
         for _, slider in ipairs({ sizeSlider, xSlider, ySlider }) do slider:SetWidth(nextSliderWidth) end
         fontDrop:SetWidth(nextSliderWidth); outlineDrop:SetWidth(nextSliderWidth)
         colorBtn:SetWidth(nextSliderWidth)
@@ -4642,10 +4775,10 @@ function EXUI:CreatePreviewCanvas(parent, width, height, elementsData, callbacks
     -- 画板背景 (网格或深色背景)
     canvas:SetBackdrop({
         bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
         tileSize = 16,
-        edgeSize = 16,
-        insets = { left = 4, right = 4, top = 4, bottom = 4 }
+        edgeSize = 1,
+        insets = { left = 1, right = 1, top = 1, bottom = 1 }
     })
     EXUI:ApplyModernPanel(canvas, true)
 

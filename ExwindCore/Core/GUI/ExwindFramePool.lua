@@ -10,6 +10,7 @@ local L = (ExwindTools and ExwindTools.L)
 
 if not ExwindTools then return end
 local EXUI = ExwindTools.UI
+local Colors = assert(_G.ExwindGUIColor, "ExwindGUIColor.lua must load before ExwindFramePool.lua")
 
 local EXFactory = {}
 _G.ExwindFactory = EXFactory
@@ -83,7 +84,7 @@ local function StandardReset(pool, frame)
     if frame.cells then
         for _, fs in ipairs(frame.cells) do
             fs:SetText("")
-            fs:SetTextColor(1, 1, 1, 1)
+            fs:SetTextColor(unpack(Colors.Text.Primary))
             fs:ClearAllPoints()
             fs:SetAlpha(1)
         end
@@ -336,7 +337,7 @@ EXFactory:InitPool("StandardRow", "Frame", nil, function(f)
     f:SetSize(720, 25)
     f.bg = EXUI:CreateVisualTexture(f, _G.EXBACKGROUNDFRAME)
     f.bg:SetAllPoints()
-    f.bg:SetColorTexture(0.2, 0.2, 0.2, 0.5)
+    f.bg:SetColorTexture(unpack(Colors.Surface.Card))
     f.cells = {}
     for i = 1, 5 do
         local fs = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME, "GameFontHighlight")
@@ -353,7 +354,7 @@ EXFactory:InitPool("StandardIcon", "Frame", nil, function(f)
     f.border = EXUI:CreateVisualTexture(f, _G.EXBORDERFRAME)
     f.border:SetAllPoints()
     f.border:SetTexture("Interface\\Buttons\\UI-EmptySlot-White")
-    f.border:SetVertexColor(0.3, 0.3, 0.3, 0.8)
+    f.border:SetVertexColor(unpack(Colors.Border.Default))
 end)
 
 -- 3. 标准按钮 (StandardButton)
@@ -370,8 +371,8 @@ EXFactory:InitPool("IconTextCard", "Frame", "BackdropTemplate", function(f)
         edgeSize = 1,
         insets = { left = 1, right = 1, top = 1, bottom = 1 }
     })
-    f:SetBackdropColor(1, 1, 1, 0.05)
-    f:SetBackdropBorderColor(1, 1, 1, 0.25)
+    f:SetBackdropColor(unpack(Colors.Surface.Card))
+    f:SetBackdropBorderColor(unpack(Colors.Border.Default))
     f.icon = EXUI:CreateVisualTexture(f, _G.EXBASEFRAME)
     f.icon:SetSize(45, 45)
     f.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -409,8 +410,8 @@ EXFactory:InitPool("RunRow", "Frame", "BackdropTemplate", function(f)
         edgeSize = 1,
         insets = { left = 1, right = 1, top = 1, bottom = 1 }
     })
-    f:SetBackdropColor(1, 1, 1, 0.03)
-    f:SetBackdropBorderColor(1, 1, 1, 0.25)
+    f:SetBackdropColor(unpack(Colors.Surface.Card))
+    f:SetBackdropBorderColor(unpack(Colors.Border.Default))
     f.icon = EXUI:CreateVisualTexture(f, _G.EXBASEFRAME)
     f.icon:SetSize(30, 30)
     f.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
@@ -624,7 +625,7 @@ EXFactory:InitPool("GridColorButton", "Button", "BackdropTemplate", function(f)
     f.swatch = EXUI:CreateVisualTexture(f, _G.EXBASEFRAME)
     f.swatch:SetPoint("TOPLEFT", 3, -3)
     f.swatch:SetPoint("BOTTOMRIGHT", -3, 3)
-    f.swatch:SetColorTexture(1, 1, 1, 1)
+    f.swatch:SetColorTexture(unpack(Colors.White))
     f.label = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     f.label:SetPoint("LEFT", f, "RIGHT", 6, 0)
     f._gridType = "GridColorButton"

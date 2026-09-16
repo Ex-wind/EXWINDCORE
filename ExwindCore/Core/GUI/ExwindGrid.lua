@@ -14,6 +14,7 @@ end
 -- 确保 EXUI 命名空间存在（可能在 ExwindToolsUI.lua 之前加载）
 local EXUI = ExwindTools.UI or {}
 ExwindTools.UI = EXUI
+local Colors = assert(_G.ExwindGUIColor, "ExwindGUIColor.lua must load before ExwindGrid.lua")
 
 local Grid = {
     Cols = 50,
@@ -3318,7 +3319,7 @@ function Grid:ShowRowContextMenu(row, x, y)
             edgeSize = 1,
             insets = { left = 1, right = 1, top = 1, bottom = 1 }
         })
-        cm:SetBackdropColor(0.05, 0.05, 0.1, 0.95)
+        cm:SetBackdropColor(unpack(Colors.Control.Menu.Fill))
 
         -- 保持高层级，确保在任何 Frame 之上
         cm:SetFrameStrata("TOOLTIP")
@@ -3382,7 +3383,7 @@ function Grid:WrapWidgetForEdit(widget, key, container)
     drag:SetFrameLevel((container:GetFrameLevel() or 0) + 20)
     drag:EnableMouse(true)
     drag:RegisterForClicks("LeftButtonUp", "RightButtonUp"); drag:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" }); drag
-        :SetBackdropColor(0, 0.5, 1, 0.15); drag:Show(); widget.dragOverlay = drag
+        :SetBackdropColor(unpack(Colors.Editor.DragFill)); drag:Show(); widget.dragOverlay = drag
     if widget.SetMovable then widget:SetMovable(true) end
     drag:SetScript("OnMouseDown",
         function(f, b)
@@ -3429,7 +3430,7 @@ function Grid:WrapWidgetForEdit(widget, key, container)
         r:RegisterForClicks("LeftButtonUp")
         r:SetFrameLevel(drag:GetFrameLevel() + 1)
         local t = EXUI:CreateVisualTexture(r, EXEDITORFRAME)
-        t:SetAllPoints(); t:SetColorTexture(1, 1, 0, 0.5)
+        t:SetAllPoints(); t:SetColorTexture(unpack(Colors.Editor.ResizeHandle))
         drag.resizer = r
     end
 
@@ -3523,8 +3524,8 @@ function Grid:DrawRowGuides(container)
                 edgeFile = "Interface\\Buttons\\WHITE8X8",
                 edgeSize = 1,
             })
-            btn:SetBackdropColor(0.2, 0.2, 0.2, 0.8) -- 深灰色背景
-            btn:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.3)
+            btn:SetBackdropColor(unpack(Colors.Surface.Card))
+            btn:SetBackdropBorderColor(unpack(Colors.Border.Default))
             btn:RegisterForClicks("RightButtonUp")   -- 只响右键即可，或者左键也没事
 
             -- 行号文字
@@ -3557,8 +3558,8 @@ function Grid:DrawRowGuides(container)
         end)
 
         -- 鼠标悬停变色效果
-        btn:SetScript("OnEnter", function(self) self:SetBackdropColor(0, 0.6, 1, 0.8) end)
-        btn:SetScript("OnLeave", function(self) self:SetBackdropColor(0.2, 0.2, 0.2, 0.8) end)
+        btn:SetScript("OnEnter", function(self) self:SetBackdropColor(unpack(Colors.Surface.PanelHeaderHover)) end)
+        btn:SetScript("OnLeave", function(self) self:SetBackdropColor(unpack(Colors.Surface.Card)) end)
 
         btn:Show()
     end
@@ -3588,7 +3589,6 @@ function Grid:DrawEditorGrid(canvas)
 
     local idx = 1
     local linePixelWidth = 1.2 -- 稍微加粗，确保可见
-    local gridAlpha = 0.15     -- 提高透明度，确保在深色背景下可见
     local padding = self:GetContainerPadding(canvas)
     local cols = self:GetContainerCols(canvas) or self.Cols
 
@@ -3600,7 +3600,7 @@ function Grid:DrawEditorGrid(canvas)
             gridLines[idx] = l
         end
 
-        l:SetColorTexture(1, 1, 1, gridAlpha)
+        l:SetColorTexture(unpack(Colors.Editor.GridLine))
         -- [Fix] 显式传入 canvas 作为锚点目标，防止坐标偏移
         l:SetStartPoint("TOPLEFT", canvas, padding.left + i * self.CellSize, 0)
         l:SetEndPoint("BOTTOMLEFT", canvas, padding.left + i * self.CellSize, -3000)
@@ -3617,7 +3617,7 @@ function Grid:DrawEditorGrid(canvas)
             gridLines[idx] = l
         end
 
-        l:SetColorTexture(1, 1, 1, gridAlpha)
+        l:SetColorTexture(unpack(Colors.Editor.GridLine))
         -- [Fix] 显式传入 canvas 作为锚点目标
         l:SetStartPoint("TOPLEFT", canvas, 0, -padding.top - i * self.CellSize)
         l:SetEndPoint("TOPRIGHT", canvas, 0, -padding.top - i * self.CellSize)
@@ -3639,7 +3639,8 @@ function Grid:ShowToolbar()
     tb:SetSize(500, 44)
     tb:SetPoint("TOP", 0, -10)
     tb:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-    tb:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
+    tb:SetBackdropColor(unpack(Colors.Surface.Panel))
+    tb:SetBackdropBorderColor(unpack(Colors.Border.Default))
     tb:SetFrameStrata("HIGH")
 
     local b1 = CreateFrame("Button", nil, tb, "UIPanelButtonTemplate")
@@ -3670,7 +3671,7 @@ function Grid:ShowPalette()
     end
     local p = CreateFrame("Frame", nil, UIParent, "BackdropTemplate"); p:SetSize(160, 500); p:SetPoint("RIGHT", -20, 0); p
         :SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 }); p
-        :SetBackdropColor(0.1, 0.1, 0.1, 0.95); p:SetFrameStrata("HIGH"); p:EnableMouse(true); p:SetMovable(true); p
+        :SetBackdropColor(unpack(Colors.Surface.Panel)); p:SetBackdropBorderColor(unpack(Colors.Border.Default)); p:SetFrameStrata("HIGH"); p:EnableMouse(true); p:SetMovable(true); p
         :RegisterForDrag("LeftButton"); p:SetScript("OnDragStart", p.StartMoving); p:SetScript("OnDragStop",
         p.StopMovingOrSizing)
     local types = {
@@ -3769,7 +3770,7 @@ function Grid:CreatePropertyPanel()
     if self.PropPanel then return end
     local p = CreateFrame("Frame", nil, UIParent, "BackdropTemplate"); p:SetSize(320, 780); p:SetPoint("LEFT", 20, 0); p
         :SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 }); p
-        :SetBackdropColor(0.05, 0.05, 0.1, 0.98); p:SetFrameStrata("DIALOG"); p:EnableMouse(true); p:SetMovable(true); p
+        :SetBackdropColor(unpack(Colors.Surface.Panel)); p:SetBackdropBorderColor(unpack(Colors.Border.Default)); p:SetFrameStrata("DIALOG"); p:EnableMouse(true); p:SetMovable(true); p
         :RegisterForDrag("LeftButton"); p:SetScript("OnDragStart", p.StartMoving); p:SetScript("OnDragStop",
         p.StopMovingOrSizing)
     local function CI(l, y)
@@ -3890,7 +3891,9 @@ function Grid:CreatePropertyPanel()
 
 
     local d = CreateFrame("Button", nil, p, "UIPanelButtonTemplate"); d:SetSize(130, 32); d:SetPoint("BOTTOMRIGHT", -20,
-        20); d:SetText(L["|cffff0000删除组件|r"]); d:SetScript("OnClick", function()
+        20)
+    d:SetText(Colors.WrapText(Colors.Status.Error, L["删除组件"]))
+    d:SetScript("OnClick", function()
         local current = Grid.Cur
         local source = current and current._exCardSourceItem
         local owner = Grid.LiveEditContainer and Grid.CardSessionOwners[Grid.LiveEditContainer]

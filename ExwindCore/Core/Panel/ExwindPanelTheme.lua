@@ -6,6 +6,7 @@
 
 local ExwindTools = _G.ExwindTools
 if not ExwindTools then return end
+local Colors = assert(_G.ExwindGUIColor, "ExwindGUIColor.lua must load before ExwindPanelTheme.lua")
 
 ExwindTools.PanelTheme = ExwindTools.PanelTheme or {
     Layout = {
@@ -26,25 +27,7 @@ ExwindTools.PanelTheme = ExwindTools.PanelTheme or {
         MIN_HEIGHT = 700,
     },
 
-    Color = {
-        panel = { 0.078, 0.086, 0.102, 1 }, -- #14161a
-        rail = { 0.065, 0.080, 0.110, 1 },
-        header = { 0.055, 0.070, 0.095, 0.96 },
-        nav = { 0.070, 0.090, 0.120, 1 },
-        content = { 0.078, 0.086, 0.102, 1 }, -- #14161a
-        card = { 0.085, 0.105, 0.140, 0.96 },
-        cardAlt = { 0.070, 0.086, 0.118, 0.94 },
-        border = { 0.185, 0.225, 0.290, 1 },
-        borderSoft = { 0.125, 0.155, 0.205, 0.92 },
-        text = { 0.89, 0.92, 0.96, 1 },
-        muted = { 0.56, 0.62, 0.70, 1 },
-        quiet = { 0.34, 0.40, 0.48, 1 },
-        cyan = { 0.28, 0.80, 0.91, 1 },
-        violet = { 0.62, 0.55, 1.00, 1 },
-        gold = { 0.95, 0.77, 0.35, 1 },
-        success = { 0.23, 0.85, 0.61, 1 },
-        danger = { 0.95, 0.40, 0.47, 1 },
-    },
+    Color = Colors.PanelTheme,
 
     -- Compatibility geometry token. Runtime card appearance is owned by
     -- EXUI:ApplyControlAppearance so Grid and PanelTheme cannot compete.

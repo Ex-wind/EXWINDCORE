@@ -1,6 +1,7 @@
 -- Pooled tabs and option groups. Ordinary EXUI button skins are unchanged.
 local UI = _G.ExwindTools.UI
 local Factory = _G.ExwindFactory
+local Colors = assert(_G.ExwindGUIColor, "ExwindGUIColor.lua must load before ExwindChoiceGroup.lua")
 local HOST, VIEW, ITEM = "EXUI.ChoiceGroup", "EXUI.ChoiceViewport", "EXUI.ChoiceItem"
 local Methods = {}
 local Appearance = UI.ControlAppearance
@@ -15,7 +16,7 @@ Factory:InitPool(ITEM, "Button", "BackdropTemplate", function(button)
     button.label:SetJustifyH("CENTER")
     button.icon = button:CreateTexture(nil, "ARTWORK")
     button.line = button:CreateTexture(nil, "OVERLAY")
-    button.line:SetColorTexture(0.294, 0.824, 0.910, 1)
+    button.line:SetColorTexture(unpack(Colors.Accent.Primary))
     button.line:SetPoint("BOTTOMLEFT", 0, 0)
     button.line:SetPoint("BOTTOMRIGHT", 0, 0)
     button.line:SetHeight(2)

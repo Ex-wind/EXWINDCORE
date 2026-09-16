@@ -12,6 +12,7 @@ local L = (ExwindTools and ExwindTools.L)
 if not ExwindTools then
     error(L["[ExwindPanelRouter] ExwindTools 核心未加载"])
 end
+local Colors = assert(_G.ExwindGUIColor, "ExwindPanelRouter requires ExwindGUIColor")
 
 local Router = ExwindTools.PanelRouter or {}
 ExwindTools.PanelRouter = Router
@@ -191,7 +192,9 @@ function Router:HandleBossSlash(input)
 
     if arg == "version" then
         local boss = _G.ExBoss
-        local message = "|cffff4400Ex|r|cff00ccffBoss|r v" .. tostring(boss and boss.VERSION or L["未加载"])
+        local message = Colors.WrapText(Colors.Status.Danger, "Ex")
+            .. Colors.WrapText(Colors.Status.Info, "Boss")
+            .. " v" .. tostring(boss and boss.VERSION or L["未加载"])
         if boss and boss.Print and boss.Print.Say then boss.Print.Say(message) else print(message) end
         return
     end

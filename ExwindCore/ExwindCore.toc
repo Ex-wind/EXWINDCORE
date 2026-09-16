@@ -1,5 +1,5 @@
 ## Interface: 120100
-## Title: |cffff0000Exwind|r |cff00ffffCore|r
+## Title: Exwind Core
 ## Notes: ExwindTools 核心引擎
 ## Version: 6.0.0
 ## Author: Exwind
@@ -29,6 +29,7 @@ Locale\itIT.lua
 # 1. 主引擎
 Core\ExwindTools_Metadata.lua
 Core\ExwindTools.lua
+Core\GUI\ExwindGUIColor.lua
 Core\Panel\ExwindPanelTheme.lua
 Core\Renderer\ExwindVisualLayers.lua
 Core\ExwindMedia.lua

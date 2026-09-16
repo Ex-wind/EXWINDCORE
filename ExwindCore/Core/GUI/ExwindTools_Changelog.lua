@@ -7,6 +7,7 @@
 local ExwindTools = _G.ExwindTools
 if not ExwindTools then return end
 local EXUI = ExwindTools.UI
+local Colors = assert(_G.ExwindGUIColor, "ExwindGUIColor.lua must load before ExwindTools_Changelog.lua")
 
 local L = ExwindTools.L
     or (_G.ExwindLocale and _G.ExwindLocale.GetProxy and _G.ExwindLocale.GetProxy())
@@ -18,17 +19,6 @@ Viewer.Sources = Viewer.Sources or {}
 Viewer.Order = { "boss", "tools" }
 
 local viewerFrame
-
-local PANEL_THEME = {
-    Background = { 0, 0, 0, 1 },
-    Border = { 0.22, 0.56, 0.34, 0.9 },
-    BodyText = { 0.84, 0.86, 0.89, 1.0 },
-    BulletText = { 0.90, 0.92, 0.95, 1.0 },
-    NoteText = { 0.95, 0.74, 0.45, 1.0 },
-    H1Text = { 1.00, 0.86, 0.45, 1.0 },
-    H2Text = { 0.43, 0.68, 0.86, 1.0 },
-    DividerText = { 0.52, 0.64, 0.74, 0.75 },
-}
 
 local PANEL_BACKDROP = {
     bgFile = "Interface\\Buttons\\WHITE8X8",
@@ -104,25 +94,25 @@ end
 local function ResolveLineStyle(line, baseSize)
     local h2 = line:match("^%s*@H2@%s*(.+)$") or line:match("^%s*##%s+(.+)$")
     if h2 then
-        return h2, baseSize + 3, PANEL_THEME.H2Text, "", 7, "h2"
+        return h2, baseSize + 3, Colors.Accent.Primary, "", 7, "h2"
     end
 
     local h1 = line:match("^%s*@H1@%s*(.+)$") or line:match("^%s*#%s+(.+)$")
     if h1 then
         h1 = h1:gsub("%s+%d%d%d%d%-%d%d%-%d%d%s+%d%d:%d%d$", "")
-        return h1, baseSize + 11, PANEL_THEME.H1Text, "OUTLINE", 10, "h1"
+        return h1, baseSize + 11, Colors.Text.PanelTitle, "OUTLINE", 10, "h1"
     end
 
     if line:match("^%s*$") then
-        return "", baseSize, PANEL_THEME.BodyText, "", math.max(6, math.floor(baseSize * 0.5)), "blank"
+        return "", baseSize, Colors.Text.Primary, "", math.max(6, math.floor(baseSize * 0.5)), "blank"
     end
     if line:match("^%s*备注:") then
-        return line, baseSize, PANEL_THEME.NoteText, "", math.max(6, math.floor(baseSize * 0.48)), "note"
+        return line, baseSize, Colors.Status.Warning, "", math.max(6, math.floor(baseSize * 0.48)), "note"
     end
     if line:match("^%s*%-") then
-        return line, baseSize, PANEL_THEME.BulletText, "", math.max(4, math.floor(baseSize * 0.42)), "bullet"
+        return line, baseSize, Colors.Text.Primary, "", math.max(4, math.floor(baseSize * 0.42)), "bullet"
     end
-    return line, baseSize, PANEL_THEME.BodyText, "", math.max(4, math.floor(baseSize * 0.4)), "body"
+    return line, baseSize, Colors.Text.Primary, "", math.max(4, math.floor(baseSize * 0.4)), "body"
 end
 
 local function AcquireLine(frame, index)
@@ -142,7 +132,7 @@ local function AcquireDivider(frame, index)
     local divider = frame.DividerPool[index]
     if divider then return divider end
     divider = frame.ScrollChild:CreateTexture(nil, "ARTWORK")
-    divider:SetColorTexture(unpack(PANEL_THEME.DividerText))
+    divider:SetColorTexture(unpack(Colors.Surface.PanelDivider))
     frame.DividerPool[index] = divider
     return divider
 end
@@ -237,8 +227,8 @@ local function EnsureViewerFrame()
     viewerFrame = CreateFrame("Frame", "ExwindChangelogFrame", UIParent, "BackdropTemplate")
     viewerFrame:SetSize(860, 620)
     viewerFrame:SetBackdrop(PANEL_BACKDROP)
-    viewerFrame:SetBackdropColor(unpack(PANEL_THEME.Background))
-    viewerFrame:SetBackdropBorderColor(unpack(PANEL_THEME.Border))
+    viewerFrame:SetBackdropColor(unpack(Colors.Surface.Page))
+    viewerFrame:SetBackdropBorderColor(unpack(Colors.Border.Default))
     viewerFrame:SetPoint("CENTER")
     viewerFrame:SetFrameStrata("FULLSCREEN_DIALOG")
     viewerFrame:SetFrameLevel(200)
@@ -296,29 +286,19 @@ local function EnsureViewerFrame()
     return viewerFrame
 end
 
-local TAB_STYLE = {
-    activeBackground = { 0.075, 0.125, 0.165, 0.96 },
-    hoverBackground = { 0.075, 0.115, 0.150, 0.90 },
-    idleBackground = { 0.025, 0.035, 0.050, 0.56 },
-    activeText = { 0.90, 0.95, 1.00, 1.00 },
-    idleText = { 0.52, 0.60, 0.69, 1.00 },
-    hoverText = { 0.76, 0.86, 0.94, 1.00 },
-    accent = { 0.28, 0.80, 0.91, 1.00 },
-}
-
 local function SetTabVisual(button, active, hovered)
     button._tabActive = active == true
     if active then
-        button.Background:SetColorTexture(unpack(TAB_STYLE.activeBackground))
-        button.Label:SetTextColor(unpack(TAB_STYLE.activeText))
+        button.Background:SetColorTexture(unpack(Colors.Surface.PanelHeader))
+        button.Label:SetTextColor(unpack(Colors.Text.PanelTitle))
         button.Accent:Show()
     elseif hovered then
-        button.Background:SetColorTexture(unpack(TAB_STYLE.hoverBackground))
-        button.Label:SetTextColor(unpack(TAB_STYLE.hoverText))
+        button.Background:SetColorTexture(unpack(Colors.Surface.PanelHeaderHover))
+        button.Label:SetTextColor(unpack(Colors.Text.PanelTitleHover))
         button.Accent:Hide()
     else
-        button.Background:SetColorTexture(unpack(TAB_STYLE.idleBackground))
-        button.Label:SetTextColor(unpack(TAB_STYLE.idleText))
+        button.Background:SetColorTexture(unpack(Colors.Surface.Panel))
+        button.Label:SetTextColor(unpack(Colors.Text.Secondary))
         button.Accent:Hide()
     end
 end
@@ -334,7 +314,7 @@ local function CreateTabButton(parent)
     button.Accent:SetPoint("BOTTOMLEFT", 0, 0)
     button.Accent:SetPoint("BOTTOMRIGHT", 0, 0)
     button.Accent:SetHeight(3)
-    button.Accent:SetColorTexture(unpack(TAB_STYLE.accent))
+    button.Accent:SetColorTexture(unpack(Colors.Accent.Primary))
     button:SetScript("OnEnter", function(self)
         if not self._tabActive then SetTabVisual(self, false, true) end
     end)

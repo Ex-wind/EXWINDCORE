@@ -9,6 +9,7 @@ local Grid = ExwindTools and ExwindTools.Grid
 if not (EXUI and Grid) then
     error("[ExwindGridCardShowcase] ExwindGrid.lua must load first")
 end
+local Colors = assert(_G.ExwindGUIColor, "ExwindGridCardShowcase requires ExwindGUIColor")
 
 local RENDERER_KEY = "ExwindGridCardShowcase.DynamicRows"
 
@@ -226,7 +227,7 @@ local function EnsureShowcaseWindow()
 
     local subtitle = EXUI:CreateVisualFontString(window, EXFONTFRAME, "GameFontHighlightSmall")
     subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -5)
-    subtitle:SetText("三种内容来源 · 相对锚点 · 动态高度 · 折叠与回收复用 · /exgridcards")
+    subtitle:SetText("点击整条卡片标题折叠/展开 · 折叠 Shared composite 可观察下方卡片随高度移动 · /exgridcards")
     window.Subtitle = subtitle
 
     local close = EXUI:CreateButton(window, 32, 30, "×", function() window:Hide() end,

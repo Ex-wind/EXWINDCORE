@@ -8,6 +8,7 @@
 
 local ExwindTools = _G.ExwindTools
 if not ExwindTools then return end
+local Colors = assert(_G.ExwindGUIColor, "ExwindGUIColor.lua must load before ExwindFramePicker.lua")
 
 local pickerOverlay   = nil
 local highlightFrame  = nil
@@ -122,21 +123,25 @@ function ExwindTools:StartFramePicker(onConfirm, onCancel)
                     highlightFrame:SetPoint("TOPLEFT",     focus, "TOPLEFT",     -2,  2)
                     highlightFrame:SetPoint("BOTTOMRIGHT", focus, "BOTTOMRIGHT",  2, -2)
                     highlightFrame:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-                    highlightFrame:SetBackdropBorderColor(0, 1, 0, 1)
+                    highlightFrame:SetBackdropBorderColor(unpack(Colors.Status.Success))
                     highlightFrame:Show()
                     lastFocus     = focus
                     lastFocusName = name
                 end
                 GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
-                GameTooltip:SetText("|cff00ff00" .. T(L["拾取中: "], "Picking: ") .. "|r" .. name)
-                GameTooltip:AddLine("|cffffffff" .. T(L["左键 : 选择该框架"], "Left Click: Select Frame") .. "|r")
-                GameTooltip:AddLine("|cffaaaaaa" .. T(L["右键/ESC : 取消退出"], "Right Click / ESC: Cancel") .. "|r")
+                GameTooltip:SetText(Colors.WrapText(Colors.Status.Success, T(L["拾取中: "], "Picking: ")) .. name)
+                GameTooltip:AddLine(Colors.WrapText(Colors.Text.Primary,
+                    T(L["左键 : 选择该框架"], "Left Click: Select Frame")))
+                GameTooltip:AddLine(Colors.WrapText(Colors.Text.Secondary,
+                    T(L["右键/ESC : 取消退出"], "Right Click / ESC: Cancel")))
                 GameTooltip:Show()
                 return
             else
                 GameTooltip:SetOwner(UIParent, "ANCHOR_CURSOR")
-                GameTooltip:SetText("|cffff8800" .. T(L["无法识别该框架"], "Frame not identifiable") .. "|r")
-                GameTooltip:AddLine("|cffaaaaaa" .. T(L["右键/ESC : 取消退出"], "Right Click / ESC: Cancel") .. "|r")
+                GameTooltip:SetText(Colors.WrapText(Colors.Status.Warning,
+                    T(L["无法识别该框架"], "Frame not identifiable")))
+                GameTooltip:AddLine(Colors.WrapText(Colors.Text.Secondary,
+                    T(L["右键/ESC : 取消退出"], "Right Click / ESC: Cancel")))
                 GameTooltip:Show()
             end
         end

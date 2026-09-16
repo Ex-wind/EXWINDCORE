@@ -14,6 +14,7 @@ local L = (ExwindTools and ExwindTools.L)
 
 if not ExwindTools or not ExwindTools.UI then return end
 local EXUI = ExwindTools.UI
+local Colors = assert(_G.ExwindGUIColor, "ExwindGUIColor.lua must load before ExwindPanelPreview.lua")
 
 -- GUI 修改 ModuleDB 后的唯一刷新注册表。注册项只能重套已经存在的
 -- presentation；创建、释放与完整 Render 仍只属于各自正常的生命周期入口。
@@ -905,7 +906,7 @@ local function CreatePanelPresetButton(parent, width, textValue)
     return EXUI:CreateButton(parent, width, 24, textValue)
 end
 
-local function AcquirePanelPresetSidebarTexture(button, key, r, g, b, a)
+local function AcquirePanelPresetSidebarTexture(button, key, color)
     button.__ExwindPanelPresetSidebarTextures = button.__ExwindPanelPresetSidebarTextures or {}
     local textures = button.__ExwindPanelPresetSidebarTextures
     local texture = textures[key]
@@ -915,7 +916,7 @@ local function AcquirePanelPresetSidebarTexture(button, key, r, g, b, a)
         texture:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
         textures[key] = texture
     end
-    texture:SetColorTexture(r, g, b, a)
+    texture:SetColorTexture(unpack(color))
     return texture
 end
 
@@ -923,10 +924,10 @@ local function SetPanelPresetButtonPresentation(button, sidebar, role)
     if not button then return end
     local fontString = button.GetFontString and button:GetFontString() or nil
     if sidebar then
-        local normal = AcquirePanelPresetSidebarTexture(button, "normal", 0.055, 0.086, 0.122, 1)
-        local pushed = AcquirePanelPresetSidebarTexture(button, "pushed", 0.102, 0.153, 0.204, 1)
-        local disabled = AcquirePanelPresetSidebarTexture(button, "disabled", 0.039, 0.063, 0.090, 0.75)
-        local highlight = AcquirePanelPresetSidebarTexture(button, "highlight", 0.306, 0.835, 0.914, 0.18)
+        local normal = AcquirePanelPresetSidebarTexture(button, "normal", Colors.Surface.Panel)
+        local pushed = AcquirePanelPresetSidebarTexture(button, "pushed", Colors.Surface.PanelHeaderHover)
+        local disabled = AcquirePanelPresetSidebarTexture(button, "disabled", Colors.Disabled.Fill)
+        local highlight = AcquirePanelPresetSidebarTexture(button, "highlight", Colors.Control.Menu.Selected)
         button:SetNormalTexture(normal)
         button:SetPushedTexture(pushed)
         button:SetDisabledTexture(disabled)
@@ -939,15 +940,15 @@ local function SetPanelPresetButtonPresentation(button, sidebar, role)
             button.__ExwindPanelPresetSidebarBorder = border
         end
         local border = button.__ExwindPanelPresetSidebarBorder
-        border:SetBackdropBorderColor(0.141, 0.216, 0.278, 1)
+        border:SetBackdropBorderColor(unpack(Colors.Border.Default))
         border:Show()
         if fontString then
             if role == "delete" then
-                fontString:SetTextColor(0.929, 0.349, 0.392, 1)
+                fontString:SetTextColor(unpack(Colors.Status.Danger))
             elseif role == "add" then
-                fontString:SetTextColor(0.306, 0.835, 0.914, 1)
+                fontString:SetTextColor(unpack(Colors.Accent.Primary))
             else
-                fontString:SetTextColor(0.906, 0.941, 0.969, 1)
+                fontString:SetTextColor(unpack(Colors.Text.Primary))
             end
         end
     else
@@ -958,7 +959,7 @@ local function SetPanelPresetButtonPresentation(button, sidebar, role)
         if button.SetPushedAtlas then button:SetPushedAtlas("common-button-tertiary-pressed") end
         if button.SetDisabledAtlas then button:SetDisabledAtlas("common-button-tertiary-disabled") end
         if button.SetHighlightAtlas then button:SetHighlightAtlas("common-button-tertiary-normal", "ADD") end
-        if fontString then fontString:SetTextColor(1, 0.82, 0, 1) end
+        if fontString then fontString:SetTextColor(unpack(Colors.Status.Gold)) end
     end
 end
 
@@ -968,8 +969,8 @@ local function CreatePanelPresetThumbnail(parent, width, height)
     local view = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     view:SetSize(width, height)
     view:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-    view:SetBackdropColor(0.20, 0.23, 0.29, 1)
-    view:SetBackdropBorderColor(0.75, 0.82, 0.94, 0.70)
+    view:SetBackdropColor(unpack(Colors.Surface.Card))
+    view:SetBackdropBorderColor(unpack(Colors.Border.Default))
     if type(view.SetClipsChildren) == "function" then view:SetClipsChildren(true) end
     local host = CreateFrame("Frame", nil, view)
     host:SetPoint("CENTER", view, "CENTER", 0, 0)
@@ -1197,8 +1198,8 @@ local function AcquirePanelStylePresetControls(dock)
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = 1,
     })
-    confirm:SetBackdropColor(0.10, 0.12, 0.17, 1)
-    confirm:SetBackdropBorderColor(0.35, 0.72, 1.00, 1)
+    confirm:SetBackdropColor(unpack(Colors.Control.Menu.Fill))
+    confirm:SetBackdropBorderColor(unpack(Colors.Control.Menu.Border))
     confirm:SetFrameStrata("TOOLTIP")
     confirm:SetToplevel(true)
     confirm:EnableMouse(true)
@@ -1261,8 +1262,8 @@ local function AcquirePanelStylePresetControls(dock)
     local tooltip = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     tooltip:SetSize(360, 154)
     tooltip:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-    tooltip:SetBackdropColor(0.10, 0.12, 0.17, 1)
-    tooltip:SetBackdropBorderColor(0.35, 0.72, 1.00, 1)
+    tooltip:SetBackdropColor(unpack(Colors.Control.Menu.Fill))
+    tooltip:SetBackdropBorderColor(unpack(Colors.Control.Menu.Border))
     tooltip:SetFrameStrata("TOOLTIP")
     tooltip:SetToplevel(true)
     tooltip:EnableMouse(false)
@@ -2051,14 +2052,14 @@ end
 
 local function ApplyTimelineColor(region, color, label)
     if color == nil then
-        region:SetVertexColor(1, 1, 1, 1)
+        region:SetVertexColor(unpack(Colors.White))
         return
     end
     if type(color) ~= "table" then error("Timeline " .. label .. " color must be table", 3) end
     local r = RequireTimelineNumber(color.r or color[1], label .. ".color.r", 4)
     local g = RequireTimelineNumber(color.g or color[2], label .. ".color.g", 4)
     local b = RequireTimelineNumber(color.b or color[3], label .. ".color.b", 4)
-    local a = color.a or color[4] or 1
+    local a = color.a or color[4] or Colors.White[4]
     RequireTimelineNumber(a, label .. ".color.a", 4)
     region:SetVertexColor(r, g, b, a)
 end
@@ -2077,7 +2078,7 @@ local function ApplyTimelineTexture(region, spec, label)
         region:SetTexture(nil)
         region:SetAtlas(spec.atlas, true)
     elseif spec.texture == nil then
-        region:SetColorTexture(1, 1, 1, 1)
+        region:SetColorTexture(unpack(Colors.White))
     else
         if type(spec.texture) ~= "string" and type(spec.texture) ~= "number" then
             error("Timeline " .. label .. ".texture must be string, fileID, or nil", 3)
@@ -2111,11 +2112,13 @@ local function ApplyTimelineBorder(border, region, spec, label)
     border:SetBackdrop({ edgeFile = texture, edgeSize = edgeSize })
     local color = spec.color
     if color ~= nil and type(color) ~= "table" then error("Timeline " .. label .. ".color must be table or nil", 3) end
-    border:SetBackdropBorderColor(
-        (color and (color.r or color[1])) or 1,
-        (color and (color.g or color[2])) or 1,
-        (color and (color.b or color[3])) or 1,
-        (color and (color.a or color[4])) or 1)
+    if color then
+        border:SetBackdropBorderColor(
+            color.r or color[1], color.g or color[2], color.b or color[3],
+            color.a or color[4] or Colors.White[4])
+    else
+        border:SetBackdropBorderColor(unpack(Colors.White))
+    end
     border:ClearAllPoints()
     border:SetPoint("TOPLEFT", region, "TOPLEFT", -padding, padding)
     border:SetPoint("BOTTOMRIGHT", region, "BOTTOMRIGHT", padding, -padding)
@@ -2125,12 +2128,12 @@ end
 local function SetTimelineOverlayVisual(overlay, visible, dragging)
     if dragging then
         overlay:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-        overlay:SetBackdropBorderColor(1.00, 0.82, 0.20, 1.00)
-        overlay:SetBackdropColor(1.00, 0.72, 0.12, 0.18)
+        overlay:SetBackdropBorderColor(unpack(Colors.Editor.DraggingBorder))
+        overlay:SetBackdropColor(unpack(Colors.Editor.DraggingFill))
     elseif visible then
         overlay:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-        overlay:SetBackdropBorderColor(0.32, 0.82, 1.00, 0.95)
-        overlay:SetBackdropColor(0.20, 0.65, 1.00, 0.10)
+        overlay:SetBackdropBorderColor(unpack(Colors.Editor.SelectionBorder))
+        overlay:SetBackdropColor(unpack(Colors.Editor.SelectionFill))
     else
         -- Never leave pooled selection borders visible.  alpha=0 is not enough
         -- on all clients after re-parenting, so remove the Backdrop itself.
@@ -2269,20 +2272,23 @@ local function ApplyTimelineFontString(region, spec, label)
         region:SetFontObject(GameFontNormal)
     end
     if type(spec.color) == "table" then
-        region:SetTextColor(spec.color.r or spec.color[1] or 1, spec.color.g or spec.color[2] or 1,
-            spec.color.b or spec.color[3] or 1, spec.color.a or spec.color[4] or 1)
+        region:SetTextColor(spec.color.r or spec.color[1] or Colors.White[1],
+            spec.color.g or spec.color[2] or Colors.White[2], spec.color.b or spec.color[3] or Colors.White[3],
+            spec.color.a or spec.color[4] or Colors.White[4])
     elseif spec.color ~= nil then
         error("Timeline " .. label .. ".color must be table or nil", 3)
     else
-        region:SetTextColor(1, 1, 1, 1)
+        region:SetTextColor(unpack(Colors.White))
     end
     if type(spec.shadowColor) == "table" then
-        region:SetShadowColor(spec.shadowColor.r or spec.shadowColor[1] or 0, spec.shadowColor.g or spec.shadowColor[2] or 0,
-            spec.shadowColor.b or spec.shadowColor[3] or 0, spec.shadowColor.a or spec.shadowColor[4] or 1)
+        region:SetShadowColor(spec.shadowColor.r or spec.shadowColor[1] or Colors.Transparent[1],
+            spec.shadowColor.g or spec.shadowColor[2] or Colors.Transparent[2],
+            spec.shadowColor.b or spec.shadowColor[3] or Colors.Transparent[3],
+            spec.shadowColor.a or spec.shadowColor[4] or Colors.White[4])
     elseif spec.shadowColor ~= nil then
         error("Timeline " .. label .. ".shadowColor must be table or nil", 3)
     else
-        region:SetShadowColor(0, 0, 0, 0)
+        region:SetShadowColor(unpack(Colors.Transparent))
     end
     local shadowX = spec.shadowX == nil and 0 or RequireTimelineNumber(spec.shadowX, label .. ".shadowX", 4)
     local shadowY = spec.shadowY == nil and 0 or RequireTimelineNumber(spec.shadowY, label .. ".shadowY", 4)

@@ -371,7 +371,15 @@ function Grid:ApplyPixelLayout(widget, container, element)
     -- Factory 创建的 Header/Divider 分别使用 Texture / SimpleLine；两者都以
     -- 同一个真实物理像素为粗细，且在每次最终布局时重套。
     if element.type == "divider" then
-        SetPhysicalLineThickness(widget.line)
+        if widget.separator then
+            if _G.PixelUtil and _G.PixelUtil.SetHeight then
+                _G.PixelUtil.SetHeight(widget.separator, 1, 1)
+            else
+                widget.separator:SetHeight(1)
+            end
+        else
+            SetPhysicalLineThickness(widget.line)
+        end
     elseif element.type == "header" then
         SetPhysicalLineThickness(widget.Line)
     end
@@ -464,6 +472,18 @@ function Grid:ReleaseWidgetInstance(widget)
         renderer.release(widget, widget._customContext)
     end
     local EXFactory = _G.ExwindFactory
+    -- A few historical composite shells (the two GlowSettings definitions)
+    -- are intentionally not pooled, but their standard child controls are.
+    -- Return those children first; the shell then follows Release's existing
+    -- _fromPool == nil path and is hidden/detached without inventing a pool.
+    if EXFactory and widget._exGridOwnedControls then
+        for index = #widget._exGridOwnedControls, 1, -1 do
+            local control = widget._exGridOwnedControls[index]
+            if control then EXFactory:ReleaseGridWidget(control) end
+            widget._exGridOwnedControls[index] = nil
+        end
+        widget._exGridOwnedControls = nil
+    end
     -- 组合控件宿主由其构造器登记清理函数。必须优先走这里，先断开子控件
     -- 回调/DB 引用，再归还外层宿主；不能把带旧闭包的控件直接塞回通用池。
     if EXFactory and widget._isCompositeHost then
@@ -732,6 +752,13 @@ local function CopyMeasuredItems(grid, container, sourceItems, config, contextPa
             and item.type == "modulecommonsettings"
             and type(item.opts) == "table"
             and (tonumber(item.w) or 0) == grid._effectiveCols then
+            item.measure = true
+        end
+
+        -- Slider 的共享封装拥有固定的“标题/数值 header row + 下方轨道”高度。
+        -- 默认用同一 measure 合同扩展逻辑占位，避免旧 h=2 声明让下一项压住轨道；
+        -- 明确 measure=false 的在线编辑布局仍可保留人工高度。
+        if item.measure == nil and item.type == "slider" then
             item.measure = true
         end
 
@@ -1032,31 +1059,9 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
     elseif ele.type == "subheader" then
         local text = ele.label
         if type(text) == "function" then text = text() end
-
-        -- [v4.3.1] 从池获取
-        local EXFactory = _G.ExwindFactory
-        if EXFactory then
-            widget = EXFactory:Acquire("GridSubheader", container)
-        else
-            widget = CreateFrame("Frame", nil, container)
-            widget.text = EXUI:CreateVisualFontString(widget, EXFONTFRAME, "GameFontNormal")
-            widget.text:SetAllPoints()
-            widget.text:SetJustifyH("LEFT")
-        end
-        widget.text:SetText(text or "")
-        widget.labelText = widget.text -- 兼容
+        widget = EXUI:CreateSubheader(container, text or "", pw)
     elseif ele.type == "divider" then
-        -- [v4.3.1] 从池获取
-        local EXFactory = _G.ExwindFactory
-        if EXFactory then
-            widget = EXFactory:Acquire("GridDivider", container)
-        else
-            widget = CreateFrame("Frame", nil, container)
-            local l = EXUI:CreateSeparator(widget, pw)
-            l:SetPoint("CENTER")
-            widget.line = l
-        end
-        -- 移除错误的 SetBackdrop 调用，该组件应保持完全透明
+        widget = EXUI:CreateDivider(container, pw)
     elseif ele.type == "button" then
         widget = EXUI:CreateButton(container, pw, ph, ele.label, function()
             if ele.func then ele.func() end
@@ -1064,7 +1069,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
                 ExwindTools:UpdateState(moduleKey .. ".ButtonClicked",
                     { key = ele.key, fullPath = fullPath, ts = GetTime() })
             end
-        end)
+        end, { variant = ele.variant })
     elseif ele.type == "picbutton" then
         local nTex, pTex = ele.iconNormal, ele.iconPushed
         if ele.atlas then
@@ -1106,17 +1111,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         local text = ele.label
         if type(text) == "function" then text = text() end
 
-        -- [v4.3.1] 从池获取
-        local EXFactory = _G.ExwindFactory
-        if EXFactory then
-            widget = EXFactory:Acquire("GridDescription", container)
-        else
-            widget = CreateFrame("Frame", nil, container)
-            local fs = EXUI:CreateVisualFontString(widget, EXFONTFRAME, "GameFontHighlight")
-            fs:SetAllPoints()
-            fs:SetJustifyH("LEFT")
-            widget.text = fs
-        end
+        widget = EXUI:CreateDescription(container, text or "", pw)
 
         widget.text:ClearAllPoints()
         widget.text:SetPoint("TOPLEFT", widget, "TOPLEFT", 0, 0)
@@ -1128,54 +1123,13 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
             widget.text:SetMaxLines(tonumber(ele.maxLines) or 0)
         end
         widget.text:SetText(text or "")
-        if ele.type == "description" then
-            widget.text:SetTextColor(1, 1, 1, 1)
-        end
         widget.labelText = widget.text -- 兼容
 
         -- [v4.3.13] 支持 tooltip
         BindTooltip(widget, ele, true)
     elseif ele.type == "card" then
-        local EXFactory = _G.ExwindFactory
-        if EXFactory then
-            widget = EXFactory:Acquire("GridCard", container)
-        else
-            widget = CreateFrame("Frame", nil, container, "BackdropTemplate")
-        end
-
-        local function ResolveColor(value, fallbackR, fallbackG, fallbackB, fallbackA)
-            if type(value) == "table" then
-                return tonumber(value.r) or fallbackR,
-                    tonumber(value.g) or fallbackG,
-                    tonumber(value.b) or fallbackB,
-                    tonumber(value.a) or fallbackA
-            end
-            return fallbackR, fallbackG, fallbackB, fallbackA
-        end
-
-        local bgR, bgG, bgB, bgA = ResolveColor(ele.bgColor, 0.03, 0.04, 0.07, 0.92)
-        local borderR, borderG, borderB, borderA = ResolveColor(ele.borderColor, 0.18, 0.22, 0.28, 0.95)
-        local accentR, accentG, accentB, accentA = ResolveColor(ele.accentColor, 1.00, 0.82, 0.22, 0.95)
-
-        local theme = ExwindTools and ExwindTools.PanelTheme
-        local usesThemeCardStyle = theme and type(theme.ApplyGridCardStyle) == "function"
-        if usesThemeCardStyle then
-            theme.ApplyGridCardStyle(widget, {
-                background = { bgR, bgG, bgB, bgA },
-                border = { borderR, borderG, borderB, borderA },
-                accent = { accentR, accentG, accentB, accentA },
-            })
-        elseif widget.SetBackdrop then
-            -- Core theme 尚未载入的防御性回退；正常游戏加载会走统一样式分支。
-            widget:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8" })
-            widget:SetBackdropColor(bgR, bgG, bgB, bgA)
-            widget:SetBackdropBorderColor(0, 0, 0, 0)
-        end
-        if ele.keepBorderVisible == true then
-            EnsureCardOutline(widget, container, { borderR, borderG, borderB, borderA })
-        else
-            ReleaseCardOutline(widget)
-        end
+        widget = EXUI:CreateCard(container, pw, ph)
+        ReleaseCardOutline(widget)
 
         local title = ele.title
         if title == nil or title == "" then
@@ -1192,10 +1146,8 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
             desc = desc()
         end
 
-        local titleSize = tonumber(ele.titleSize) or tonumber(ele.labelSize) or 17
-        local descSize = tonumber(ele.descSize) or 13
         local padding = math.max(0, tonumber(ele.padding) or 12)
-        local leftInset = padding + ((theme and theme.GridCard and theme.GridCard.contentInsetLeft) or 8)
+        local leftInset = padding + 8
 
         -- Grid Card 原生支持标题图标：调用方只提供 titleIcon 图片路径。
         -- 图标尺寸、左侧留白、文字间距和与标题底边对齐均在这里统一处理。
@@ -1212,15 +1164,10 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
             titleLeftInset = math.max(leftInset, titleIconLeft + titleIconSize + titleIconGap)
         end
 
-        local fontPath = ExwindTools and ExwindTools.MAIN_FONT
         if widget.Title then
-            if fontPath then
-                widget.Title:SetFont(fontPath, titleSize, "OUTLINE")
-            end
             widget.Title:ClearAllPoints()
             widget.Title:SetPoint("TOPLEFT", titleLeftInset, -padding)
             widget.Title:SetPoint("TOPRIGHT", widget, "TOPRIGHT", -padding, -padding)
-            widget.Title:SetTextColor(accentR, accentG, accentB, 1)
             widget.Title:SetText(tostring(title or ""))
         end
 
@@ -1232,15 +1179,11 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
             widget.TitleIcon:SetSize(titleIconSize, titleIconSize)
             widget.TitleIcon:SetPoint("BOTTOMLEFT", widget.Title, "BOTTOMLEFT", titleIconLeft - titleLeftInset, 0)
             widget.TitleIcon:SetTexture(titleIcon)
-            widget.TitleIcon:SetVertexColor(accentR, accentG, accentB, accentA)
             widget.TitleIcon:Show()
         elseif widget.TitleIcon then
             widget.TitleIcon:Hide()
         end
         if widget.Desc then
-            if fontPath then
-                widget.Desc:SetFont(fontPath, descSize, "")
-            end
             widget.Desc:ClearAllPoints()
             if widget.Title then
                 widget.Desc:SetPoint("TOPLEFT", widget.Title, "BOTTOMLEFT", 0, -6)
@@ -1249,35 +1192,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
             end
             widget.Desc:SetPoint("TOPRIGHT", widget, "TOPRIGHT", -padding, 0)
             widget.Desc:SetPoint("BOTTOMLEFT", widget, "BOTTOMLEFT", padding, padding)
-            widget.Desc:SetTextColor(0.78, 0.82, 0.90, 1)
             widget.Desc:SetText(tostring(desc or ""))
-        end
-
-        -- Theme 已将 Accent 锚定为左侧垂直强调线；不能再用旧逻辑覆写成顶部短线。
-        if widget.Accent and not usesThemeCardStyle then
-            local accentHeight = math.max(1, tonumber(ele.accentHeight) or 2)
-            local accentWidth = tonumber(ele.accentWidth)
-            if accentWidth and accentWidth > 0 and accentWidth <= 1 then
-                accentWidth = pw * accentWidth
-            elseif not accentWidth or accentWidth <= 0 then
-                accentWidth = math.max(48, math.floor(pw * 0.28))
-            else
-                accentWidth = math.min(accentWidth, pw - 2)
-            end
-
-            local accentAlign = tostring(ele.accentAlign or "left"):lower()
-            widget.Accent:ClearAllPoints()
-            widget.Accent:SetHeight(accentHeight)
-            widget.Accent:SetWidth(accentWidth)
-            widget.Accent:SetColorTexture(accentR, accentG, accentB, accentA)
-            if accentAlign == "center" then
-                widget.Accent:SetPoint("TOP", widget, "TOP", 0, -1)
-            elseif accentAlign == "right" then
-                widget.Accent:SetPoint("TOPRIGHT", widget, "TOPRIGHT", -1, -1)
-            else
-                widget.Accent:SetPoint("TOPLEFT", widget, "TOPLEFT", 1, -1)
-            end
-            widget.Accent:Show()
         end
 
         if ele.mouse == true then
@@ -1417,6 +1332,12 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
     elseif ele.type == "itemconfig" then
         local itemID = tonumber(ele.itemID) or (curVal and curVal.id) or 0
         local widgetSize = ele.labelSize or ele.size or 18
+        local onDelete
+        if ele.canDelete == true or type(ele.onDelete) == "function" then
+            onDelete = function()
+                if type(ele.onDelete) == "function" then ele.onDelete(curVal, config) end
+            end
+        end
         widget = EXUI:CreateItemConfig(container, pw, ph, itemID, curVal or { enabled = true, quantity = 1 },
             function(newDB, newItemID)
                 if newItemID and ele.onDragUpdate then
@@ -1425,16 +1346,54 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
                     Setter(newDB)
                 end
             end,
-            ele.canDelete
+            onDelete
         )
         widget.moduleKey = moduleKey
         widget.elementKey = ele.key
-        if widget.nameText then
-            widget.nameText:SetFontObject("GameFontNormalLarge")
+    elseif ele.type == "segmented" then
+        widget = EXUI:CreateSegmentedControl(container, pw, ele.items or {}, curVal, Setter)
+    elseif ele.type == "previewcanvas" then
+        local elements = type(curVal) == "table" and curVal or (ele.elements or {})
+        widget = EXUI:CreatePreviewCanvas(container, pw, ph, elements, {
+            onSelect = ele.onSelect,
+            onMove = function(key, relX, relY)
+                local target = type(elements[key]) == "table" and elements[key] or nil
+                if target then target.x, target.y = relX, relY end
+                NotifyCompositeWrite(moduleKey, fullPath)
+                if ele.onMove then ele.onMove(key, relX, relY, elements) end
+            end,
+        })
+    elseif ele.type == "tabgroup" then
+        widget = EXUI:CreateTabGroup(container, {
+            width = pw,
+            items = ele.items or {},
+            value = curVal,
+            disabled = ele.disabled,
+            sizing = ele.sizing,
+            minItemWidth = ele.minItemWidth,
+            itemHeight = ele.itemHeight,
+            onChange = Setter,
+        })
+    elseif ele.type == "optiongroup" then
+        if ele.mode == "multiple" and type(curVal) ~= "table" then
+            SetConfigValue(config, ele, {}, moduleKey, fullPath, "silent")
+            curVal = ReadCurrentValue() or {}
         end
-        if widget.editBox then
-            widget.editBox:SetFontObject("ChatFontNormal")
-        end
+        widget = EXUI:CreateOptionGroup(container, {
+            width = pw,
+            items = ele.items or {},
+            value = curVal,
+            mode = ele.mode,
+            allowEmpty = ele.allowEmpty,
+            disabled = ele.disabled,
+            appearance = ele.appearance,
+            wrap = ele.wrap,
+            columns = ele.columns,
+            sizing = ele.sizing,
+            minItemWidth = ele.minItemWidth,
+            itemHeight = ele.itemHeight,
+            onChange = Setter,
+        })
     elseif ele.type == "lsm_font" then
         widget = EXUI:CreateLSMDropdown(container, "font", pw, ele.label, curVal, Setter, ele)
     elseif ele.type == "lsm_sound" then
@@ -1460,6 +1419,11 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
             subConfig = GetConfigPath(config, contextPath) or config
         end
         widget = EXUI:CreateGlowSettings(container, pw, ele.label, subConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end)
+    elseif ele.type == "glow_settings_legacy" then
+        local subConfig = config
+        if contextPath then subConfig = GetConfigPath(config, contextPath) or config end
+        widget = EXUI.CreateGlowSettingsLegacy(EXUI, container, pw, ele.label, subConfig, ele.key,
+            function() NotifyCompositeWrite(moduleKey, fullPath) end)
     elseif ele.type == "widgetlayout" then
         local subConfig = config
         if contextPath then
@@ -1673,6 +1637,17 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         end
 
         widget:Show()
+        if ele.disabled ~= nil and widget.SetDisabled then
+            widget:SetDisabled(ele.disabled == true)
+        elseif ele.disabled == true then
+            if widget.checkbox and widget.checkbox.Disable then widget.checkbox:Disable()
+            elseif widget.SetEnabled then widget:SetEnabled(false)
+            elseif widget.Disable then widget:Disable() end
+        elseif ele.disabled == false then
+            if widget.checkbox and widget.checkbox.Enable then widget.checkbox:Enable()
+            elseif widget.SetEnabled then widget:SetEnabled(true)
+            elseif widget.Enable then widget:Enable() end
+        end
         -- [v4.3.1] 映射到池类型
         local EXFactory = _G.ExwindFactory
         if EXFactory and EXFactory.GridTypeMap then

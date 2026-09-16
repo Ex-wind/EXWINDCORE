@@ -103,7 +103,11 @@ local function StandardReset(pool, frame)
     if frame.labelText and frame.labelText.SetText then frame.labelText:SetText("") end
 
     -- [GridCheckbox] 彻底清理子勾选框状态与脚本，避免池化残留导致“今天好明天坏”
-    if frame.checkbox then
+    -- Composite hosts may expose a persistent child's checkbox as a public
+    -- compatibility field (ItemConfig does this).  That child is owned by the
+    -- host and rebound by its constructor; clearing it here would permanently
+    -- remove the one-time hooks/callbacks on the second lease.
+    if frame.checkbox and not frame._isCompositeHost then
         if frame.checkbox.SetScript then
             frame.checkbox:SetScript("OnClick", nil)
             frame.checkbox:SetScript("OnEnter", nil)
@@ -113,9 +117,8 @@ local function StandardReset(pool, frame)
             frame.checkbox:SetScript("OnShow", nil)
             frame.checkbox:SetScript("OnHide", nil)
         end
-        if frame.checkbox.HookScript then
-            -- HookScript 无法移除历史 hook，因此只依赖不再对 checkbox 使用 HookScript。
-        end
+        -- 共享外观只安装一次、且闭包只引用这个持久 checkbox/container；
+        -- StandardReset 不尝试移除 HookScript，业务 OnClick 仍由每次借用重绑。
         if frame.checkbox.SetChecked then
             frame.checkbox:SetChecked(false)
         end
@@ -125,13 +128,14 @@ local function StandardReset(pool, frame)
         if frame.checkbox.EnableMouse then
             frame.checkbox:EnableMouse(true)
         end
+        frame.checkbox._exModernHover = nil
         if frame.checkbox.ClearAllPoints then
             frame.checkbox:ClearAllPoints()
             frame.checkbox:SetPoint("LEFT", frame, "LEFT", 0, 0)
         end
     end
 
-    if frame.label and frame.label.ClearAllPoints and frame.checkbox then
+    if frame.label and frame.label.ClearAllPoints and frame.checkbox and not frame._isCompositeHost then
         frame.label:ClearAllPoints()
         frame.label:SetPoint("LEFT", frame.checkbox, "RIGHT", 6, 0)
     end
@@ -148,6 +152,8 @@ local function StandardReset(pool, frame)
     -- [v4.3.12] 清理 Slider 回调引用（保留 _sliderInit 以识别已初始化）
     frame._onValueChanged = nil
     frame._formatter = nil
+    frame._exModernHover = nil
+    frame._exModernPressed = nil
 
     -- [v4.3.13] 清理 Multiselect 属性，防止职业切换时数据残留
     frame._options = nil
@@ -455,7 +461,7 @@ EXFactory:InitPool("GridCheckbox", "Frame", nil, function(f)
     f.checkbox = cb
 
     -- 创建 Label
-    local label = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME, "GameFontHighlight")
+    local label = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     label:SetPoint("LEFT", cb, "RIGHT", 6, 0)
     f.label = label
 
@@ -478,13 +484,25 @@ end)
 EXFactory:InitPool("GridSlider", "Slider", "MinimalSliderWithSteppersTemplate", function(f)
     f:SetSize(180, 20)
 
+    -- 继续借用模板成熟的数值/CallbackRegistry 契约，但共享 Slider 不提供
+    -- 左右步进按钮。轨道会在 ApplyModernSlider 中重新锚到完整宽度。
+    for _, key in ipairs({ "Back", "Forward" }) do
+        local stepper = f[key]
+        if stepper then
+            stepper:Hide()
+            stepper:SetAlpha(0)
+            stepper:EnableMouse(false)
+            stepper:Disable()
+        end
+    end
+
     -- 顶部数值显示 (靠右)
-    f.ValueText = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME, "GameFontNormal")
+    f.ValueText = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     f.ValueText:SetPoint("BOTTOMRIGHT", f, "TOPRIGHT", -2, 1)
     f.ValueText:SetJustifyH("RIGHT")
 
     -- 顶部标题 (靠左)
-    f.Title = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME, "GameFontNormal")
+    f.Title = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     f.Title:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, 1)
     f.Title:SetPoint("RIGHT", f.ValueText, "LEFT", -5, 0)
     f.Title:SetJustifyH("LEFT")
@@ -497,7 +515,7 @@ end)
 -- 11. GridDropdown - 下拉菜单 (与 EXUI:CreateDropdown 结构一致)
 EXFactory:InitPool("GridDropdown", "DropdownButton", "WowStyle1DropdownTemplate", function(f)
     f:SetSize(180, 30)
-    f.labelText = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME, "GameFontHighlight")
+    f.labelText = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     f.labelText:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, 2)
     f._gridType = "GridDropdown"
 
@@ -518,25 +536,9 @@ end)
 EXFactory:InitPool("GridInput", "EditBox", "BackdropTemplate", function(f)
     f:SetSize(180, 28)
     f:SetAutoFocus(false)
-    f:SetFontObject(GameFontHighlight)
-
-    -- 使用全插件统一的 Tooltip 风格
-    local EXUI = _G.ExwindTools.UI
-    if EXUI and EXUI.TooltipBackdrop then
-        f:SetBackdrop(EXUI.TooltipBackdrop)
-    else
-        f:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-            edgeSize = 14,
-            insets = { left = 3, right = 3, top = 3, bottom = 3 }
-        })
-    end
-    f:SetBackdropColor(0.05, 0.05, 0.05, 0.8)
-    f:SetBackdropBorderColor(0.5, 0.5, 0.5, 0.6)
 
     f:SetTextInsets(10, 10, 0, 0)
-    f.label = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME, "GameFontHighlight")
+    f.label = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     f.label:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, 2)
     f._gridType = "GridInput"
 end)
@@ -545,9 +547,8 @@ end)
 EXFactory:InitPool("GridHeader", "Frame", nil, function(f)
     f:SetSize(550, 40)
 
-    local title = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME, "GameFontNormalHuge")
+    local title = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     title:SetPoint("TOPLEFT", 0, -5)
-    title:SetTextColor(1, 0.82, 0)
     f.Title = title
     f.text = title -- 兼容旧引用
 
@@ -555,8 +556,6 @@ EXFactory:InitPool("GridHeader", "Frame", nil, function(f)
     line:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -5)
     line:SetPoint("RIGHT", 0, 0)
     line:SetHeight(1)
-    line:SetTexture("Interface\\Buttons\\WHITE8X8")
-    line:SetGradient("HORIZONTAL", CreateColor(1, 1, 1, 0.5), CreateColor(1, 1, 1, 0.05))
     f.Line = line
 
     f._gridType = "GridHeader"
@@ -565,7 +564,7 @@ end)
 -- 14. GridSubheader - 子标题
 EXFactory:InitPool("GridSubheader", "Frame", nil, function(f)
     f:SetSize(400, 24)
-    f.text = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME, "GameFontNormal")
+    f.text = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     f.text:SetAllPoints()
     f.text:SetJustifyH("LEFT")
     f._gridType = "GridSubheader"
@@ -573,32 +572,14 @@ end)
 
 -- 15. GridDivider - 分割线
 EXFactory:InitPool("GridDivider", "Frame", nil, function(f)
-    -- [Fix] 彻底透明化容器背景
-    if f.SetBackdrop then f:SetBackdrop(nil) end
     f:SetSize(400, 20) -- 设定物理占位高度，但视觉线只有1px
-
-    -- 使用 Line API 绘制分隔线，支持物理像素对齐
-    local line = f:CreateLine(nil, _G.EXBORDERFRAME.drawLayer, nil, _G.EXBORDERFRAME.subLevel)
-    line:SetColorTexture(1, 1, 1, 0.4)
-    line:SetStartPoint("LEFT", f, 0, 0)
-    line:SetEndPoint("RIGHT", f, 0, 0)
-
-    -- 实时粗细对齐
-    local scale = line:GetEffectiveScale() or 1
-    if _G.PixelUtil and _G.PixelUtil.GetNearestPixelSize then
-        line:SetThickness(_G.PixelUtil.GetNearestPixelSize(1.1, scale, 1.1))
-    else
-        line:SetThickness(1.1)
-    end
-
-    f.line = line
     f._gridType = "GridDivider"
 end)
 
 -- 16. GridDescription - 描述文本
 EXFactory:InitPool("GridDescription", "Frame", nil, function(f)
     f:SetSize(400, 40)
-    f.text = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME, "GameFontHighlightSmall")
+    f.text = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     f.text:SetPoint("TOPLEFT")
     f.text:SetPoint("TOPRIGHT")
     f.text:SetJustifyH("LEFT")
@@ -610,35 +591,23 @@ end)
 -- 17. GridCard - 纯外观卡片
 EXFactory:InitPool("GridCard", "Frame", "BackdropTemplate", function(f)
     f:SetSize(400, 120)
-    f:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-        insets = { left = 1, right = 1, top = 1, bottom = 1 },
-    })
-    f:SetBackdropColor(0.03, 0.04, 0.07, 0.92)
-    f:SetBackdropBorderColor(0.18, 0.22, 0.28, 0.95)
 
     local accent = EXUI:CreateVisualTexture(f, _G.EXBORDERFRAME)
-    accent:SetHeight(2)
-    accent:SetColorTexture(1, 0.82, 0.22, 0.95)
     f.Accent = accent
 
-    local title = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME, "GameFontNormal")
+    local title = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     title:SetPoint("TOPLEFT", 12, -12)
     title:SetPoint("TOPRIGHT", -12, -12)
     title:SetJustifyH("LEFT")
     title:SetJustifyV("TOP")
     title:SetWordWrap(true)
-    title:SetTextColor(1, 0.82, 0.22, 1)
     f.Title = title
 
-    local desc = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME, "GameFontHighlightSmall")
+    local desc = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     desc:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -6)
     desc:SetPoint("TOPRIGHT", f, "TOPRIGHT", -12, 0)
     desc:SetJustifyH("LEFT")
     desc:SetJustifyV("TOP")
-    desc:SetTextColor(0.78, 0.82, 0.90, 1)
     desc:SetWordWrap(true)
     f.Desc = desc
 
@@ -648,17 +617,11 @@ end)
 -- 18. GridColorButton - 颜色选择按钮
 EXFactory:InitPool("GridColorButton", "Button", "BackdropTemplate", function(f)
     f:SetSize(28, 28)
-    f:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 2
-    })
-    f:SetBackdropBorderColor(0.3, 0.3, 0.3, 1)
     f.swatch = EXUI:CreateVisualTexture(f, _G.EXBASEFRAME)
     f.swatch:SetPoint("TOPLEFT", 3, -3)
     f.swatch:SetPoint("BOTTOMRIGHT", -3, 3)
     f.swatch:SetColorTexture(1, 1, 1, 1)
-    f.label = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME, "GameFontHighlight")
+    f.label = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     f.label:SetPoint("LEFT", f, "RIGHT", 6, 0)
     f._gridType = "GridColorButton"
 end)
@@ -672,7 +635,7 @@ end)
 -- 20. GridMultiselect - 多选框容器
 EXFactory:InitPool("GridMultiselect", "Frame", "BackdropTemplate", function(f)
     f:SetSize(200, 80)
-    f.label = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME, "GameFontHighlight")
+    f.label = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     f.label:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, 2)
     f.checkboxes = {} -- 子复选框将动态创建
     f._gridType = "GridMultiselect"
@@ -702,6 +665,8 @@ EXFactory:InitCompositePool("CompositeWidgetLayoutGroup")
 EXFactory:InitCompositePool("CompositeWidgetLayoutGroupWithWrap")
 EXFactory:InitCompositePool("CompositeAnchorGroup")
 EXFactory:InitCompositePool("CompositeTextureGroup")
+EXFactory:InitCompositePool("CompositeItemConfig")
+EXFactory:InitCompositePool("CompositePreviewCanvas")
 EXFactory:InitCompositePool("CompositeModuleCommonSettingsGroup")
 EXFactory:InitCompositePool("CountdownModuleCommonSettingsGroup")
 EXFactory:InitCompositePool("EXAuraDisplayCommonSettingsGroup")
@@ -726,7 +691,7 @@ EXFactory:InitCompositePool("MythicCastModuleCommonSettingsGroup")
 -- 23. GridLSMDropdown - LSM 材质选择器
 EXFactory:InitPool("GridLSMDropdown", "DropdownButton", "WowStyle1DropdownTemplate", function(f)
     f:SetSize(180, 30)
-    f.labelText = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME, "GameFontHighlight")
+    f.labelText = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     f.labelText:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, 2)
     f._gridType = "GridLSMDropdown"
 end)

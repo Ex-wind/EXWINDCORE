@@ -46,8 +46,8 @@ ExwindTools.PanelTheme = ExwindTools.PanelTheme or {
         danger = { 0.95, 0.40, 0.47, 1 },
     },
 
-    -- Grid 卡片的唯一外观规格。卡片可传入 accentColor / borderColor，
-    -- 但结构（正方形卡片、左侧强调线）不能由业务页面各自发明。
+    -- Compatibility geometry token. Runtime card appearance is owned by
+    -- EXUI:ApplyControlAppearance so Grid and PanelTheme cannot compete.
     GridCard = {
         accentWidth = 4,
         contentInsetLeft = 8,
@@ -60,65 +60,12 @@ ExwindTools.PanelTheme = ExwindTools.PanelTheme or {
     },
 }
 
-local function EnsureCardTexture(frame, key, profile)
-    local texture = frame[key]
-    if not texture then
-        texture = ExwindTools.UI:CreateVisualTexture(frame, profile or _G.EXBASEFRAME)
-        frame[key] = texture
-    end
-    -- PanelTheme 在 VisualLayers 之前载入；调用发生在运行期，因此这里再取
-    -- EXUI，避免加载顺序把 Theme 绑定到一套旧层级。
-    local EXUI = ExwindTools.UI
-    if EXUI and EXUI.ApplyVisualLayer then
-        EXUI:ApplyVisualLayer(texture, profile or _G.EXBASEFRAME, frame)
-    end
-    texture:SetTexture("Interface\\Buttons\\WHITE8X8")
-    return texture
-end
-
--- Grid 的 card 元素从对象池取出后在此重新套用视觉。纹理属于卡片对象本身，
--- 因此复用时不会额外创建 Frame，也不会形成每次渲染新增的对象树。
+-- Legacy entrypoint retained for callers outside Grid. `style` is deliberately
+-- ignored: the shared control appearance is the sole visual authority.
 function ExwindTools.PanelTheme.ApplyGridCardStyle(frame, style)
     if not frame then return end
-
-    style = style or {}
-    local spec = ExwindTools.PanelTheme.GridCard
-    local bg = style.background or ExwindTools.PanelTheme.Color.cardAlt
-    local border = style.border or ExwindTools.PanelTheme.Color.borderSoft
-    local accent = style.accent or ExwindTools.PanelTheme.Color.cyan
-
-    if frame.SetBackdrop then
-        frame:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 },
-        })
-        frame:SetBackdropColor(bg[1], bg[2], bg[3], bg[4] or 1)
-        frame:SetBackdropBorderColor(border[1], border[2], border[3], border[4] or 1)
+    local EXUI = ExwindTools.UI
+    if EXUI and EXUI.ApplyControlAppearance then
+        return EXUI:ApplyControlAppearance(frame)
     end
-
-    -- 正方形卡片：仅左侧保留粗强调线；不要使用整圈外框或 glow。
-    if frame.Accent then
-        frame.Accent:ClearAllPoints()
-        local EXUI = ExwindTools.UI
-        if EXUI and EXUI.ApplyVisualLayer then
-            EXUI:ApplyVisualLayer(frame.Accent, _G.EXBASEFRAME, frame)
-        end
-        frame.Accent:SetColorTexture(accent[1], accent[2], accent[3], accent[4] or 1)
-        frame.Accent:SetWidth(spec.accentWidth)
-        frame.Accent:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-        frame.Accent:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
-        frame.Accent:Show()
-    end
-
-    -- 停用前一版整圈发光边框与拆分边线，避免对象池复用时残留。
-    if frame._exCardFrameGlow then frame._exCardFrameGlow:Hide() end
-    if frame._exCardTopEdge then frame._exCardTopEdge:Hide() end
-    if frame._exCardRightEdge then frame._exCardRightEdge:Hide() end
-    if frame._exCardBottomEdge then frame._exCardBottomEdge:Hide() end
-    if frame._exCardGlowHost then frame._exCardGlowHost:Hide() end
-    if frame._exCardTopGlow then frame._exCardTopGlow:Hide() end
-    if frame._exCardRightGlow then frame._exCardRightGlow:Hide() end
-    if frame._exCardBottomGlow then frame._exCardBottomGlow:Hide() end
 end

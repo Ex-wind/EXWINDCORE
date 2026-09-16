@@ -5,7 +5,6 @@ local HOST, VIEW, ITEM = "EXUI.ChoiceGroup", "EXUI.ChoiceViewport", "EXUI.Choice
 local Methods = {}
 local Appearance = UI.ControlAppearance
 local Paint, Layout
-local backdrop = { bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 }
 
 Factory:InitCompositePool(HOST)
 Factory:InitPool(VIEW, "Frame")
@@ -61,88 +60,17 @@ Paint = function(button)
     local selected = not button._choiceArrow and Selected(host, item.id)
     local disabled = host.disabled or item.disabled
     local hover = button._choiceHover and not disabled
-    local reference = Appearance.GetReference(host)
-    local monochrome = host.choiceStyle == "segmented" and reference and reference.choiceFill
-        and not button._choiceArrow
     button:SetEnabled(not disabled)
-    button:SetBackdrop(backdrop)
-    if monochrome then
-        local fill = selected and (disabled and reference.lineStrong or reference.choiceFill)
-            or (hover and reference.hover or reference.panel)
-        button:SetBackdropColor(unpack(fill))
-        button:SetBackdropBorderColor(fill[1], fill[2], fill[3], selected and 1 or 0)
-        button.line:Hide()
-    elseif host.choiceStyle == "segmented" and not button._choiceArrow then
-        local tone = disabled and { .38, .46, .51 } or Appearance.colors[item.tone or "accent"]
-        local strength = selected and .18 or (hover and .06 or 0)
-        button:SetBackdropColor(tone[1] * strength, tone[2] * strength, tone[3] * strength, strength > 0 and 1 or 0)
-        button:SetBackdropBorderColor(tone[1], tone[2], tone[3], selected and (disabled and .35 or .85) or 0)
-        button.line:Hide()
-    elseif host.choiceStyle == "load-card" and not button._choiceArrow then
-        button:SetBackdropColor(selected and .145 or .047, selected and .388 or .071, selected and .922 or .114, 1)
-        button:SetBackdropBorderColor(.376, .647, .980, selected and 1 or (hover and .45 or 0))
-        button.line:Hide()
-    elseif host.choiceStyle == "dungeon-aura" and not button._choiceArrow then
-        local reference = Appearance.DungeonAura
-        local tone = item.tone and Appearance.colors[item.tone] or reference.focus
-        if selected and not disabled then
-            button:SetBackdropColor(tone[1] * .20, tone[2] * .20, tone[3] * .20, 1)
-            button:SetBackdropBorderColor(tone[1], tone[2], tone[3], .72)
-        else
-            button:SetBackdropColor(unpack(reference.panel))
-            button:SetBackdropBorderColor(.220, .267, .329, .86)
-        end
-        button.line:Hide()
-    elseif host.choiceStyle == "form" and not button._choiceArrow then
-        local tone = Appearance.colors[item.tone or "accent"]
-        if selected and not disabled then
-            button:SetBackdropColor(tone[1] * .22, tone[2] * .22, tone[3] * .22, 1)
-            button:SetBackdropBorderColor(tone[1], tone[2], tone[3], .85)
-        else
-            button:SetBackdropColor(.055, .094, .129, 1)
-            button:SetBackdropBorderColor(.24, .32, .39, hover and 1 or .65)
-        end
-        button.line:Hide()
-    elseif host.choiceStyle == "compact" and not button._choiceArrow then
-        local tone = Appearance and Appearance.colors[item.tone or "accent"] or { .294, .824, .910 }
-        local strength = selected and not disabled and .24 or (hover and .10 or 0)
-        button:SetBackdropColor(tone[1] * strength, tone[2] * strength, tone[3] * strength, strength > 0 and 1 or 0)
-        button:SetBackdropBorderColor(0, 0, 0, 0)
-        button.line:Hide()
-    elseif host.variant == "tabs" and not button._choiceArrow then
-        button:SetBackdropColor(selected and .090 or .043, selected and .141 or .071, selected and .192 or .102, selected and 1 or 0)
-        button:SetBackdropBorderColor(.180, .267, .337, selected and 1 or 0)
-        button.line:SetShown(selected)
-    else
-        local tone = Appearance and Appearance.colors[item.tone or "accent"] or { .294, .824, .910 }
-        if selected and not disabled then
-            button:SetBackdropColor(tone[1] * .15, tone[2] * .15, tone[3] * .15, 1)
-            button:SetBackdropBorderColor(tone[1], tone[2], tone[3], 1)
-            button.line:SetColorTexture(tone[1], tone[2], tone[3], 1)
-            button.line:Show()
-        else
-            button:SetBackdropColor(.035, .067, .094, 1)
-            button:SetBackdropBorderColor(.180, .267, .337, 1)
-            button.line:Hide()
-        end
-    end
-    if disabled then button.label:SetTextColor(.38, .46, .51)
-    elseif monochrome then
-        button.label:SetTextColor(unpack(selected and reference.choiceText or (hover and reference.text or reference.muted)))
-    elseif host.choiceStyle == "load-card" then
-        local tone = selected and Appearance.LoadCard.value or (hover and Appearance.LoadCard.text or Appearance.LoadCard.muted)
-        button.label:SetTextColor(tone[1], tone[2], tone[3])
-    elseif host.choiceStyle == "dungeon-aura" and not (selected and item.tone) then
-        local reference = Appearance.DungeonAura
-        local tone = selected and reference.focus or (hover and reference.value or reference.text)
-        button.label:SetTextColor(tone[1], tone[2], tone[3])
-    elseif selected and item.tone and Appearance then
-        local tone = Appearance.colors[item.tone]
-        button.label:SetTextColor(tone[1], tone[2], tone[3])
-    elseif selected then button.label:SetTextColor(.94, .97, .99)
-    elseif hover then button.label:SetTextColor(.86, .93, .97)
-    elseif host.choiceStyle == "form" then button.label:SetTextColor(.73, .79, .84)
-    else button.label:SetTextColor(.51, .59, .65) end
+    local fill = selected and Appearance.colors.blueSoft
+        or (hover and Appearance.colors.hover or Appearance.colors.input)
+    local edge = selected and Appearance.colors.focus
+        or (hover and Appearance.colors.focus or Appearance.colors.border)
+    if disabled then fill, edge = Appearance.colors.input, Appearance.colors.border end
+    UI:SetControlSurface(button, 4, fill, edge)
+    button.label:SetTextColor(unpack(disabled and Appearance.colors.disabled
+        or (selected and Appearance.colors.lightBlue or (hover and Appearance.colors.text or Appearance.colors.muted))))
+    button.line:SetColorTexture(unpack(Appearance.colors.focus))
+    button.line:SetShown(host.variant == "tabs" and selected and not button._choiceArrow)
     button.icon:SetAlpha(disabled and .35 or 1)
 end
 
@@ -190,9 +118,7 @@ end
 local function AcquireButton(host, parent, item, onClick)
     local button = Factory:Acquire(ITEM, parent)
     button._choiceHost, button._choiceItem, button._choiceHover, button._choiceArrow = host, item, false, false
-    button.label:SetFontObject(GameFontHighlightSmall)
-    if Appearance then Appearance.Font(button.label, host.fontSize, nil, nil, "GameFontNormalSmall") end
-    button.line:SetColorTexture(.294, .824, .910, 1)
+    Appearance.ApplyTextRole(button.label, "control", nil, "GameFontNormalSmall")
     button.label:ClearAllPoints()
     button.label:SetPoint("LEFT", item.icon and 26 or 6, 0)
     button.label:SetPoint("RIGHT", -6, 0)
@@ -318,19 +244,10 @@ local function Create(parent, options, tabs)
     host._gridType = "ChoiceGroup"
     host.variant = tabs and "tabs" or "options"
     host.choiceStyle = not tabs and (options.appearance == "compact" or options.appearance == "form" or options.appearance == "dungeon-aura" or options.appearance == "load-card" or options.appearance == "segmented") and options.appearance or nil
-    host:SetBackdrop((host.choiceStyle == "compact" or host.choiceStyle == "load-card" or host.choiceStyle == "segmented") and backdrop or nil)
-    if host.choiceStyle == "segmented" then
-        local reference = Appearance.GetReference(host)
-        if reference and reference.choiceFill then
-            host:SetBackdropColor(unpack(reference.panel))
-            host:SetBackdropBorderColor(unpack(reference.inputBorder))
-        else
-            host:SetBackdropColor(.047, .071, .114, 1)
-            host:SetBackdropBorderColor(.22, .267, .329, 1)
-        end
-    elseif host.choiceStyle == "compact" or host.choiceStyle == "load-card" then
-        host:SetBackdropColor(.059, .094, .129, 1)
-        host:SetBackdropBorderColor(.161, .220, .271, 1)
+    if host.choiceStyle == "segmented" or host.choiceStyle == "compact" or host.choiceStyle == "load-card" then
+        UI:SetControlSurface(host, 4, Appearance.colors.input, Appearance.colors.border)
+    else
+        UI:ClearControlSurface(host)
     end
     host.mode = not tabs and options.mode == "multiple" and "multiple" or "single"
     host.allowEmpty = not tabs and options.allowEmpty == true
@@ -340,7 +257,6 @@ local function Create(parent, options, tabs)
     host.minItemWidth = math.max(16, options.minItemWidth or 44)
     host.gap = math.max(0, options.gap or (tabs and 0 or 3))
     host.itemHeight = math.max(18, options.itemHeight or (tabs and 32 or 27))
-    host.fontSize = options.fontSize or (host.itemHeight <= 22 and 11 or 13)
     host.disabled, host.offset, host.buttons, host.items = options.disabled == true, 0, {}, {}
     host.selection = options.value
     host.onChange = options.onChange

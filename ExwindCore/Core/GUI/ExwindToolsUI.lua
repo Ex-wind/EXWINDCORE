@@ -81,6 +81,65 @@ EXUI.ActivePageFrame = nil           -- 当前页面的 Frame (公开 API，EXBo
 EXUI._InternalPageFrame = nil        -- ExwindTools 内部专用，跟踪自身页面帧，不被外部覆写
 EXUI.PendingRightScrollRestore = nil -- 通用右侧滚动容器刷新后需要恢复的滚动位置
 
+-- gui.version=1 的唯一页面声明登记表。登记只保存纯声明；中央 Controller
+-- 在实际挂载前另行注入 picker 等运行期回调，避免把函数写回模块声明。
+EXUI.SettingsPageDeclarations = EXUI.SettingsPageDeclarations or {}
+
+local function CopySettingsDeclaration(value, seen)
+    if type(value) ~= "table" then return value end
+    seen = seen or {}
+    if seen[value] then error("settings page declaration cannot be cyclic", 3) end
+    local result = {}
+    seen[value] = true
+    for key, child in pairs(value) do
+        result[CopySettingsDeclaration(key, seen)] = CopySettingsDeclaration(child, seen)
+    end
+    seen[value] = nil
+    return result
+end
+
+local function ValidatePureSettingsDeclaration(value, seen)
+    local valueType = type(value)
+    if valueType == "function" or valueType == "userdata" or valueType == "thread" then
+        error("settings page declaration must contain data only", 3)
+    end
+    if valueType ~= "table" then return end
+    seen = seen or {}
+    if seen[value] then error("settings page declaration cannot be cyclic", 3) end
+    seen[value] = true
+    for key, child in pairs(value) do
+        ValidatePureSettingsDeclaration(key, seen)
+        ValidatePureSettingsDeclaration(child, seen)
+    end
+    seen[value] = nil
+end
+
+function EXUI:RegisterSettingsPage(pageId, guiDeclaration)
+    if type(pageId) ~= "string" or pageId:match("^%s*$") then
+        error("RegisterSettingsPage requires a non-empty pageId", 2)
+    end
+    if self.SettingsPageDeclarations[pageId] ~= nil then
+        error("duplicate settings page declaration: " .. pageId, 2)
+    end
+    ValidatePureSettingsDeclaration(guiDeclaration)
+    local grid = _G.ExwindGrid
+    if not grid or type(grid.ValidateCardDeclaration) ~= "function" then
+        error("RegisterSettingsPage requires ExwindGrid card validation", 2)
+    end
+    local ok, reason = grid:ValidateCardDeclaration(guiDeclaration, {
+        pageId = pageId,
+        regionId = "registration",
+    })
+    if not ok then error(reason, 2) end
+    self.SettingsPageDeclarations[pageId] = CopySettingsDeclaration(guiDeclaration)
+    return true
+end
+
+function EXUI:GetSettingsPage(pageId)
+    local declaration = self.SettingsPageDeclarations[pageId]
+    return declaration and CopySettingsDeclaration(declaration) or nil
+end
+
 -- =========================================================
 -- 模块设置页 · 面板内嵌预览（ModulePreviewDock）
 -- 设计见 EXWIND-DEV/ExwindCore/模块SOP标准.md §5.2
@@ -375,17 +434,21 @@ function EXUI:FocusModuleGridKey(moduleKey, gridKey, scrollFrame, container)
     end
     if not scrollFrame or type(scrollFrame.SetVerticalScroll) ~= "function" or not container then return false end
     local grid = _G.ExwindGrid
-    if not grid or type(grid.ContainerStates) ~= "table" then return false end
+    if not grid or type(grid.FindMountedWidget) ~= "function" then return false end
+    local mountedOwner = type(grid.GetMountedOwner) == "function"
+        and grid:GetMountedOwner(container) or nil
+    if not mountedOwner then return false end
 
     local function ResolveTarget()
-        local state = grid.ContainerStates[container]
+        if type(grid.IsMountedOwnerCurrent) ~= "function"
+            or not grid:IsMountedOwnerCurrent(container, mountedOwner) then return nil end
+        local target, state, _, ownerContainer = grid:FindMountedWidget(container, gridKey)
         if not state or state.moduleKey ~= moduleKey then return nil end
-        local target = state.widgets and state.widgets[gridKey]
         local meta = target and state.widgetMap and state.widgetMap[target]
         if not target or not meta or not meta.item or meta.item.key ~= gridKey then return nil end
-        -- Grid 顶层 widget 必须直接挂到它登记的 container；拒绝已回池、被页面
-        -- 切换重新 parent 或来自其他 container 的同名对象。
-        if type(target.GetParent) ~= "function" or target:GetParent() ~= container then return nil end
+        -- 卡片页的直接 owner 是该卡 Body；旧页仍是根 container。拒绝已回池、
+        -- 被页面切换重新 parent 或来自另一个挂载会话的同名对象。
+        if type(target.GetParent) ~= "function" or target:GetParent() ~= ownerContainer then return nil end
         return target
     end
 
@@ -1504,7 +1567,14 @@ function EXUI:ReleaseModuleSettingsPage(page)
         grid.LiveContainer = nil
     end
 
-    grid:ReleaseContainerWidgets(page)
+    local cardSession = type(grid.GetMountedCardSession) == "function"
+        and grid:GetMountedCardSession(page) or nil
+    if cardSession then
+        cardSession:Release()
+        page._exCardSession = nil
+    else
+        grid:ReleaseContainerWidgets(page)
+    end
 
     -- Grid 之外由设置页直接创建的操作按钮同样不能被 PageCache root 强引用。
     -- 它们不是对象池控件，离页时解绑回调并脱离页面；下次进入时按当前模块状态重建。
@@ -2202,6 +2272,7 @@ function EXUI:ApplyModuleCardState(card, isEnabled)
         local controller = type(EXUI.GetCentralModuleController) == "function" and EXUI:GetCentralModuleController(key) or nil
         local ready = isEnabled and (ExwindTools.RegisteredLayouts[key] ~= nil
             or (ExwindTools.ModuleDefinitions and ExwindTools.ModuleDefinitions[key] ~= nil)
+            or EXUI.SettingsPageDeclarations[key] ~= nil
             or controller ~= nil)
         card.SettingsBtn:SetEnabled(ready == true)
         card.SettingsBtn:SetAlpha(ready and 1 or 0.35)
@@ -2430,8 +2501,22 @@ function EXUI:ShowModuleSettingsPage()
     local definition = ExwindTools.ModuleDefinitions and ExwindTools.ModuleDefinitions[EXUI.CurrentModule]
     local centralController = type(EXUI.GetCentralModuleController) == "function"
         and EXUI:GetCentralModuleController(EXUI.CurrentModule) or nil
-    local layoutData = centralController and centralController:BuildGridLayout()
-        or (definition and definition:GetLayout() or ExwindTools.RegisteredLayouts[EXUI.CurrentModule])
+    local registeredSettingsPage = type(EXUI.GetSettingsPage) == "function"
+        and EXUI:GetSettingsPage(EXUI.CurrentModule) or nil
+    local layoutData = centralController
+        and ((type(centralController.BuildSettingsDeclaration) == "function"
+            and centralController:BuildSettingsDeclaration()) or centralController:BuildGridLayout())
+        or (definition and definition:GetLayout()
+            or registeredSettingsPage
+            or ExwindTools.RegisteredLayouts[EXUI.CurrentModule])
+    local usesCardDeclaration = type(layoutData) == "table"
+        and layoutData.version == 1
+        and type(layoutData.cards) == "table"
+    local declaresCards = type(layoutData) == "table"
+        and (layoutData.version ~= nil or layoutData.cards ~= nil)
+    if declaresCards and not usesCardDeclaration then
+        error("unsupported settings page declaration for " .. tostring(EXUI.CurrentModule), 2)
+    end
     if layoutData and _G.ExwindGrid then
         EXUI.RightPanel:Show()
         -- [Fix] 这里的 MainFrame 就是原生 Frame 了，不再需要 .frame
@@ -2501,7 +2586,14 @@ function EXUI:ShowModuleSettingsPage()
         -- 获取或创建 Grid 容器页面 (挂载到 ScrollChild 上)
         local page, isNew = EXUI:GetCachedPage("ModuleGrid_" .. EXUI.CurrentModule, EXUI.ModuleScrollChild)
         page._exGridPage = true
-        if EXUI.ShellPanel and _G.ExwindGrid then
+        local previousCardSession = type(_G.ExwindGrid.GetMountedCardSession) == "function"
+            and _G.ExwindGrid:GetMountedCardSession(page) or nil
+        if previousCardSession then previousCardSession:Release() end
+        page._exCardSession = nil
+        if usesCardDeclaration and _G.ExwindGrid.ContainerStates[page] then
+            _G.ExwindGrid:ReleaseContainerWidgets(page)
+        end
+        if not usesCardDeclaration and EXUI.ShellPanel and _G.ExwindGrid then
             local metrics = EXUI.ShellPanel:GetMetrics()
             _G.ExwindGrid:SetContainerCols(page, metrics.splitGridCols)
         end
@@ -2522,10 +2614,29 @@ function EXUI:ShowModuleSettingsPage()
         -- 渲染布局
         local config = centralController and centralController:GetConfig() or ExwindTools:GetModuleDB(EXUI.CurrentModule)
         local currentModuleKey = EXUI.CurrentModule
-        _G.ExwindGrid:Render(page, layoutData, config, currentModuleKey, function()
-            -- Render 完成后通知当前模块面板已刷新（各模块可订阅此事件更新动态内容）
+        if usesCardDeclaration then
+            local sharedCardDefaults = type(EXUI.GetSettingsCardLayoutDefaults) == "function"
+                and EXUI:GetSettingsCardLayoutDefaults() or nil
+            local baseBottom = type(sharedCardDefaults) == "table" and sharedCardDefaults.bottom
+                or (_G.ExwindGrid.CardLayoutDefaults and _G.ExwindGrid.CardLayoutDefaults.bottom)
+                or 0
+            page._exCardSession = _G.ExwindGrid:MountCards(page, layoutData, {
+                pageId = currentModuleKey,
+                regionId = "module-settings",
+                binding = centralController and centralController.binding or nil,
+                config = config,
+                moduleKey = currentModuleKey,
+                scrollFrame = EXUI.ModuleScrollFrame,
+                layoutDefaults = { bottom = (tonumber(baseBottom) or 0) + 52 },
+            })
             ExwindTools:UpdateState(currentModuleKey .. ".PanelRendered", GetTime())
-        end)
+        else
+            page._exCardSession = nil
+            _G.ExwindGrid:Render(page, layoutData, config, currentModuleKey, function()
+                -- Render 完成后通知当前模块面板已刷新（各模块可订阅此事件更新动态内容）
+                ExwindTools:UpdateState(currentModuleKey .. ".PanelRendered", GetTime())
+            end)
+        end
 
         -- Render 已同步创建并激活 currentModuleKey 的 ContainerState；仅此时标准
         -- PreviewSurface 才能绑定正确的 Grid 容器，避免模块切换时读取旧模块状态。
@@ -2562,7 +2673,9 @@ function EXUI:ShowModuleSettingsPage()
         resetBtn:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -20, 16)
         resetBtn:SetFrameLevel(page:GetFrameLevel() + 50)
         resetBtn._exModuleSettingsTransient = true
-        page:SetHeight((page:GetHeight() or 1) + 52)
+        if not usesCardDeclaration then
+            page:SetHeight((page:GetHeight() or 1) + 52)
+        end
 
         -- [New v4.2] 如果处于开发者模式，在右上角显示“编辑”按钮
         if ExwindTools.State.DevMode then

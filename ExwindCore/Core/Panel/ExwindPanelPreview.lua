@@ -285,13 +285,32 @@ local function ResolveBindingDB(source)
     return db
 end
 
-local function RefreshActiveGridControls(moduleKey)
+local function ResolveActiveMountedGrid(moduleKey, apiName)
     local Grid = _G.ExwindGrid
     local container = EXUI.ActivePageFrame
-    if not Grid or not container or type(Grid.RefreshContainerControlsFromDB) ~= "function" then
-        error("standard icon interaction has no active Grid container for " .. moduleKey, 3)
+    if not Grid or not container or type(Grid.GetMountedContainerStates) ~= "function" then
+        error((apiName or "standard preview interaction")
+            .. " has no active Grid container for " .. tostring(moduleKey), 3)
     end
-    Grid:RefreshContainerControlsFromDB(container)
+    local mounted, owner = Grid:GetMountedContainerStates(container)
+    if type(mounted) ~= "table" or #mounted == 0 or not owner then
+        error((apiName or "standard preview interaction")
+            .. " cannot validate active Grid for " .. tostring(moduleKey), 3)
+    end
+    for _, entry in ipairs(mounted) do
+        if type(entry.state) ~= "table" or entry.state.moduleKey ~= moduleKey then
+            error((apiName or "standard preview interaction")
+                .. " active Grid module mismatch for " .. tostring(moduleKey), 3)
+        end
+    end
+    return Grid, container, mounted, owner
+end
+
+local function RefreshActiveGridControls(moduleKey)
+    local Grid, container = ResolveActiveMountedGrid(moduleKey, "standard icon interaction")
+    if type(Grid.RefreshMountedValues) ~= "function" or not Grid:RefreshMountedValues(container) then
+        error("standard icon interaction cannot refresh active Grid for " .. moduleKey, 3)
+    end
 end
 
 -- Panel 与世界编辑模式共享这一份声明校验。模块不能因为 world adapter
@@ -355,7 +374,8 @@ end
 
 -- Preset 只消费当前 Grid 已经解析完成的真实 DB 表与路径。它不猜 icon、
 -- timerGroup 等业务命名，也不会把 timeline/material/text 误认成可套样式的显示。
-local function ResolvePanelStylePresetBinding(panelPreview, moduleKey, declaredGUIKeys, state, container)
+local function ResolvePanelStylePresetBinding(panelPreview, moduleKey, declaredGUIKeys,
+        mounted, mountedOwner, Grid, container)
     local family, bodyType
     if panelPreview.kind == "Icon" then
         family, bodyType = "icon", "icongroup"
@@ -366,12 +386,14 @@ local function ResolvePanelStylePresetBinding(panelPreview, moduleKey, declaredG
     end
 
     local bodyWidget
-    for _, widget in ipairs(state.instances or {}) do
-        local element = widget and widget._exGridPixelElement
-        if type(element) == "table" and string.lower(tostring(element.type or "")) == bodyType
-            and type(widget._exCompositeDb) == "table" then
-            if bodyWidget then return nil end
-            bodyWidget = widget
+    for _, entry in ipairs(mounted) do
+        for _, widget in ipairs(entry.state.instances or {}) do
+            local element = widget and widget._exGridPixelElement
+            if type(element) == "table" and string.lower(tostring(element.type or "")) == bodyType
+                and type(widget._exCompositeDb) == "table" then
+                if bodyWidget then return nil end
+                bodyWidget = widget
+            end
         end
     end
     if not bodyWidget or bodyWidget._exCompositeDb.width == nil or bodyWidget._exCompositeDb.height == nil then
@@ -386,7 +408,7 @@ local function ResolvePanelStylePresetBinding(panelPreview, moduleKey, declaredG
     local fonts = {}
     for guiKey, declaration in pairs(declaredGUIKeys) do
         local slot = ResolvePanelStyleFontSlot(family, guiKey, declaration.textRole)
-        local widget = slot and state.widgets[guiKey]
+        local widget = slot and Grid:FindMountedWidget(container, guiKey) or nil
         local element = widget and widget._exGridPixelElement
         if slot and not fonts[slot] and type(element) == "table"
             and string.lower(tostring(element.type or "")) == "fontgroup"
@@ -400,7 +422,7 @@ local function ResolvePanelStylePresetBinding(panelPreview, moduleKey, declaredG
         family = family,
         moduleKey = moduleKey,
         container = container,
-        gridState = state,
+        gridOwner = mountedOwner,
         bodyWidget = bodyWidget,
         bodyDB = bodyWidget._exCompositeDb,
         changedPath = bodyPath == "" and "width" or (bodyPath .. ".width"),
@@ -479,13 +501,11 @@ function EXUI:BindStandardPreviewInteractions(panelPreview, options)
             error("GUI position group has no movable standard icon mapping: " .. tostring(guiKey), 2)
         end
     end
-    local Grid, container = _G.ExwindGrid, EXUI.ActivePageFrame
-    local state = Grid and container and Grid.ContainerStates and Grid.ContainerStates[container]
-    if not state or type(state.widgets) ~= "table" then
-        error("standard icon interaction cannot validate active Grid for " .. moduleKey, 2)
-    end
+    local Grid, container, mounted, mountedOwner = ResolveActiveMountedGrid(
+        moduleKey, "standard icon interaction")
     for guiKey in pairs(declaredGUIKeys) do
-        if not state.widgets[guiKey] then
+        local widget, state = Grid:FindMountedWidget(container, guiKey)
+        if not widget or not state or state.moduleKey ~= moduleKey then
             error("standard icon interaction GUI key is not rendered: " .. guiKey, 2)
         end
     end
@@ -498,6 +518,11 @@ function EXUI:BindStandardPreviewInteractions(panelPreview, options)
     end
 
     panelPreview:SetIntentHandler(function(intent)
+        if EXUI.CurrentModule ~= moduleKey or EXUI.ActivePageFrame ~= container
+            or type(Grid.IsMountedOwnerCurrent) ~= "function"
+            or not Grid:IsMountedOwnerCurrent(container, mountedOwner) then
+            error("standard icon preview interaction belongs to a stale Grid mount: " .. moduleKey, 2)
+        end
         if type(intent) ~= "table" then error("standard icon preview received malformed intent", 2) end
         local declaration = schema[intent.elementID]
         if type(declaration) ~= "table" then
@@ -548,7 +573,8 @@ function EXUI:BindStandardPreviewInteractions(panelPreview, options)
     end
     if type(panelPreview.BindStylePresets) == "function" then
         panelPreview:BindStylePresets(ResolvePanelStylePresetBinding(
-            panelPreview, moduleKey, declaredGUIKeys, state, container))
+            panelPreview, moduleKey, declaredGUIKeys,
+            mounted, mountedOwner, Grid, container))
     end
     return panelPreview
 end
@@ -645,11 +671,15 @@ end
 
 local function RefreshPanelResizeControls(moduleKey)
     local Grid, container = _G.ExwindGrid, EXUI.ActivePageFrame
-    local state = Grid and container and Grid.ContainerStates and Grid.ContainerStates[container]
-    if EXUI.CurrentModule ~= moduleKey or not state or type(state.widgets) ~= "table"
-        or type(Grid.RefreshContainerControlsFromDB) ~= "function" then return false end
-    Grid:RefreshContainerControlsFromDB(container)
-    return true
+    if EXUI.CurrentModule ~= moduleKey or not Grid or not container
+        or type(Grid.GetMountedContainerStates) ~= "function"
+        or type(Grid.RefreshMountedValues) ~= "function" then return false end
+    local mounted, owner = Grid:GetMountedContainerStates(container)
+    if not owner or type(mounted) ~= "table" or #mounted == 0 then return false end
+    for _, entry in ipairs(mounted) do
+        if type(entry.state) ~= "table" or entry.state.moduleKey ~= moduleKey then return false end
+    end
+    return Grid:RefreshMountedValues(container) == true
 end
 
 local function CreatePanelResizeTexture(handle, r, g, b, a)
@@ -1501,8 +1531,9 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
             or (descriptor.family == "timerbar" and (self.kind == "TimerBar" or self.kind == "StandardTimerBar")))
         return self.released ~= true and familyMatches and controls and controls.owner == self
             and descriptor.moduleKey == self.moduleKey and EXUI.CurrentModule == self.moduleKey
-            and EXUI.ActivePageFrame == descriptor.container and Grid and Grid.ContainerStates
-            and Grid.ContainerStates[descriptor.container] == descriptor.gridState
+            and EXUI.ActivePageFrame == descriptor.container and Grid
+            and type(Grid.IsMountedOwnerCurrent) == "function"
+            and Grid:IsMountedOwnerCurrent(descriptor.container, descriptor.gridOwner)
             and descriptor.bodyWidget._exCompositeDb == descriptor.bodyDB
     end
 
@@ -1605,7 +1636,7 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
             token = self.stylePresetToken,
             moduleKey = self.moduleKey,
             container = descriptor.container,
-            gridState = descriptor.gridState,
+            gridOwner = descriptor.gridOwner,
         }
         local presetName = type(preset.name) == "string" and preset.name or (L["样式 "] .. slot)
         local actionTitle = action == "delete" and L["删除 "] or (action == "add" and L["新增 "] or L["应用 "])
@@ -1634,7 +1665,7 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
         return self:IsStylePresetSessionCurrent() and type(pending) == "table" and type(descriptor) == "table"
             and pending.token == self.stylePresetToken
             and pending.moduleKey == self.moduleKey and pending.container == descriptor.container
-            and pending.gridState == descriptor.gridState
+            and pending.gridOwner == descriptor.gridOwner
     end
 
     function session:ApplyStylePreset(slot, includeLSMFont)

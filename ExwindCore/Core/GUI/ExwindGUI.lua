@@ -182,9 +182,7 @@ local MODERN = {
     colors = {
         background = { 0.047, 0.051, 0.063, 1 }, -- #0c0d10
         panel = { 0.078, 0.086, 0.106, 1 },      -- #14161b
-        -- WoW 的深色纹理在游戏画面中会比网页 sRGB 预览更沉。
-        -- 将输入层抬到 #1e2229，实机观感才接近网页的 #1f242c。
-        input = { 0.118, 0.133, 0.161, 1 },      -- #1e2229
+        input = { 0.055, 0.063, 0.078, 1 },      -- #0e1014
         raised = { 0.125, 0.141, 0.173, 1 },     -- #20242c
         hover = { 0.161, 0.176, 0.208, 1 },      -- #292d35
         border = { 0.208, 0.227, 0.271, 1 },     -- #353a45
@@ -413,8 +411,6 @@ local function TrackModernSurfaceFrame(frame)
             for _, cachedSkin in pairs(owner._exModernSurfaces or {}) do
                 if cachedSkin.Layout then cachedSkin.Layout() end
             end
-            local glass = owner._exFrostedGlassDecoration
-            if glass and glass.Layout then glass.Layout() end
         end
     end)
 end
@@ -521,139 +517,6 @@ end
 function EXUI:ApplyModernPanel(frame, elevated)
     self:SetControlSurface(frame, 10, elevated and MC.raised or MC.panel, MC.border)
     return frame
-end
-
--- CSS 式磨砂面板的静态装饰层。WoW 无法实时模糊背后的场景，
--- 因此用低透明度蓝光、顶部内高光和三条渐隐阴影建立同样的层次。
--- 所有纹理仅创建一次，只有尺寸变化时重新排版；没有 OnUpdate。
-local function ApplyFrostedGlassDecoration(frame, role)
-    role = role == "card" and "card" or "panel"
-    local fx = frame._exFrostedGlassDecoration
-    if fx then
-        fx.Layout()
-        return
-    end
-
-    fx = { role = role, glow = {}, highlight = {}, shadow = {} }
-    frame._exFrostedGlassDecoration = fx
-    local white = "Interface\\Buttons\\WHITE8X8"
-
-    local function Texture(layer, sublevel)
-        local texture = frame:CreateTexture(nil, layer, nil, sublevel)
-        texture:SetTexture(white)
-        return texture
-    end
-
-    local function Gradient(texture, orientation, from, to)
-        if texture.SetGradient and _G.CreateColor then
-            texture:SetGradient(orientation,
-                CreateColor(from[1], from[2], from[3], from[4]),
-                CreateColor(to[1], to[2], to[3], to[4]))
-        else
-            texture:SetColorTexture(from[1], from[2], from[3], from[4])
-        end
-    end
-
-    -- 两段式顶部高光：中央清楚、两端自然淡出，不形成第二条硬边。
-    for index = 1, 2 do
-        local highlight = Texture("BORDER", 6)
-        local transparent = { 1, 1, 1, 0 }
-        local bright = { 1, 1, 1, role == "panel" and 0.065 or 0.05 }
-        Gradient(highlight, "HORIZONTAL",
-            index == 1 and transparent or bright,
-            index == 1 and bright or transparent)
-        fx.highlight[index] = highlight
-    end
-
-    if role == "panel" then
-        -- 四个低成本色带近似左上方的径向蓝色光晕。
-        local bands = {
-            { height = 20, alpha = 0.082 },
-            { height = 25, alpha = 0.056 },
-            { height = 30, alpha = 0.034 },
-            { height = 35, alpha = 0.018 },
-            { height = 40, alpha = 0.008 },
-        }
-        for row, band in ipairs(bands) do
-            fx.glow[row] = {}
-            for side = 1, 2 do
-                local glow = Texture("BORDER", 3)
-                glow:SetBlendMode("ADD")
-                local clear = { 0.12, 0.34, 0.85, 0 }
-                local blue = { 0.12, 0.34, 0.85, band.alpha }
-                Gradient(glow, "HORIZONTAL",
-                    side == 1 and clear or blue,
-                    side == 1 and blue or clear)
-                fx.glow[row][side] = glow
-            end
-        end
-        fx.glowBands = bands
-
-        -- 阴影只画在面板外部，不改变面板尺寸或内容布局。
-        local bottom = Texture("BACKGROUND", -8)
-        Gradient(bottom, "VERTICAL", { 0, 0, 0, 0 }, { 0, 0, 0, 0.34 })
-        fx.shadow.bottom = bottom
-        local left = Texture("BACKGROUND", -8)
-        Gradient(left, "HORIZONTAL", { 0, 0, 0, 0 }, { 0, 0, 0, 0.2 })
-        fx.shadow.left = left
-        local right = Texture("BACKGROUND", -8)
-        Gradient(right, "HORIZONTAL", { 0, 0, 0, 0.2 }, { 0, 0, 0, 0 })
-        fx.shadow.right = right
-    end
-
-    fx.Layout = function()
-        local width, height = frame:GetWidth(), frame:GetHeight()
-        if not width or not height or width <= 0 or height <= 0 then return end
-
-        local effectiveScale = frame.GetEffectiveScale and frame:GetEffectiveScale() or 1
-        effectiveScale = type(effectiveScale) == "number" and effectiveScale > 0 and effectiveScale or 1
-        local pixelUtil = _G.PixelUtil
-        local pixel = pixelUtil and pixelUtil.GetNearestPixelSize
-            and pixelUtil.GetNearestPixelSize(1, effectiveScale, 1)
-            or (1 / effectiveScale)
-        pixel = type(pixel) == "number" and pixel > 0 and pixel or (1 / effectiveScale)
-        local half = math.max(1, (width - 28) / 2)
-        fx.highlight[1]:ClearAllPoints()
-        fx.highlight[1]:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -pixel)
-        fx.highlight[1]:SetSize(half, pixel)
-        fx.highlight[2]:ClearAllPoints()
-        fx.highlight[2]:SetPoint("TOPLEFT", frame, "TOPLEFT", 14 + half, -pixel)
-        fx.highlight[2]:SetSize(half, pixel)
-
-        if role ~= "panel" then return end
-
-        local peak = math.max(48, width * 0.15)
-        local extent = math.max(peak + 48, width * 0.58)
-        local y = 1
-        for row, band in ipairs(fx.glowBands) do
-            local leftGlow, rightGlow = fx.glow[row][1], fx.glow[row][2]
-            local startX = row == 1 and 7 or (row == 2 and 2 or 1)
-            leftGlow:ClearAllPoints()
-            leftGlow:SetPoint("TOPLEFT", frame, "TOPLEFT", startX, -y)
-            leftGlow:SetSize(math.max(1, peak - startX), band.height)
-            rightGlow:ClearAllPoints()
-            rightGlow:SetPoint("TOPLEFT", frame, "TOPLEFT", peak, -y)
-            rightGlow:SetSize(math.max(1, extent - peak), band.height)
-            y = y + band.height
-        end
-
-        fx.shadow.bottom:ClearAllPoints()
-        fx.shadow.bottom:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 16, -1)
-        fx.shadow.bottom:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", -16, -1)
-        fx.shadow.bottom:SetHeight(18)
-        fx.shadow.left:ClearAllPoints()
-        fx.shadow.left:SetPoint("TOPRIGHT", frame, "TOPLEFT", -1, -14)
-        fx.shadow.left:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", -1, 14)
-        fx.shadow.left:SetWidth(11)
-        fx.shadow.right:ClearAllPoints()
-        fx.shadow.right:SetPoint("TOPLEFT", frame, "TOPRIGHT", 1, -14)
-        fx.shadow.right:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT", 1, 14)
-        fx.shadow.right:SetWidth(11)
-    end
-
-    frame:HookScript("OnSizeChanged", fx.Layout)
-    frame:HookScript("OnShow", fx.Layout)
-    fx.Layout()
 end
 
 local function PaintModernButton(frame)
@@ -3474,13 +3337,17 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         if db[field] == nil then db[field] = value end
     end
     local groupWidth, groupHeight = width or 750, 220
-    -- 网页参考的实际外层约为 #0f1219。WoW 的深色纹理实机显示更沉，
-    -- 因此这里使用稍亮、略偏蓝灰的补偿色，避免落到接近纯黑的 #070a12。
-    local fontGroupOuterFill = { 0.075, 0.090, 0.122, 0.985 }
-    local fontGroupOuterBorder = { 1, 1, 1, 0.08 }
-    -- 内卡片必须只比外层亮一阶，不能继续使用较亮的通用 raised 色。
-    local fontGroupSectionFill = { 0.086, 0.098, 0.122, 0.965 }
-    local fontGroupSectionBorder = { 1, 1, 1, 0.09 }
+    -- 与 IconGroup 共用同一组层级；两种复合控件只保留内容差异。
+    local palette = {
+        panel = MC.panel,
+        card = MC.raised,
+        utility = MC.input,
+        border = MC.border,
+        borderSoft = MC.border,
+        text = { 0.96, 0.96, 0.97, 1 },
+        value = { 0.663, 0.792, 1.000, 1 },
+        accent = { 0.216, 0.416, 0.816, 1 },
+    }
     local group, isNew = AcquireCompositeGroup("CompositeFontGroup", parent)
     group._exCompositeLabel = label or L["文字设置"]
     BindCompositeGroup(group, db, onUpdate, opts)
@@ -3488,132 +3355,20 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         if group._exSetUnboundedWidthControls then group:_exSetUnboundedWidthControls(opts) end
         AttachCompositeRelease(group)
         ReflowCompositeGroup(group, groupWidth, groupHeight)
-        EXUI:SetControlSurface(group, 10, fontGroupOuterFill, fontGroupOuterBorder)
-        ApplyFrostedGlassDecoration(group, "panel")
-        for _, surface in ipairs(group._exFrostedSectionSurfaces or {}) do
-            EXUI:SetControlSurface(surface, 10, fontGroupSectionFill, fontGroupSectionBorder)
-            ApplyFrostedGlassDecoration(surface, "card")
+        EXUI:SetControlSurface(group, 10, palette.panel, palette.borderSoft)
+        for _, card in ipairs(group._exFontGroupMetricCards or {}) do
+            EXUI:SetControlSurface(card, 10, palette.card, palette.border)
+        end
+        if group._exFontGroupActionCard then
+            EXUI:SetControlSurface(group._exFontGroupActionCard, 10, palette.utility, { 1, 1, 1, 0.16 })
         end
         for _, popup in ipairs(group._exCompositePopups or {}) do
-            EXUI:SetControlSurface(popup, 10, fontGroupOuterFill, { 1, 1, 1, 0.10 })
-            ApplyFrostedGlassDecoration(popup, "panel")
+            EXUI:SetControlSurface(popup, 10, palette.panel, palette.border)
         end
         return group
     end
     local proxy = CreateCompositeProxy(group)
     db = proxy
-    local palette = {
-        panel = fontGroupOuterFill,
-        card = fontGroupSectionFill,
-        utility = MC.input,
-        border = { 1, 1, 1, 0.10 },
-        borderSoft = { 1, 1, 1, 0.09 },
-        text = { 0.96, 0.96, 0.97, 1 },
-        value = { 0.663, 0.792, 1.000, 1 },
-        accent = { 0.216, 0.416, 0.816, 1 },
-    }
-    local flatBackdrop = {
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-        insets = { left = 0, right = 0, top = 0, bottom = 0 },
-    }
-
-    -- FontGroup 的 metric card 在 ScrollFrame 内首次显示时，Backdrop 的 1 UI
-    -- 单位边缘会被父级的有效缩放采样到半个物理像素，因而出现上/左边像“消失”的
-    -- 假象。卡片保留原有 Backdrop 作为纯背景；边缘只由这四条卡片专用的、按卡片
-    -- 自身 effective scale 计算的物理像素 Texture 绘制。它不参与任何内容布局。
-    local function InstallMetricCardPhysicalOutline(card)
-        local lines = {}
-        for index = 1, 4 do
-            local line = card:CreateTexture(nil, "BORDER", nil, 7)
-            line:SetTexture("Interface\\Buttons\\WHITE8X8")
-            line:SetColorTexture(unpack(palette.border))
-            if line.SetSnapToPixelGrid then line:SetSnapToPixelGrid(true) end
-            if line.SetTexelSnappingBias then line:SetTexelSnappingBias(0) end
-            lines[index] = line
-        end
-        card._exMetricCardPhysicalOutline = lines
-
-        local revision = 0
-        local function Apply()
-            local scale = card:GetEffectiveScale()
-            scale = (type(scale) == "number" and scale > 0) and scale or 1
-            local pixelUtil = _G.PixelUtil
-            local pixel = (pixelUtil and pixelUtil.GetNearestPixelSize)
-                and pixelUtil.GetNearestPixelSize(1, scale, 1)
-                or (1 / scale)
-
-            local function SetPixelPoint(region, point, relativePoint)
-                region:ClearAllPoints()
-                if pixelUtil and pixelUtil.SetPoint then
-                    pixelUtil.SetPoint(region, point, card, relativePoint, 0, 0, 1, 1)
-                else
-                    region:SetPoint(point, card, relativePoint, 0, 0)
-                end
-            end
-
-            SetPixelPoint(lines[1], "TOPLEFT", "TOPLEFT")
-            if pixelUtil and pixelUtil.SetPoint then
-                pixelUtil.SetPoint(lines[1], "TOPRIGHT", card, "TOPRIGHT", 0, 0, 1, 1)
-            else
-                lines[1]:SetPoint("TOPRIGHT", card, "TOPRIGHT", 0, 0)
-            end
-            lines[1]:SetHeight(pixel)
-
-            SetPixelPoint(lines[2], "BOTTOMLEFT", "BOTTOMLEFT")
-            if pixelUtil and pixelUtil.SetPoint then
-                pixelUtil.SetPoint(lines[2], "BOTTOMRIGHT", card, "BOTTOMRIGHT", 0, 0, 1, 1)
-            else
-                lines[2]:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", 0, 0)
-            end
-            lines[2]:SetHeight(pixel)
-
-            SetPixelPoint(lines[3], "TOPLEFT", "TOPLEFT")
-            if pixelUtil and pixelUtil.SetPoint then
-                pixelUtil.SetPoint(lines[3], "BOTTOMLEFT", card, "BOTTOMLEFT", 0, 0, 1, 1)
-            else
-                lines[3]:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 0, 0)
-            end
-            lines[3]:SetWidth(pixel)
-
-            SetPixelPoint(lines[4], "TOPRIGHT", "TOPRIGHT")
-            if pixelUtil and pixelUtil.SetPoint then
-                pixelUtil.SetPoint(lines[4], "BOTTOMRIGHT", card, "BOTTOMRIGHT", 0, 0, 1, 1)
-            else
-                lines[4]:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", 0, 0)
-            end
-            lines[4]:SetWidth(pixel)
-        end
-
-        local function Stabilize()
-            revision = revision + 1
-            local current = revision
-            Apply()
-            -- 父级 ScrollChild/缩放在首次 Show 后才完全落定；只补两帧，不保留
-            -- OnUpdate/Ticker。revision 同时让池化复用后的旧回调失效。
-            if _G.C_Timer and _G.C_Timer.After then
-                _G.C_Timer.After(0, function()
-                    if current ~= revision then return end
-                    Apply()
-                    _G.C_Timer.After(0, function()
-                        if current == revision then Apply() end
-                    end)
-                end)
-            end
-        end
-
-        card:HookScript("OnShow", Stabilize)
-        card:HookScript("OnSizeChanged", Stabilize)
-        card:RegisterEvent("UI_SCALE_CHANGED")
-        card:RegisterEvent("DISPLAY_SIZE_CHANGED")
-        card:SetScript("OnEvent", function(_, event)
-            if event == "UI_SCALE_CHANGED" or event == "DISPLAY_SIZE_CHANGED" then
-                Stabilize()
-            end
-        end)
-        Stabilize()
-    end
 
     local function EmitUpdate() CompositeEmitUpdate(group) end
 
@@ -3765,8 +3520,7 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         return slider
     end
     group:SetSize(groupWidth, groupHeight)
-    EXUI:SetControlSurface(group, 10, palette.panel, fontGroupOuterBorder)
-    ApplyFrostedGlassDecoration(group, "panel")
+    EXUI:SetControlSurface(group, 10, palette.panel, palette.borderSoft)
 
     local header = CreateFrame("Frame", nil, group)
     header:SetSize(groupWidth, 40)
@@ -3797,32 +3551,14 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     local metricCardHeight = 60
     local controlX = padding + metricsWidth + controlsGap
 
-    -- 三栏各用一整块低对比度底色建立语义分组。相比每个控件一张小卡片，
-    -- 它不会产生“卡片套卡片”的重量；相比只画分隔线，也不会让控件悬空。
     local sectionHeight = math.abs(row3 - row1) + metricCardHeight
-    local sectionFill = palette.card
-    local sectionBorder = fontGroupSectionBorder
-    local function CreateSectionSurface(x, sectionWidth)
-        local surface = CreateFrame("Frame", nil, content)
-        surface:EnableMouse(false)
-        surface:SetPoint("TOPLEFT", content, "TOPLEFT", x, row1)
-        surface:SetSize(sectionWidth, sectionHeight)
-        EXUI:SetControlSurface(surface, 10, sectionFill, sectionBorder)
-        ApplyFrostedGlassDecoration(surface, "card")
-        return surface
-    end
-    local appearanceSurface = CreateSectionSurface(col1, itemWidth)
-    local positionSurface = CreateSectionSurface(col2, itemWidth)
-    local utilitySurface = CreateSectionSurface(controlX, controlWidth)
-    group._exFrostedSectionSurfaces = { appearanceSurface, positionSurface, utilitySurface }
 
     local function CreateMetricCard(x, y)
-        -- 外层 FontGroup 已经提供完整卡片边界。内部这里只保留透明的布局宿主，
-        -- 让真正可交互的按钮、下拉框和滑条自己表达边界，避免“卡片套卡片”。
-        local slot = CreateFrame("Frame", nil, content)
-        slot:SetPoint("TOPLEFT", x, y)
-        slot:SetSize(itemWidth, metricCardHeight)
-        return slot
+        local card = CreateFrame("Frame", nil, content)
+        card:SetPoint("TOPLEFT", x, y)
+        card:SetSize(itemWidth, metricCardHeight)
+        EXUI:SetControlSurface(card, 10, palette.card, palette.border)
+        return card
     end
 
     -- 三行两列：颜色/大小、字体/X、描边/Y。
@@ -3832,6 +3568,7 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     local xCard = CreateMetricCard(col2, row2)
     local outlineCard = CreateMetricCard(col1, row3)
     local yCard = CreateMetricCard(col2, row3)
+    group._exFontGroupMetricCards = { colorCard, sizeCard, fontCard, xCard, outlineCard, yCard }
     local sliderWidth = itemWidth - 20
 
     -- 字体、颜色和描边属于日常选项，直接展示在主面板，不再藏进弹窗。
@@ -3860,10 +3597,12 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     local ySlider = CreateFontSlider(yCard, sliderWidth, L["Y 轴偏移"], "y", offsetMin, offsetMax, db.y, 1)
     ySlider:SetPoint("TOPLEFT", 10, -8)
 
-    -- 右侧功能区同样只作为布局宿主；背景由整栏的 section surface 负责。
+    -- 右侧功能区沿用 IconGroup 的 utility 卡片。
     local controlCard = CreateFrame("Frame", nil, content)
     controlCard:SetPoint("TOPLEFT", controlX, row1)
     controlCard:SetSize(controlWidth, sectionHeight)
+    EXUI:SetControlSurface(controlCard, 10, palette.utility, { 1, 1, 1, 0.16 })
+    group._exFontGroupActionCard = controlCard
 
     local showText = self:CreateCheckbox(controlCard, L["显示文字"], db.enabled, function(v)
         CommitFontValue("enabled", v)
@@ -3901,7 +3640,6 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     local function CreatePopup(titleText, popupWidth, popupHeight)
         local popup = CreateCompositePopupHost(group, popupWidth, popupHeight)
         EXUI:SetControlSurface(popup, 10, palette.panel, palette.border)
-        ApplyFrostedGlassDecoration(popup, "panel")
         popup:Hide()
         local popupTitle = EXUI:CreateVisualFontString(popup, EXFONTFRAME, "GameFontHighlight")
         popupTitle:SetPoint("TOPLEFT", 13, -9)
@@ -4020,6 +3758,7 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     RegisterCompositeControl(group, gradientLength, "gradientLength", "slider")
     RegisterCompositeControl(group, rotation, "rotation", "slider")
     group._exCompositePopups = { shadowPopup, layoutPopup, advancedPopup }
+
     group._fontGroupDb = proxy
     group._exCompositeReflow = function(self, nextWidth, nextHeight)
         local nextControlWidth = math.min(416, math.max(364, math.floor(nextWidth * 0.40)))
@@ -4039,12 +3778,6 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         xCard:ClearAllPoints(); xCard:SetPoint("TOPLEFT", content, "TOPLEFT", nextCol2, row2)
         outlineCard:ClearAllPoints(); outlineCard:SetPoint("TOPLEFT", content, "TOPLEFT", col1, row3)
         yCard:ClearAllPoints(); yCard:SetPoint("TOPLEFT", content, "TOPLEFT", nextCol2, row3)
-        appearanceSurface:ClearAllPoints(); appearanceSurface:SetPoint("TOPLEFT", content, "TOPLEFT", col1, row1)
-        appearanceSurface:SetSize(nextItemWidth, sectionHeight)
-        positionSurface:ClearAllPoints(); positionSurface:SetPoint("TOPLEFT", content, "TOPLEFT", nextCol2, row1)
-        positionSurface:SetSize(nextItemWidth, sectionHeight)
-        utilitySurface:ClearAllPoints(); utilitySurface:SetPoint("TOPLEFT", content, "TOPLEFT", nextControlX, row1)
-        utilitySurface:SetSize(nextControlWidth, sectionHeight)
         for _, slider in ipairs({ sizeSlider, xSlider, ySlider }) do slider:SetWidth(nextSliderWidth) end
         fontDrop:SetWidth(nextSliderWidth); outlineDrop:SetWidth(nextSliderWidth)
         colorBtn:SetWidth(nextSliderWidth)
@@ -5411,12 +5144,35 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
     if cooldownDb.edgeAlpha == nil then cooldownDb.edgeAlpha = 1 end
     if cooldownDb.showBling == nil then cooldownDb.showBling = false end
 
+    local palette = {
+        panel = MC.panel,
+        card = MC.raised,
+        utility = MC.input,
+        border = MC.border,
+        borderSoft = MC.border,
+        text = { 0.96, 0.96, 0.97, 1 },
+        value = { 0.663, 0.792, 1.000, 1 },
+        accent = { 0.216, 0.416, 0.816, 1 },
+    }
+
     local container, isNew = AcquireCompositeGroup("CompositeIconGroup", parent)
     container._exCompositeLabel = label or L["图标设置"]
     BindCompositeGroup(container, iconDb, onUpdate, opts)
     if not isNew then
         AttachCompositeRelease(container)
         ReflowCompositeGroup(container, groupWidth, groupHeight)
+        EXUI:SetControlSurface(container, 10, palette.panel, palette.borderSoft)
+        for _, card in ipairs(container._exIconMetricCards or {}) do
+            EXUI:SetControlSurface(card, 10, palette.card, palette.border)
+        end
+        if container._exIconActionCard then
+            EXUI:SetControlSurface(container._exIconActionCard, 10, palette.utility, { 1, 1, 1, 0.16 })
+        end
+        for _, popup in ipairs(container._exCompositePopups or {}) do
+            EXUI:SetControlSurface(popup, 10, palette.panel, palette.border)
+        end
+        for _, line in ipairs(container.crispOutline or {}) do line:Hide() end
+        container.crispOutline = nil
         return container
     end
     iconDb = CreateCompositeProxy(container)
@@ -5589,74 +5345,8 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
         })
     end
 
-    -- Protocol 风格：zinc-900 纯底色、低透明白线、少量 emerald 强调；不改全局皮肤。
-    local palette = {
-        panel = MC.panel,
-        card = MC.raised,
-        utility = MC.input,
-        border = MC.border,
-        borderSoft = MC.border,
-        text = { 0.96, 0.96, 0.97, 1 },
-        value = { 0.663, 0.792, 1.000, 1 },
-        accent = { 0.216, 0.416, 0.816, 1 },
-    }
-    local flatBackdrop = {
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-        insets = { left = 0, right = 0, top = 0, bottom = 0 },
-    }
-
-    -- Backdrop 的 1 UI 单位边缘在 ScrollFrame 中随滚动偏移时可能落在半个物理像素上，
-    -- 低透明度下会像“消失”一样。外框改为四条绘制在框内的物理像素线，避免被裁切。
-    local function AddCrispOutline(frame, color)
-        local lines = {}
-        for i = 1, 4 do
-            local line = EXUI:CreateVisualTexture(frame, EXBORDERFRAME)
-            line:SetTexture("Interface\\Buttons\\WHITE8X8")
-            line:SetColorTexture(unpack(color))
-            if line.SetSnapToPixelGrid then line:SetSnapToPixelGrid(true) end
-            if line.SetTexelSnappingBias then line:SetTexelSnappingBias(0) end
-            lines[i] = line
-        end
-
-        local function Update()
-            local scale = frame:GetEffectiveScale()
-            local pixel = 1 / ((scale and scale > 0) and scale or 1)
-
-            lines[1]:ClearAllPoints()
-            lines[1]:SetPoint("TOPLEFT", frame, "TOPLEFT")
-            lines[1]:SetPoint("TOPRIGHT", frame, "TOPRIGHT")
-            lines[1]:SetHeight(pixel)
-
-            lines[2]:ClearAllPoints()
-            lines[2]:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT")
-            lines[2]:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT")
-            lines[2]:SetHeight(pixel)
-
-            lines[3]:ClearAllPoints()
-            lines[3]:SetPoint("TOPLEFT", frame, "TOPLEFT")
-            lines[3]:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT")
-            lines[3]:SetWidth(pixel)
-
-            lines[4]:ClearAllPoints()
-            lines[4]:SetPoint("TOPRIGHT", frame, "TOPRIGHT")
-            lines[4]:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT")
-            lines[4]:SetWidth(pixel)
-        end
-
-        frame:HookScript("OnSizeChanged", Update)
-        frame:HookScript("OnShow", Update)
-        Update()
-        return lines
-    end
-
     container:SetSize(groupWidth, groupHeight)
-
-    container:SetBackdrop(flatBackdrop)
-    container:SetBackdropColor(unpack(palette.panel))
-    container:SetBackdropBorderColor(unpack(palette.borderSoft))
-    container.crispOutline = AddCrispOutline(container, palette.border)
+    EXUI:SetControlSurface(container, 10, palette.panel, palette.borderSoft)
 
     local header = CreateFrame("Frame", nil, container)
     header:SetSize(groupWidth, 40)
@@ -5692,12 +5382,10 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
 
     -- 每个几何参数保留独立深色卡片，避免滑条直接裸排在内容区。
     local function CreateMetricCard(x, y)
-        local card = CreateFrame("Frame", nil, content, "BackdropTemplate")
+        local card = CreateFrame("Frame", nil, content)
         card:SetPoint("TOPLEFT", x, y)
         card:SetSize(itemWidth, 64)
-        card:SetBackdrop(flatBackdrop)
-        card:SetBackdropColor(unpack(palette.card))
-        card:SetBackdropBorderColor(unpack(palette.border))
+        EXUI:SetControlSurface(card, 10, palette.card, palette.border)
         return card
     end
 
@@ -5725,14 +5413,16 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
         sPosY = CreateIconSlider(yCard, sliderWidth, L["垂直偏移 (Y)"], "y", offsetMin, offsetMax, iconDb.y or 0, offsetStep)
         sPosY:SetPoint("TOPLEFT", 10, -10)
     end
+    container._exIconMetricCards = { widthCard, heightCard }
+    if xCard then container._exIconMetricCards[#container._exIconMetricCards + 1] = xCard end
+    if yCard then container._exIconMetricCards[#container._exIconMetricCards + 1] = yCard end
 
     -- 四项功能控制区：每一行左侧开关、右侧对应设置按钮。
-    local actionCard = CreateFrame("Frame", nil, content, "BackdropTemplate")
+    local actionCard = CreateFrame("Frame", nil, content)
     actionCard:SetPoint("TOPLEFT", controlX, row1)
     actionCard:SetSize(controlWidth, math.abs(row2 - row1) + 64)
-    actionCard:SetBackdrop(flatBackdrop)
-    actionCard:SetBackdropColor(unpack(palette.utility))
-    actionCard:SetBackdropBorderColor(1, 1, 1, 0.16)
+    EXUI:SetControlSurface(actionCard, 10, palette.utility, { 1, 1, 1, 0.16 })
+    container._exIconActionCard = actionCard
 
     local cbShow = EXUI:CreateCheckbox(actionCard, L["显示图标"], iconDb.showIcon, function(v)
         CommitIconValue("showIcon", v)
@@ -5756,9 +5446,7 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
     cbCooldown:SetSize(132, 28)
     local function CreatePopup(titleText, width, height)
         local popup = CreateCompositePopupHost(container, width, height)
-        popup:SetBackdrop(flatBackdrop)
-        popup:SetBackdropColor(unpack(palette.panel))
-        popup:SetBackdropBorderColor(unpack(palette.border))
+        EXUI:SetControlSurface(popup, 10, palette.panel, palette.border)
         popup:Hide()
 
         local popupTitle = EXUI:CreateVisualFontString(popup, EXFONTFRAME, "GameFontHighlight")
@@ -7892,7 +7580,14 @@ local function ResolveStandardModulePageLayout(layout, context)
     if type(resolved) ~= "table" then
         error("StandardModulePage layout must resolve to a table", 3)
     end
-    return resolved
+    local declaresCards = resolved.version ~= nil or resolved.cards ~= nil
+    if declaresCards then
+        if resolved.version ~= 1 or type(resolved.cards) ~= "table" then
+            error("StandardModulePage card layout requires version = 1 and cards table", 3)
+        end
+        return resolved, "cards"
+    end
+    return resolved, "flat"
 end
 
 --- Creates the common page lifecycle for a display module.
@@ -7999,6 +7694,7 @@ function EXUI:CreateStandardModulePage(options)
         applyScrollSkin = applyScrollSkin,
         renderGeneration = 0,
         gridRendered = false,
+        cardSession = nil,
         previewMounted = false,
     }
     -- Startup audit validates that every module registered a Page and a Slider
@@ -8017,6 +7713,7 @@ function EXUI:CreateStandardModulePage(options)
             scrollChild = self.scrollChild,
             grid = _G.ExwindGrid,
             config = self.binding.getConfig(),
+            cardSession = self.cardSession,
         }
     end
 
@@ -8028,6 +7725,10 @@ function EXUI:CreateStandardModulePage(options)
     end
 
     function controller:RefreshGridControls()
+        local session = self.cardSession
+        if session and not session.released and type(session.RefreshValues) == "function" then
+            return session:RefreshValues()
+        end
         local grid = _G.ExwindGrid
         if grid and self.scrollChild and type(grid.RefreshContainerControlsFromDB) == "function" then
             return grid:RefreshContainerControlsFromDB(self.scrollChild)
@@ -8053,10 +7754,17 @@ function EXUI:CreateStandardModulePage(options)
 
     function controller:ReleaseGrid()
         local grid = _G.ExwindGrid
-        if grid and self.scrollChild and type(grid.ReleaseContainerWidgets) == "function" then
+        local session = self.cardSession
+        self.cardSession = nil
+        self.gridRendered = false
+        if session then
+            if type(session.Release) ~= "function" then
+                error("StandardModulePage card session does not implement Release", 2)
+            end
+            session:Release()
+        elseif grid and self.scrollChild and type(grid.ReleaseContainerWidgets) == "function" then
             grid:ReleaseContainerWidgets(self.scrollChild)
         end
-        self.gridRendered = false
     end
 
     -- A delayed stage failure must leave no live half-page behind.  Cleanup is
@@ -8074,13 +7782,7 @@ function EXUI:CreateStandardModulePage(options)
             end
         end)
         self.previewMounted = false
-        local grid = _G.ExwindGrid
-        self.gridRendered = false
-        pcall(function()
-            if grid and self.scrollChild and type(grid.ReleaseContainerWidgets) == "function" then
-                grid:ReleaseContainerWidgets(self.scrollChild)
-            end
-        end)
+        pcall(function() self:ReleaseGrid() end)
         pcall(function() self:ClearActiveOwnership() end)
         pcall(function()
             if self.previewDock then self.previewDock:Hide() end
@@ -8194,7 +7896,7 @@ function EXUI:CreateStandardModulePage(options)
         self:EnsureFrames(contentFrame)
         -- 同一页被路由重复 Render 时不会触发 OnHide；必须先交还上一轮
         -- Grid/preview，才能重新绑定本轮唯一 container/session。
-        if self.gridRendered or self.previewMounted then
+        if self.gridRendered or self.cardSession or self.previewMounted then
             self:ReleasePreview()
             self:ReleaseGrid()
         end
@@ -8248,11 +7950,26 @@ function EXUI:CreateStandardModulePage(options)
                 EXUI.ModuleScrollFrame = scrollFrame
                 context = BuildContext(self)
                 context.config = config
-                columns = type(self.getColumns) == "function" and self.getColumns(context) or self.getColumns
-                columns = tonumber(columns)
-                if not columns or columns <= 0 then error("StandardModulePage resolved invalid Grid column count", 2) end
-                if type(grid.SetContainerCols) == "function" then grid:SetContainerCols(scrollChild, columns) end
-                grid:Render(scrollChild, ResolveStandardModulePageLayout(self.layout, context), config, self.moduleKey)
+                local declaration, layoutMode = ResolveStandardModulePageLayout(self.layout, context)
+                if layoutMode == "cards" then
+                    if type(grid.MountCards) ~= "function" then
+                        error("StandardModulePage card layout requires ExwindGrid:MountCards", 2)
+                    end
+                    self.cardSession = grid:MountCards(scrollChild, declaration, {
+                        pageId = self.moduleKey,
+                        regionId = "standard-module",
+                        binding = self.binding,
+                        config = config,
+                        moduleKey = self.moduleKey,
+                        scrollFrame = scrollFrame,
+                    })
+                else
+                    columns = type(self.getColumns) == "function" and self.getColumns(context) or self.getColumns
+                    columns = tonumber(columns)
+                    if not columns or columns <= 0 then error("StandardModulePage resolved invalid Grid column count", 2) end
+                    if type(grid.SetContainerCols) == "function" then grid:SetContainerCols(scrollChild, columns) end
+                    grid:Render(scrollChild, declaration, config, self.moduleKey)
+                end
                 self.gridRendered = true
                 context = BuildContext(self)
                 context.config = config

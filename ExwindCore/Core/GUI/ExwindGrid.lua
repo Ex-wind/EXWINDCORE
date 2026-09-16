@@ -552,9 +552,13 @@ function Grid:ReleaseContainerWidgets(container)
 end
 
 -- 模块通过标准预览 intent 写入自己的同一份 DB 后，页面需要让正在显示的
--- 组合控件立刻回读该 DB。此处只调 EXUI 的公开组合控件回刷入口；Grid 不解释
--- 模块字段、预览元素或配置路径，因此可被所有后续标准预览页面复用。
+-- 组合控件立刻回读该 DB。Card root 先分发到各 Body，Body/旧 flat container
+-- 仍只调 EXUI 的公开组合控件回刷入口；Grid 不解释模块字段、预览元素或路径。
 function Grid:RefreshContainerControlsFromDB(container)
+    local cardSession = self.CardSessions and self.CardSessions[container] or nil
+    if cardSession and not cardSession.released then
+        return cardSession:RefreshValues()
+    end
     local state = GetContainerState(self, container)
     if not state then return false end
     local refreshed = false
@@ -1907,6 +1911,9 @@ function Grid:ValidateCardDeclaration(declaration, context)
     if declaration.version ~= 1 then
         return nil, "[ExwindGrid] settings-card declaration requires version = 1"
     end
+    if declaration.static ~= nil or declaration.fields ~= nil or declaration.groups ~= nil then
+        return nil, "[ExwindGrid] settings-card declaration cannot contain legacy static/fields/groups"
+    end
     if type(declaration.cards) ~= "table" then
         return nil, "[ExwindGrid] settings-card declaration requires cards"
     end
@@ -2703,7 +2710,12 @@ function CardSessionMixin:ReplaceCardContent(cardId, content)
         local restored, restoreReason = pcall(MountCardBody, self.grid, cardState)
         RestoreGridActivation(self.grid, activation)
         if not restored then
-            error(tostring(releaseReason) .. "; rollback failed: " .. tostring(restoreReason), 2)
+            local invalidated, invalidateReason = pcall(self.Release, self)
+            local message = tostring(releaseReason) .. "; rollback failed: " .. tostring(restoreReason)
+            if not invalidated then
+                message = message .. "; session invalidation failed: " .. tostring(invalidateReason)
+            end
+            error(message, 2)
         end
         error(releaseReason, 2)
     end
@@ -2714,7 +2726,7 @@ function CardSessionMixin:ReplaceCardContent(cardId, content)
     local mounted, mountReason = pcall(MountCardBody, self.grid, cardState)
     RestoreGridActivation(self.grid, activation)
     if not mounted then
-        ReleaseCardBody(self, cardState)
+        local cleaned, cleanupReason = pcall(ReleaseCardBody, self, cardState)
         cardState.content = previousContent
         cardState.binding = previousBinding
         cardState.sourceItems = previousSourceItems
@@ -2722,7 +2734,20 @@ function CardSessionMixin:ReplaceCardContent(cardId, content)
         local restored, restoreReason = pcall(MountCardBody, self.grid, cardState)
         RestoreGridActivation(self.grid, activation)
         if not restored then
-            error(tostring(mountReason) .. "; rollback failed: " .. tostring(restoreReason), 2)
+            local message = tostring(mountReason)
+            if not cleaned then
+                message = message .. "; failed-content cleanup failed: " .. tostring(cleanupReason)
+            end
+            message = message .. "; rollback failed: " .. tostring(restoreReason)
+            local invalidated, invalidateReason = pcall(self.Release, self)
+            if not invalidated then
+                message = message .. "; session invalidation failed: " .. tostring(invalidateReason)
+            end
+            error(message, 2)
+        end
+        if not cleaned then
+            error(tostring(mountReason) .. "; failed-content cleanup failed: "
+                .. tostring(cleanupReason), 2)
         end
         error(mountReason, 2)
     end
@@ -2931,8 +2956,97 @@ function Grid:MountCards(parent, declaration, context)
             end)
         end
     end
-    session:Relayout()
+    local laidOut, layoutReason = pcall(session.Relayout, session)
+    if not laidOut then
+        local released, releaseReason = pcall(session.Release, session)
+        if not released then
+            error(tostring(layoutReason) .. "; session cleanup failed: "
+                .. tostring(releaseReason), 0)
+        end
+        error(layoutReason, 0)
+    end
     return session
+end
+
+-- Unified mounted-page accessors.  Shared page/preview code should use these
+-- instead of assuming that every control lives directly in ContainerStates.
+-- The legacy single-grid route remains the fallback when no card session owns
+-- the supplied container.
+function Grid:GetMountedCardSession(container)
+    local session = container and self.CardSessions[container] or nil
+    if session and not session.released then return session end
+    return nil
+end
+
+function Grid:GetMountedOwner(container)
+    local session = self:GetMountedCardSession(container)
+    if session then return session end
+    return container and self.ContainerStates[container] or nil
+end
+
+function Grid:IsMountedOwnerCurrent(container, owner)
+    if not container or not owner then return false end
+    local session = self:GetMountedCardSession(container)
+    if session then return session == owner end
+    return self.ContainerStates[container] == owner
+end
+
+function Grid:GetMountedContainerStates(container)
+    local mounted = {}
+    local session = self:GetMountedCardSession(container)
+    if session then
+        for _, cardState in ipairs(session.cards) do
+            local state = self.ContainerStates[cardState.body]
+            if state then
+                mounted[#mounted + 1] = {
+                    state = state,
+                    container = cardState.body,
+                    cardId = cardState.id,
+                }
+            end
+        end
+        return mounted, session
+    end
+
+    local state = container and self.ContainerStates[container] or nil
+    if state then
+        mounted[1] = { state = state, container = container }
+    end
+    return mounted, state
+end
+
+function Grid:FindMountedWidget(container, widgetKey, cardId)
+    local session = self:GetMountedCardSession(container)
+    if session then
+        local widget, resolvedCardId
+        if cardId ~= nil then
+            widget = session:GetWidget(cardId, widgetKey)
+            resolvedCardId = cardId
+        else
+            widget, resolvedCardId = session:FindWidget(widgetKey)
+        end
+        local cardState = resolvedCardId and session.byId[resolvedCardId] or nil
+        local body = cardState and cardState.body or nil
+        local state = body and self.ContainerStates[body] or nil
+        return widget, state, resolvedCardId, body
+    end
+
+    local state = container and self.ContainerStates[container] or nil
+    local widget = state and state.widgets and state.widgets[widgetKey] or nil
+    return widget, state, nil, container
+end
+
+function Grid:RefreshMountedValues(container)
+    local session = self:GetMountedCardSession(container)
+    if session then
+        session:RefreshValues()
+        return true
+    end
+    if container and self.ContainerStates[container] then
+        self:RefreshContainerControlsFromDB(container)
+        return true
+    end
+    return false
 end
 
 function Grid:ToggleLiveEdit(container)

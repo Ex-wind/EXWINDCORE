@@ -56,12 +56,17 @@ local function validateSpec(spec)
     if spec.kind ~= "text" then error("MODULE_SPEC.kind must be text", 3) end
     if specs[spec.moduleKey] or controllers[spec.moduleKey] then error("duplicate central module: " .. spec.moduleKey, 3) end
     if spec.catalog ~= nil then error("MODULE_SPEC.catalog is forbidden; define metadata in ExwindTools.ModuleList", 3) end
-    if type(spec.gui) ~= "table" then error("MODULE_SPEC.gui is required", 3) end
-    EXUI:ValidateSettingsPageDeclaration("ExwindTools:" .. spec.moduleKey, spec.gui)
+    if type(spec.gui) ~= "table" or type(spec.gui.static) ~= "table" or type(spec.gui.fields) ~= "table" then error("MODULE_SPEC.gui.static/gui.fields are required", 3) end
     if type(spec.anchor) ~= "table" then error("MODULE_SPEC.anchor is required", 3) end
     requireString(spec.anchor.dbPath, "MODULE_SPEC.anchor.dbPath", 3)
     requireString(spec.anchor.xKey, "MODULE_SPEC.anchor.xKey", 3)
     requireString(spec.anchor.yKey, "MODULE_SPEC.anchor.yKey", 3)
+    for _, item in ipairs(spec.gui.static) do geometry(item, "MODULE_SPEC.gui.static") end
+    for _, item in ipairs(spec.gui.fields) do
+        requireString(item.key, "MODULE_SPEC.gui.fields key", 3)
+        requireString(item.type, "MODULE_SPEC.gui.fields type", 3)
+        geometry(item, "MODULE_SPEC.gui.fields")
+    end
 end
 local function splitRefreshContract(spec)
     local refresh = spec.RefreshActiveSurfaces
@@ -92,7 +97,26 @@ end
 
 local Controller = {}; Controller.__index = Controller
 function Controller:GetConfig() return self.db end
-function Controller:GetSettingsPageID() return self.settingsPageID end
+function Controller:BuildGridLayout()
+    local layout = {}
+    for _, source in ipairs(self.spec.gui.static) do layout[#layout + 1] = copy(source) end
+    for _, source in ipairs(self.spec.gui.fields) do
+        local item = copy(source)
+        if item.type == "anchorgroup" then
+            item.opts = {
+                bindRoot = self.spec.anchor.bindRoot == true,
+                offsetXKey = self.spec.anchor.xKey, offsetYKey = self.spec.anchor.yKey,
+                defaultOffsetX = self.spec.anchor.defaultX or 0, defaultOffsetY = self.spec.anchor.defaultY or 0,
+                attachEnabledKey = self.spec.anchor.attachEnabledKey, attachTargetKey = self.spec.anchor.attachTargetKey,
+                onPickFrame = function() return self.anchor:StartFramePicker() end,
+            }
+        elseif item.options then
+            item.opts = copy(item.options); item.options = nil
+        end
+        layout[#layout + 1] = item
+    end
+    return layout
+end
 function Controller:Apply(collection, entries, layout)
     local items = {}
     for _, entry in ipairs(entries) do
@@ -213,9 +237,6 @@ function EXUI:RegisterTextModule(spec)
     controller.binding = EXUI:RegisterStandardConfigBinding({
         moduleKey = registered.moduleKey, getConfig = function() return controller.db end,
     })
-    controller.settingsPageID = "ExwindTools:" .. registered.moduleKey
-    EXUI:RegisterSettingsPage(controller.settingsPageID, registered.gui, { addon = "ExwindTools", moduleKey = registered.moduleKey })
-    EXUI:RegisterModuleSettingsPage(registered.moduleKey, controller.settingsPageID)
     EXUI:RegisterEditableModule({
         addon = "ExwindTools", key = registered.moduleKey, name = moduleMeta.Name,
         orientation = "HORIZONTAL", settingsPage = registered.moduleKey,

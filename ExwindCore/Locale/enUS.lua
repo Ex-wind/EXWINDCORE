@@ -1698,7 +1698,6 @@ L["EXWIND音效"] = "EXWIND Sounds"
 L["未选择"] = "None selected"
 L["已选 %d 项"] = "%d selected"
 L["清空全部"] = "Clear All"
-L["清除全部"] = "Clear All"
 -- FontGroup
 L["文字颜色"] = "Text Color"
 L["文字大小"] = "Font Size"

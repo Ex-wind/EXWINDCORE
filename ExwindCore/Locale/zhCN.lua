@@ -2439,7 +2439,6 @@ L["EXWIND音效"] = true
 L["未选择"] = true
 L["已选 %d 项"] = true
 L["清空全部"] = true
-L["清除全部"] = true
 -- FontGroup
 L["文字颜色"] = true
 L["文字大小"] = true

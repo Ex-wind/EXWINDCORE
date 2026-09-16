@@ -287,11 +287,11 @@ end
 
 local function RefreshActiveGridControls(moduleKey)
     local Grid = _G.ExwindGrid
-    local session = EXUI.ActiveCardSession
-    if Grid and session and not session.released and session.context.moduleKey == moduleKey then
-        return Grid:RefreshSessionControlsFromDB(session)
+    local container = EXUI.ActivePageFrame
+    if not Grid or not container or type(Grid.RefreshContainerControlsFromDB) ~= "function" then
+        error("standard icon interaction has no active Grid container for " .. moduleKey, 3)
     end
-    error("standard interaction has no active card session for " .. moduleKey, 3)
+    Grid:RefreshContainerControlsFromDB(container)
 end
 
 -- Panel 与世界编辑模式共享这一份声明校验。模块不能因为 world adapter
@@ -400,7 +400,7 @@ local function ResolvePanelStylePresetBinding(panelPreview, moduleKey, declaredG
         family = family,
         moduleKey = moduleKey,
         container = container,
-        gridState = state.session or state,
+        gridState = state,
         bodyWidget = bodyWidget,
         bodyDB = bodyWidget._exCompositeDb,
         changedPath = bodyPath == "" and "width" or (bodyPath .. ".width"),
@@ -480,9 +480,7 @@ function EXUI:BindStandardPreviewInteractions(panelPreview, options)
         end
     end
     local Grid, container = _G.ExwindGrid, EXUI.ActivePageFrame
-    local cardSession = EXUI.ActiveCardSession
-    local state = Grid and cardSession and cardSession.context.moduleKey == moduleKey
-        and Grid:BuildSessionWidgetIndex(cardSession) or nil
+    local state = Grid and container and Grid.ContainerStates and Grid.ContainerStates[container]
     if not state or type(state.widgets) ~= "table" then
         error("standard icon interaction cannot validate active Grid for " .. moduleKey, 2)
     end
@@ -550,7 +548,7 @@ function EXUI:BindStandardPreviewInteractions(panelPreview, options)
     end
     if type(panelPreview.BindStylePresets) == "function" then
         panelPreview:BindStylePresets(ResolvePanelStylePresetBinding(
-            panelPreview, moduleKey, declaredGUIKeys, state, cardSession or container))
+            panelPreview, moduleKey, declaredGUIKeys, state, container))
     end
     return panelPreview
 end
@@ -646,12 +644,12 @@ local function HidePanelResizeTooltip(handle)
 end
 
 local function RefreshPanelResizeControls(moduleKey)
-    local Grid = _G.ExwindGrid
-    local cardSession = EXUI.ActiveCardSession
-    if Grid and cardSession and not cardSession.released and cardSession.context.moduleKey == moduleKey then
-        return Grid:RefreshSessionControlsFromDB(cardSession)
-    end
-    return false
+    local Grid, container = _G.ExwindGrid, EXUI.ActivePageFrame
+    local state = Grid and container and Grid.ContainerStates and Grid.ContainerStates[container]
+    if EXUI.CurrentModule ~= moduleKey or not state or type(state.widgets) ~= "table"
+        or type(Grid.RefreshContainerControlsFromDB) ~= "function" then return false end
+    Grid:RefreshContainerControlsFromDB(container)
+    return true
 end
 
 local function CreatePanelResizeTexture(handle, r, g, b, a)
@@ -1503,8 +1501,8 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
             or (descriptor.family == "timerbar" and (self.kind == "TimerBar" or self.kind == "StandardTimerBar")))
         return self.released ~= true and familyMatches and controls and controls.owner == self
             and descriptor.moduleKey == self.moduleKey and EXUI.CurrentModule == self.moduleKey
-            and EXUI.ActiveCardSession == descriptor.container
-            and descriptor.gridState == descriptor.container and not descriptor.container.released
+            and EXUI.ActivePageFrame == descriptor.container and Grid and Grid.ContainerStates
+            and Grid.ContainerStates[descriptor.container] == descriptor.gridState
             and descriptor.bodyWidget._exCompositeDb == descriptor.bodyDB
     end
 

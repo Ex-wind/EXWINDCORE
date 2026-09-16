@@ -437,14 +437,10 @@ end
 
 function Grid:RegisterCustomRenderer(key, renderer)
     if type(key) ~= "string" or key == "" then
-        error("RegisterCustomRenderer requires a non-empty key", 2)
+        return false
     end
     if type(renderer) ~= "table" then
-        error("RegisterCustomRenderer requires a renderer table: " .. key, 2)
-    end
-    if self.CustomRenderers[key] then error("duplicate custom renderer: " .. key, 2) end
-    if renderer.mount ~= nil and renderer.release == nil then
-        error("custom renderer mount requires release: " .. key, 2)
+        return false
     end
     self.CustomRenderers[key] = renderer
     return true
@@ -457,19 +453,6 @@ function Grid:GetCustomRenderer(key)
     return self.CustomRenderers[key]
 end
 
-local CompositeTypes = {
-    fontgroup = true, icongroup = true, timerbargroup = true, anchorgroup = true,
-    modulecommonsettings = true, widgetlayout = true, soundgroup = true,
-    texturegroup = true, glow_settings = true,
-    auradurationbargroup = true, auraapplicationbargroup = true,
-    auradispelbordergroup = true, aurasortgroup = true,
-    aurachildelementsgroup = true,
-}
-
-function Grid:IsCompositeTypeSupported(component)
-    return type(component) == "string" and CompositeTypes[string.lower(component)] == true
-end
-
 function Grid:ReleaseWidgetInstance(widget)
     if not widget then
         return
@@ -480,9 +463,6 @@ function Grid:ReleaseWidgetInstance(widget)
     if renderer and type(renderer.release) == "function" then
         renderer.release(widget, widget._customContext)
     end
-    widget._customRenderer = nil
-    widget._customRendererKey = nil
-    widget._customContext = nil
     local EXFactory = _G.ExwindFactory
     -- 组合控件宿主由其构造器登记清理函数。必须优先走这里，先断开子控件
     -- 回调/DB 引用，再归还外层宿主；不能把带旧闭包的控件直接塞回通用池。
@@ -643,7 +623,7 @@ function Grid:ValidateContext(config, contextPath)
 end
 
 -- [v2.0 New] 递归渲染核心
-function Grid:RenderItems(container, items, contextPath, config, moduleKey, binding, mountContext)
+function Grid:RenderItems(container, items, contextPath, config, moduleKey)
     for _, item in ipairs(items) do
         -- 1. 计算当前组件的绝对数据路径 (Scoped Context)
         local currentPath = contextPath
@@ -665,19 +645,19 @@ function Grid:RenderItems(container, items, contextPath, config, moduleKey, bind
                 -- Header/Label 渲染 (如果有)
                 if item.label then
                     -- TableGroup 自身作为一个 Label/Header 组件存在
-                    self:CreateWidget(container, item, config, moduleKey, currentPath, binding, mountContext)
+                    self:CreateWidget(container, item, config, moduleKey, currentPath)
                 end
 
                 -- 递归渲染子元素
                 -- 关键：container 保持不变 (MainFrame)，传递新的 ContextPath
                 if item.children then
-                    self:RenderItems(container, item.children, currentPath, config, moduleKey, binding, mountContext)
+                    self:RenderItems(container, item.children, currentPath, config, moduleKey)
                 end
             else
                 -- [普通组件]
                 -- 使用计算好的 Absolute Path 进行数据绑定
                 -- 传递 currentPath 给 CreateWidget，它将用作 fullKey
-                self:CreateWidget(container, item, config, moduleKey, currentPath, binding, mountContext)
+                self:CreateWidget(container, item, config, moduleKey, currentPath)
             end
         end
 
@@ -844,374 +824,6 @@ function Grid:Render(container, layoutData, config, moduleKey, onFinished)
     if onFinished then onFinished() end
 end
 
--- gui.version=1 card stack.  Every Body is a real Grid container with its own
--- state and body-local 200-column coordinate system.  Geometry refresh never
--- calls Render, so resize/height/collapse preserves controls and callbacks.
-local function CopyCardValue(value, seen)
-    if type(value) ~= "table" then return value end
-    seen = seen or {}
-    if seen[value] then error("card content cannot be cyclic", 4) end
-    local result = {}
-    seen[value] = true
-    for key, child in pairs(value) do result[CopyCardValue(key, seen)] = CopyCardValue(child, seen) end
-    seen[value] = nil
-    return result
-end
-
-local function ResolveCardBinding(context, card)
-    local binding = card.binding
-    if type(binding) == "string" then
-        binding = context.bindings and context.bindings[binding]
-        if not binding then error("[ExwindGrid] missing binding " .. card.binding .. " for " .. context.pageId .. "/" .. card.id, 3) end
-    elseif binding == nil then
-        binding = context.defaultBinding
-        if type(binding) == "string" then binding = context.bindings and context.bindings[binding] end
-    end
-    if binding == nil and context.moduleKey and type(EXUI.GetStandardConfigBinding) == "function" then
-        binding = EXUI:GetStandardConfigBinding(context.moduleKey)
-    end
-    if type(binding) ~= "table" or type(binding.getConfig) ~= "function" then
-        error("[ExwindGrid] card has no valid binding: " .. context.pageId .. "/" .. card.id, 3)
-    end
-    local config = binding.getConfig()
-    if type(config) ~= "table" then error("[ExwindGrid] binding did not resolve a table: " .. context.pageId .. "/" .. card.id, 3) end
-    return binding, config
-end
-
-local function PrepareCardItems(record)
-    local content = record.declaration.content
-    if content.kind == "grid" and record.liveLayout then return CopyCardValue(record.liveLayout) end
-    if content.kind == "grid" then return CopyCardValue(content.items) end
-    if content.kind == "composite" then
-        local opts = CopyCardValue(content.opts or {})
-        opts.bodyOnly = true
-        if type(record.session.context.resolveCompositeOptions) == "function" then
-            opts = record.session.context.resolveCompositeOptions(content.component, content.key, opts, record.declaration) or opts
-            opts.bodyOnly = true
-        end
-        return { {
-            key = content.key, type = string.lower(content.component), label = content.label,
-            x = 1, y = 1, w = 200, h = tonumber(content.h) or 20,
-            parentKey = content.parentKey, subKey = content.subKey, setKey = content.setKey,
-            opts = opts, measure = true,
-        } }
-    end
-    local height = tonumber(record.reportedContentHeight) or tonumber(content.height) or 1
-    local cellSize = math.max(0.01, record.session.grid.CellSize)
-    return { {
-        key = content.key or ("custom:" .. record.id), type = "custom", renderer = content.renderer,
-        x = 1, y = 1, w = 200, h = math.max(1, math.ceil(height / cellSize)),
-        opts = CopyCardValue(content.opts or {}), measure = content.measure ~= nil and content.measure or true,
-        parentKey = content.parentKey, subKey = content.subKey, setKey = content.setKey,
-    } }
-end
-
-local function MeasureCardLayout(record)
-    local grid, body = record.session.grid, record.body
-    grid:UpdateMetrics(math.max(1, body:GetWidth() or 1), body)
-    local measured, maxBottom = {}, 0
-    for _, source in ipairs(PrepareCardItems(record)) do
-        local item = CopyCardValue(source)
-        local currentPath = item.parentKey
-        local scopedDB = currentPath and GetConfigPath(record.config, currentPath) or record.config
-        local _, _, pixelWidth = grid:GetPixelRect(item.x, item.y, item.w, item.h, body)
-        local height = NormalizeMeasuredHeight(GetMeasureResult(grid, item, pixelWidth, scopedDB))
-        if record.declaration.content.kind == "custom" and record.reportedContentHeight then
-            height = record.reportedContentHeight
-        end
-        if height and height >= 0 then item.h = math.max(1, math.ceil((height + grid.Padding) / grid.CellSize)) end
-        measured[#measured + 1] = item
-        local explicitCustomHeight = record.declaration.content.kind == "custom"
-            and (record.reportedContentHeight ~= nil and record.reportedContentHeight
-                or record.declaration.content.height) or nil
-        if explicitCustomHeight ~= nil then
-            maxBottom = math.max(maxBottom, tonumber(explicitCustomHeight) or 0)
-        else
-            local _, py, _, ph = grid:GetPixelRect(item.x, item.y, item.w, item.h, body)
-            maxBottom = math.max(maxBottom, -py + ph + grid.Padding)
-        end
-    end
-    return measured, math.max(0, maxBottom)
-end
-
-local function ApplyExistingCardLayout(record, layout)
-    local grid, body = record.session.grid, record.body
-    local state = grid.ContainerStates[body]
-    if not state then return end
-    state.layout = layout
-    for _, item in ipairs(layout) do
-        local widget = state.widgets[item.key]
-        if widget then
-            widget._exGridPixelElement = item
-            local meta = state.widgetMap[widget]
-            if meta then meta.item = item end
-            if grid:IsCompositeTypeSupported(item.type) then
-                local _, _, pixelWidth, pixelHeight = grid:GetPixelRect(item.x, item.y, item.w, item.h, body)
-                widget._exGridWidth = pixelWidth
-                if type(EXUI.ReflowCompositeGroup) == "function" then
-                    EXUI:ReflowCompositeGroup(widget, pixelWidth, pixelHeight)
-                end
-            end
-            grid:ApplyPixelLayout(widget, body, item)
-            if item.type == "custom" and widget._customRenderer then
-                local ctx = widget._customContext
-                ctx.element = item
-                if type(widget._customRenderer.update) == "function" then
-                    widget._customRenderer.update(widget, ctx)
-                elseif type(widget._customRenderer.render) == "function" then
-                    widget._customRenderer.render(widget, ctx)
-                end
-            end
-        end
-    end
-end
-
-local function MeasureExistingGridLayout(record, layout)
-    local grid, body, maxBottom = record.session.grid, record.body, 0
-    grid:UpdateMetrics(math.max(1, body:GetWidth() or 1), body)
-    for _, item in ipairs(layout or {}) do
-        local _, py, _, ph = grid:GetPixelRect(item.x, item.y, item.w, item.h, body)
-        maxBottom = math.max(maxBottom, -py + ph + grid.Padding)
-    end
-    return math.max(0, maxBottom)
-end
-
-function Grid:MountCards(parent, declaration, context)
-    if not parent then error("[ExwindGrid] MountCards requires parent", 2) end
-    context = type(context) == "table" and context or {}
-    if type(context.pageId) ~= "string" or context.pageId == "" then error("[ExwindGrid] MountCards requires context.pageId", 2) end
-    if EXUI.ValidateSettingsPageDeclaration then EXUI:ValidateSettingsPageDeclaration(context.pageId, declaration) end
-    if type(EXUI.CreateSettingsCard) ~= "function" then error("[ExwindGrid] CreateSettingsCard is unavailable", 2) end
-
-    local session = { grid = self, parent = parent, declaration = CopyCardValue(declaration), context = context, cards = {}, cardById = {}, released = false, generation = 1 }
-
-    local function MountRecord(record)
-        session.mounting = true
-        local binding, config = ResolveCardBinding(context, record.declaration)
-        record.binding, record.config = binding, config
-        local layout, contentHeight = MeasureCardLayout(record)
-        local state = GetContainerState(self, record.body)
-        state.layout, state.config, state.moduleKey = layout, config, binding.moduleKey or context.moduleKey
-        state.cardSession, state.cardRecord = session, record
-        ActivateContainerState(self, record.body, state)
-        self:EnsurePixelLayoutHooks(record.body)
-        local mountContext = {
-            pageId = context.pageId, regionId = context.regionId, cardId = record.id, session = session,
-            setContentHeight = function(height)
-                if session.released then return false end
-                height = tonumber(height)
-                if not height or height < 0 then error("[ExwindGrid] custom content height must be non-negative", 2) end
-                if record.reportedContentHeight == height then return false end
-                record.reportedContentHeight = height
-                session:Relayout()
-                return true
-            end,
-        }
-        self:RenderItems(record.body, layout, nil, config, state.moduleKey, binding, mountContext)
-        record.layout = layout
-        record.contentHeight = contentHeight
-        record.card:SetContentHeight(contentHeight)
-        session.mounting = nil
-        if session.relayoutPending then session.relayoutPending = nil; session:Relayout() end
-    end
-
-    function session:Relayout()
-        if self.released then return false end
-        if self.mounting then self.relayoutPending = true return false end
-        if self.relayoutBusy then self.relayoutPending = true return false end
-        self.relayoutBusy = true
-        local gap = tonumber(self.context.cardGap)
-            or (_G.ExwindTools.PanelTheme and _G.ExwindTools.PanelTheme.Layout and _G.ExwindTools.PanelTheme.Layout.SETTINGS_CARD_GAP)
-            or 12
-        local width = math.max(1, self.parent:GetWidth() or 1)
-        local top = 0
-        for _, record in ipairs(self.cards) do
-            record.card:SetWidth(width)
-            local layout, contentHeight
-            if record.liveLayout and record.declaration.content.kind == "grid" then
-                layout = CopyCardValue(record.liveLayout)
-                contentHeight = MeasureExistingGridLayout(record, layout)
-            else
-                layout, contentHeight = MeasureCardLayout(record)
-            end
-            record.layout, record.contentHeight = layout, contentHeight
-            ApplyExistingCardLayout(record, layout)
-            record.card:SetContentHeight(contentHeight)
-            record.card:ClearAllPoints()
-            record.card:SetPoint("TOPLEFT", self.parent, "TOPLEFT", 0, -top)
-            record.card:SetPoint("TOPRIGHT", self.parent, "TOPRIGHT", 0, -top)
-            top = top + (record.card:GetHeight() or 0) + gap
-        end
-        local total = #self.cards > 0 and math.max(0, top - gap + (tonumber(self.context.bottomPadding) or 0)) or 64
-        if self.parent:GetHeight() ~= total then self.parent:SetHeight(total) end
-        if self.lastHeight ~= total and type(self.context.onContentHeightChanged) == "function" then
-            self.lastHeight = total
-            self.context.onContentHeightChanged(total, self)
-        end
-        self.relayoutBusy = nil
-        if self.relayoutPending then self.relayoutPending = nil return self:Relayout() end
-        return true
-    end
-
-    function session:RefreshValues()
-        if self.released then return false end
-        local refreshed = false
-        for _, record in ipairs(self.cards) do refreshed = self.grid:RefreshContainerControlsFromDB(record.body) or refreshed end
-        return refreshed
-    end
-
-    function session:ReplaceCardContent(cardId, content)
-        if self.released then return false end
-        local record = self.cardById[cardId]
-        if not record then error("[ExwindGrid] unknown card " .. tostring(cardId), 2) end
-        local candidate = CopyCardValue(record.declaration)
-        candidate.content = CopyCardValue(content)
-        EXUI:ValidateSettingsPageDeclaration(self.context.pageId, { version = 1, cards = { candidate } })
-        self.grid:ReleaseContainerWidgets(record.body)
-        record.declaration.content = candidate.content
-        record.reportedContentHeight = nil
-        MountRecord(record)
-        self:Relayout()
-        return true
-    end
-
-    -- 开发编辑只能进入一张 grid 卡的 Body。cardId 是必选的，避免再次形成
-    -- “整页自由排版”语义；坐标始终是该 Body 的 200 列局部坐标。
-    function session:ToggleLiveEdit(cardId)
-        if self.released then return false end
-        if type(cardId) ~= "string" or cardId == "" then
-            error("[ExwindGrid] ToggleLiveEdit requires an explicit cardId", 2)
-        end
-        local record = self.cardById[cardId]
-        if not record then error("[ExwindGrid] unknown card " .. tostring(cardId), 2) end
-        if record.declaration.content.kind ~= "grid" then
-            error("[ExwindGrid] live edit only supports grid card content: " .. cardId, 2)
-        end
-        if self.grid.IsLiveEditing and self.grid.LiveContainer == record.body then
-            return self:EndLiveEdit()
-        end
-        if record.card:IsCollapsed() then record.card:SetCollapsed(false) end
-        if self.grid.IsLiveEditing then self.grid:ToggleLiveEdit(self.grid.LiveContainer) end
-        local state = self.grid.ContainerStates[record.body]
-        record.liveLayout = CopyCardValue(state and state.layout or record.declaration.content.items)
-        state.layout = record.liveLayout
-        ActivateContainerState(self.grid, record.body, state)
-        self.activeEditCardId = cardId
-        self.grid:ToggleLiveEdit(record.body)
-        return true
-    end
-
-    function session:EndLiveEdit()
-        if self.grid.IsLiveEditing then
-            local state = self.grid.LiveContainer and self.grid.ContainerStates[self.grid.LiveContainer]
-            if state and state.cardSession == self then self.grid:ToggleLiveEdit(self.grid.LiveContainer) end
-        end
-        self.activeEditCardId = nil
-        return true
-    end
-
-    function session:RebuildLiveEditCard(cardId)
-        if self.released then return false end
-        local record = self.cardById[cardId]
-        if not record or self.activeEditCardId ~= cardId then return false end
-        record.liveLayout = CopyCardValue(self.grid.ActiveLayout)
-        self.grid:ReleaseContainerWidgets(record.body)
-        MountRecord(record)
-        self:Relayout()
-        local state = self.grid.ContainerStates[record.body]
-        ActivateContainerState(self.grid, record.body, state)
-        self.grid:BeginModuleSpecExportSession(record.body)
-        self.grid:DrawEditorGrid(record.body)
-        self.grid:DrawRowGuides(record.body)
-        return true
-    end
-
-    function session:Release()
-        if self.released then return false end
-        self:EndLiveEdit()
-        self.released, self.generation = true, self.generation + 1
-        if self.parent._exMountedCardSession == self then self.parent._exMountedCardSession = nil end
-        for index = #self.cards, 1, -1 do
-            local record = self.cards[index]
-            self.grid:ReleaseContainerWidgets(record.body)
-            self.grid.ContainerStates[record.body] = nil
-            record.card:Release()
-            self.cards[index], self.cardById[record.id] = nil, nil
-        end
-        if self.emptyLabel then self.emptyLabel:Hide(); self.emptyLabel:SetParent(nil); self.emptyLabel = nil end
-        return true
-    end
-
-    if #session.declaration.cards == 0 then
-        session.emptyLabel = EXUI:CreateVisualFontString(parent, EXFONTFRAME, "GameFontHighlight")
-        session.emptyLabel:SetPoint("TOPLEFT", 16, -16)
-        session.emptyLabel:SetText(L["此页面暂无设置内容"])
-    else
-        for _, cardDeclaration in ipairs(session.declaration.cards) do
-            local record = { session = session, id = cardDeclaration.id, declaration = cardDeclaration }
-            record.card = EXUI:CreateSettingsCard(parent, {
-                title = cardDeclaration.title, collapsible = cardDeclaration.collapsible,
-                collapsed = cardDeclaration.collapsed, minBodyHeight = cardDeclaration.minBodyHeight,
-                maxBodyHeight = cardDeclaration.maxBodyHeight, outerScrollFrame = context.scrollFrame,
-            })
-            record.body = record.card:GetBody()
-            self:SetContainerCols(record.body, 200)
-            self:SetContainerPadding(record.body, { left = 0, right = 0, top = 0, bottom = 0 })
-            session.cards[#session.cards + 1], session.cardById[record.id] = record, record
-            record.card._exSettingsCardRelayout = function(card)
-                if card:IsCollapsed() and session.activeEditCardId == record.id then session:EndLiveEdit() end
-                session:Relayout()
-            end
-            MountRecord(record)
-        end
-    end
-    parent._exMountedCardSession = session
-    if not parent._exCardSizeHookInstalled then
-        parent._exCardSizeHookInstalled = true
-        parent:HookScript("OnSizeChanged", function(host)
-            local active = host._exMountedCardSession
-            if active and not active.released then active:Relayout() end
-        end)
-    end
-    session:Relayout()
-    return session
-end
-
-function Grid:GetSessionWidget(session, widgetKey, cardId)
-    if type(session) ~= "table" or session.released or session.grid ~= self then return nil end
-    local foundWidget, foundState, foundBody, foundRecord
-    for _, record in ipairs(session.cards or {}) do
-        if cardId == nil or record.id == cardId then
-            local state = self.ContainerStates[record.body]
-            local widget = state and state.widgets and state.widgets[widgetKey]
-            if widget then
-                if foundWidget then error("[ExwindGrid] widget key is ambiguous across cards: " .. tostring(widgetKey), 2) end
-                foundWidget, foundState, foundBody, foundRecord = widget, state, record.body, record
-            end
-        end
-    end
-    return foundWidget, foundState, foundBody, foundRecord
-end
-
-function Grid:BuildSessionWidgetIndex(session)
-    if type(session) ~= "table" or session.released or session.grid ~= self then return nil end
-    local aggregate = { widgets = {}, instances = {}, session = session, moduleKey = session.context and session.context.moduleKey }
-    for _, record in ipairs(session.cards or {}) do
-        local state = self.ContainerStates[record.body]
-        for _, widget in ipairs(state and state.instances or {}) do aggregate.instances[#aggregate.instances + 1] = widget end
-        for key, widget in pairs(state and state.widgets or {}) do
-            if aggregate.widgets[key] then error("[ExwindGrid] duplicate widget key across cards requires cardId: " .. tostring(key), 2) end
-            aggregate.widgets[key] = widget
-        end
-    end
-    return aggregate
-end
-
-function Grid:RefreshSessionControlsFromDB(session)
-    if type(session) ~= "table" or session.released then return false end
-    return session:RefreshValues()
-end
-
 -- (GetConfigPath moved to top)
 
 local function GetConfigValue(config, ele)
@@ -1287,14 +899,8 @@ local function BindTooltip(target, ele, enableMouse)
 end
 
 
-local function SetConfigValue(config, ele, val, moduleKey, fullKey, phase, binding)
+local function SetConfigValue(config, ele, val, moduleKey, fullKey, phase)
     if not config then return end
-
-    if type(binding) == "table" and type(binding.setValue) == "function" then
-        local changed = binding.setValue(fullKey or tostring(ele.key), val,
-            phase == "live" and "changing" or "committed", ele)
-        return changed ~= false
-    end
 
     -- [Core] setKey 优先级最高 (Force Global/Local Override)
     if ele.setKey then
@@ -1374,15 +980,11 @@ local function MigrateLegacyDirectAnchorInput(anchorConfig, widgetKey, opts)
     return false
 end
 
-local function NotifyCompositeWrite(moduleKey, fullPath, binding)
-    if type(binding) == "table" and type(binding.notify) == "function" then
-        binding.notify(fullPath, "committed")
-    elseif moduleKey then
-        EXUI:NotifyModuleValueChanged(moduleKey, fullPath, "committed")
-    end
+local function NotifyCompositeWrite(moduleKey, fullPath)
+    if moduleKey then EXUI:NotifyModuleValueChanged(moduleKey, fullPath, "committed") end
 end
 
-function Grid:CreateWidget(container, ele, config, moduleKey, contextPath, binding, mountContext)
+function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
     -- [v4.3.2] 构造当前组件的完整数据路径
     -- 关键: 当有 subKey 时，使用 subKey 作为数据键 (ele.key 仅用于 Grid 组件标识)
     local fullPath
@@ -1403,24 +1005,21 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath, bindi
 
     -- [v4.3.2] 获取值：setKey 最高优先，然后使用构造好的 fullPath
     local curVal
-    if type(binding) == "table" and type(binding.getValue) == "function" then
-        curVal = binding.getValue(fullPath, ele)
-    elseif ele.setKey then
+    if ele.setKey then
         curVal = config[ele.setKey]
     else
         curVal = GetConfigPath(config, fullPath)
     end
 
     local function Setter(v)
-        SetConfigValue(config, ele, v, moduleKey, fullPath, "commit", binding)
+        SetConfigValue(config, ele, v, moduleKey, fullPath, "commit")
     end
 
     local function LiveSetter(v)
-        SetConfigValue(config, ele, v, moduleKey, fullPath, "live", binding)
+        SetConfigValue(config, ele, v, moduleKey, fullPath, "live")
     end
 
     local function ReadCurrentValue()
-        if type(binding) == "table" and type(binding.getValue) == "function" then return binding.getValue(fullPath, ele) end
         if ele.setKey then return config[tonumber(ele.setKey) or ele.setKey] end
         return GetConfigPath(config, fullPath)
     end
@@ -1501,7 +1100,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath, bindi
             subConfig = GetConfigPath(config, contextPath) or config
         end
         widget = EXUI:CreateColorButton(container, ele.label, subConfig, ele.key, true, function()
-            NotifyCompositeWrite(moduleKey, fullPath, binding)
+            NotifyCompositeWrite(moduleKey, fullPath)
         end)
     elseif ele.type == "label" or ele.type == "description" then
         local text = ele.label
@@ -1733,18 +1332,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath, bindi
                 currentValue = curVal,
                 setter = Setter,
                 value = curVal,
-                pageId = mountContext and mountContext.pageId,
-                regionId = mountContext and mountContext.regionId,
-                cardId = mountContext and mountContext.cardId,
-                session = mountContext and mountContext.session,
             }
-
-            function ctx:SetContentHeight(height)
-                if mountContext and type(mountContext.setContentHeight) == "function" then
-                    return mountContext.setContentHeight(height)
-                end
-                return false
-            end
 
             if widget._customRendererKey ~= rendererKey and widget._customRenderer and type(widget._customRenderer.release) == "function" then
                 widget._customRenderer.release(widget, widget._customContext)
@@ -1758,7 +1346,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath, bindi
                 renderer.mount(widget, ctx)
             end
         else
-            error("[ExwindGrid] unregistered custom renderer " .. tostring(rendererKey), 2)
+            widget = EXUI:CreateHeader(container, L["未注册的自定义组件"], pw)
         end
     elseif ele.type == "dropdown" then
         local rawItems = ele.items
@@ -1824,7 +1412,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath, bindi
         end
         -- Multiselect 的回调比较特殊，它不需要传值，而是当内部状态变更时触发 StateUpdate
         widget = EXUI:CreateMultiSelectDropdown(container, pw, ele.label, itemsList, curVal, function()
-            NotifyCompositeWrite(moduleKey, fullPath, binding)
+            NotifyCompositeWrite(moduleKey, fullPath)
         end, ele)
     elseif ele.type == "itemconfig" then
         local itemID = tonumber(ele.itemID) or (curVal and curVal.id) or 0
@@ -1864,21 +1452,21 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath, bindi
             curVal = defaultFontTable
         end
         local fontGroupWidth = pw
-        widget = EXUI:CreateFontGroup(container, fontGroupWidth, ele.label, curVal, function() NotifyCompositeWrite(moduleKey, fullPath, binding) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
+        widget = EXUI:CreateFontGroup(container, fontGroupWidth, ele.label, curVal, function() NotifyCompositeWrite(moduleKey, fullPath) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
         widget._exGridWidth = fontGroupWidth
     elseif ele.type == "glow_settings" then
         local subConfig = config
         if contextPath then
             subConfig = GetConfigPath(config, contextPath) or config
         end
-        widget = EXUI:CreateGlowSettings(container, pw, ele.label, subConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath, binding) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
+        widget = EXUI:CreateGlowSettings(container, pw, ele.label, subConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end)
     elseif ele.type == "widgetlayout" then
         local subConfig = config
         if contextPath then
             subConfig = GetConfigPath(config, contextPath) or config
         end
         local layoutWidth = pw
-        widget = EXUI:CreateWidgetLayoutGroup(container, layoutWidth, ele.label, subConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath, binding) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
+        widget = EXUI:CreateWidgetLayoutGroup(container, layoutWidth, ele.label, subConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
         widget._exGridWidth = layoutWidth
     elseif ele.type == "modulecommonsettings" then
         local commonConfig = config
@@ -1893,7 +1481,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath, bindi
         if type(ele.key) == "string" and ele.key:match("^modulecommonsettings_%d+$") then
             commonOpts.gridEditableHeight = true
         end
-        widget = EXUI:CreateModuleCommonSettingsGroup(container, pw, ele.label, commonConfig, bindKey, function() NotifyCompositeWrite(moduleKey, commonPath, binding) end, commonOpts)
+        widget = EXUI:CreateModuleCommonSettingsGroup(container, pw, ele.label, commonConfig, bindKey, function() NotifyCompositeWrite(moduleKey, commonPath) end, commonOpts)
         widget._exGridWidth = pw
     elseif ele.type == "anchorgroup" then
         local anchorConfig = config
@@ -1914,10 +1502,10 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath, bindi
             targetKey = type(targetKey) == "string" and targetKey ~= "" and targetKey or "customAttachTarget"
             anchorPath = contextPath and (contextPath .. "." .. targetKey) or targetKey
         end
-        widget = EXUI:CreateAnchorGroup(container, pw, ele.label, anchorConfig, bindKey, function() NotifyCompositeWrite(moduleKey, anchorPath, binding) end, BuildCompositeOptions(ele.opts, moduleKey, anchorPath))
+        widget = EXUI:CreateAnchorGroup(container, pw, ele.label, anchorConfig, bindKey, function() NotifyCompositeWrite(moduleKey, anchorPath) end, BuildCompositeOptions(ele.opts, moduleKey, anchorPath))
         widget._exGridWidth = pw
         if migratedLegacyInput then
-            NotifyCompositeWrite(moduleKey, anchorPath, binding)
+            NotifyCompositeWrite(moduleKey, anchorPath)
         end
     elseif ele.type == "texturegroup" then
         local bindValue = type(ele.opts) == "table" and ele.opts.bindValue == true
@@ -1927,7 +1515,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath, bindi
         end
         local textureWidth = pw
         widget = EXUI:CreateTextureGroup(container, textureWidth, ele.label, subConfig,
-            bindValue and nil or ele.key, function() NotifyCompositeWrite(moduleKey, fullPath, binding) end,
+            bindValue and nil or ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end,
             BuildCompositeOptions(ele.opts, moduleKey, fullPath))
         widget._exGridWidth = textureWidth
     elseif ele.type == "icongroup" then
@@ -1951,14 +1539,14 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath, bindi
         if not bindRoot and not bindValue then bindKey = ele.key end
         local iconGroupWidth = pw
         local iconPath = bindValue and fullPath or (bindKey and fullPath or (contextPath or ""))
-        widget = EXUI:CreateIconGroup(container, iconGroupWidth, ele.label, subConfig, bindKey, function() NotifyCompositeWrite(moduleKey, iconPath, binding) end, BuildCompositeOptions(ele.opts, moduleKey, iconPath))
+        widget = EXUI:CreateIconGroup(container, iconGroupWidth, ele.label, subConfig, bindKey, function() NotifyCompositeWrite(moduleKey, iconPath) end, BuildCompositeOptions(ele.opts, moduleKey, iconPath))
         widget._exGridWidth = iconGroupWidth
     elseif ele.type == "soundgroup" then
         local subConfig = config
         if contextPath then
             subConfig = GetConfigPath(config, contextPath) or config
         end
-        widget = EXUI:CreateSoundGroup(container, pw, ele.label, subConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath, binding) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
+        widget = EXUI:CreateSoundGroup(container, pw, ele.label, subConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
         widget._exGridWidth = pw
     elseif ele.type == "timerBarGroup" or ele.type == "timerbargroup" then
         -- The timer-bar composite has the same root-binding contract as the
@@ -1994,23 +1582,23 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath, bindi
         end
         local timerBarGroupWidth = pw
         local timerBarPath = bindRoot and (contextPath or "") or fullPath
-        widget = EXUI:CreateTimerBarGroup(container, timerBarGroupWidth, ele.label, curVal, nil, function() NotifyCompositeWrite(moduleKey, timerBarPath, binding) end, BuildCompositeOptions(ele.opts, moduleKey, timerBarPath))
+        widget = EXUI:CreateTimerBarGroup(container, timerBarGroupWidth, ele.label, curVal, nil, function() NotifyCompositeWrite(moduleKey, timerBarPath) end, BuildCompositeOptions(ele.opts, moduleKey, timerBarPath))
         widget._exGridWidth = timerBarGroupWidth
     elseif ele.type == "auradurationbargroup" then
         local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
-        widget = EXUI:CreateAuraDurationBarGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath, binding) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
+        widget = EXUI:CreateAuraDurationBarGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
         widget._exGridWidth = pw
     elseif ele.type == "auraapplicationbargroup" then
         local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
-        widget = EXUI:CreateAuraApplicationBarGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath, binding) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
+        widget = EXUI:CreateAuraApplicationBarGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
         widget._exGridWidth = pw
     elseif ele.type == "auradispelbordergroup" then
         local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
-        widget = EXUI:CreateAuraDispelBorderGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath, binding) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
+        widget = EXUI:CreateAuraDispelBorderGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end)
         widget._exGridWidth = pw
     elseif ele.type == "aurasortgroup" then
         local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
-        widget = EXUI:CreateAuraSortGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath, binding) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
+        widget = EXUI:CreateAuraSortGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end)
         widget._exGridWidth = pw
     elseif ele.type == "aurachildelementsgroup" then
         local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
@@ -2018,14 +1606,14 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath, bindi
         -- root mode `key` remains the Grid identity only; passing it through
         -- would create the invalid aura.children.children table.
         local bindKey = (type(ele.opts) == "table" and ele.opts.bindRoot == true) and nil or ele.key
-        widget = EXUI:CreateAuraChildElementsGroup(container, pw, ele.label, auraConfig, bindKey, function() NotifyCompositeWrite(moduleKey, fullPath, binding) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
+        widget = EXUI:CreateAuraChildElementsGroup(container, pw, ele.label, auraConfig, bindKey, function() NotifyCompositeWrite(moduleKey, fullPath) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
         widget._exGridWidth = pw
     elseif ele.type == "voicegroup" or ele.type == "encounter_voice_group" then
         local subConfig = config
         if contextPath then
             subConfig = GetConfigPath(config, contextPath) or config
         end
-        widget = EXUI:CreateVoiceGroup(container, pw, ele.label, subConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath, binding) end)
+        widget = EXUI:CreateVoiceGroup(container, pw, ele.label, subConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end)
     end
 
     if widget then
@@ -2124,10 +1712,9 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath, bindi
 end
 
 function Grid:ToggleLiveEdit(container)
-    local containerState
     if container then
-        containerState = GetContainerState(self, container)
-        ActivateContainerState(self, container, containerState)
+        local state = GetContainerState(self, container)
+        ActivateContainerState(self, container, state)
     end
     self.IsLiveEditing = not self.IsLiveEditing
     self.LiveContainer = container
@@ -2161,32 +1748,7 @@ function Grid:ToggleLiveEdit(container)
         if self.LiveToolbar then self.LiveToolbar:Hide() end
         if self.Palette then self.Palette:Hide() end
         if self.PropPanel then self.PropPanel:Hide() end
-        if containerState and containerState.cardSession
-            and containerState.cardSession.activeEditCardId == (containerState.cardRecord and containerState.cardRecord.id) then
-            containerState.cardSession.activeEditCardId = nil
-        end
-        self.LiveContainer = nil
     end
-end
-
-function Grid:RefreshLiveEditLayout(rebuild)
-    local container = self.LiveContainer
-    local state = container and self.ContainerStates[container]
-    if not self.IsLiveEditing or not state then return false end
-    local record, session = state.cardRecord, state.cardSession
-    if not record or not session then
-        error("[ExwindGrid] live layout refresh requires a mounted settings-card Body", 2)
-    end
-    record.liveLayout = CopyCardValue(self.ActiveLayout)
-    if rebuild then
-        return session:RebuildLiveEditCard(record.id)
-    end
-    session:Relayout()
-    local current = self.ContainerStates[container]
-    ActivateContainerState(self, container, current)
-    self:DrawEditorGrid(container)
-    self:DrawRowGuides(container)
-    return true
 end
 
 function Grid:ShiftRows(startY, delta)
@@ -2203,7 +1765,7 @@ function Grid:ShiftRows(startY, delta)
             self:RecordModuleSpecLayoutChange(item, { y = item.y })
         end
     end
-    self:RefreshLiveEditLayout(false)
+    self:Render(self.LiveContainer, self.ActiveLayout, self.LastConfig, self.ModuleKey)
 end
 
 function Grid:ShowRowContextMenu(row, x, y)
@@ -2312,7 +1874,7 @@ function Grid:WrapWidgetForEdit(widget, key, container)
                 end
 
                 -- 刷新
-                Grid:RefreshLiveEditLayout(false)
+                Grid:Render(container, Grid.ActiveLayout, Grid.LastConfig, Grid.ModuleKey)
             end
         end
     end)
@@ -2388,7 +1950,7 @@ function Grid:WrapWidgetForEdit(widget, key, container)
                     item.w, item.h = gw, gh
                     Grid:RecordModuleSpecLayoutChange(item, { w = item.w, h = item.h })
                 end
-                Grid:RefreshLiveEditLayout(false)
+                Grid:Render(container, Grid.ActiveLayout, Grid.LastConfig, Grid.ModuleKey)
             end
         end
     end)
@@ -2614,7 +2176,7 @@ function Grid:AddNewWidget(t, c)
             e.y = i; table.insert(Grid.ActiveLayout, e); Grid:RecordModuleSpecLayoutAddition(e); break
         end
     end
-    Grid:RefreshLiveEditLayout(true)
+    Grid:Render(c, Grid.ActiveLayout, Grid.LastConfig, Grid.ModuleKey)
 end
 
 function Grid:CreatePropertyPanel()
@@ -2728,7 +2290,7 @@ function Grid:CreatePropertyPanel()
 
             -- [Core] Label 属性已由实时控件更新到 'e' 中，此处**不要**从隐藏的 EditBox 覆盖它们
         end
-        p:Hide(); Grid:RefreshLiveEditLayout(true)
+        p:Hide(); Grid:Render(Grid.LiveContainer, Grid.ActiveLayout, Grid.LastConfig, Grid.ModuleKey)
     end)
 
 
@@ -2740,7 +2302,7 @@ function Grid:CreatePropertyPanel()
                 table.remove(Grid.ActiveLayout, i); break
             end
         end
-        p:Hide(); Grid:RefreshLiveEditLayout(true)
+        p:Hide(); Grid:Render(Grid.LiveContainer, Grid.ActiveLayout, Grid.LastConfig, Grid.ModuleKey)
     end)
     self.PropPanel = p
 end
@@ -3189,77 +2751,60 @@ local function ResolveCurrentModuleSpec(moduleKey)
     return CopyModuleSpecExportValue(controller.spec)
 end
 
-function Grid:BuildSettingsCardExportData()
-    local container = self.LiveContainer
-    local state = container and self.ContainerStates[container]
-    local record, session = state and state.cardRecord, state and state.cardSession
-    if not record or not session or session.released or record.declaration.content.kind ~= "grid" then return nil end
-    local sourceByKey = {}
-    IndexModuleSpecGuiItems(record.declaration.content.items, sourceByKey)
-    local layout, seen = {}, {}
-    for _, item in ipairs(state.layout or record.liveLayout or {}) do
-        local source = sourceByKey[tostring(item.key)]
-        if not source then
-            error(L["[ExwindGrid] 卡片导出只保存既有组件坐标，不能导出新增组件："] .. tostring(item.key), 2)
-        else
-            seen[tostring(source.key)] = true
-            local baseline = state.exportSession and state.exportSession.baseline[item._exGridExportID]
-            local y = tonumber(item.y) or tonumber(source.y) or 1
-            local h = tonumber(item.h) or tonumber(source.h) or 1
-            if baseline then
-                y = y + (tonumber(source.y) or 1) - baseline.renderedY
-                h = h + (tonumber(source.h) or 1) - baseline.renderedH
-            end
-            layout[#layout + 1] = {
-                key = source.key,
-                x = math.max(1, math.floor(tonumber(item.x) or tonumber(source.x) or 1)),
-                y = math.max(1, math.floor(y)),
-                w = math.max(1, math.floor(tonumber(item.w) or tonumber(source.w) or 1)),
-                h = math.max(1, math.floor(h)),
-            }
-        end
-    end
-    for key in pairs(sourceByKey) do
-        if not seen[key] then error(L["[ExwindGrid] 卡片导出只保存坐标，不能导出已删除组件："] .. key, 2) end
-    end
-    return {
-        pageId = session.context.pageId,
-        moduleKey = state.moduleKey or session.context.moduleKey,
-        cardId = record.id,
-        layout = layout,
-    }
-end
-
--- 卡片编辑只把当前 Body 的坐标投影回同 id 的 MODULE_SPEC card；不接受旧
--- gui.static/fields，也不会从整页工作布局反推声明。
+-- 将编辑会话投影回原 MODULE_SPEC 的可编辑部分。原始 gui 表是唯一真源：
+-- 已有行仅允许改名称与格子位置/尺寸；删除与新增整行是仅有的结构性操作。
 function Grid:BuildModuleSpecExportData()
     local moduleKey = self.ModuleKey
     if type(moduleKey) ~= "string" or moduleKey == "" then
         error(L["[ExwindGrid] 导出失败：当前页面没有模块标识"], 2)
     end
 
-    local cardData = self:BuildSettingsCardExportData()
-    if not cardData then return nil, L["当前没有可导出的 grid 卡片编辑上下文"] end
     local spec = ResolveCurrentModuleSpec(moduleKey)
     if not spec then return nil, L["当前页面没有可导出的模块定义"] end
-    if type(spec.gui) ~= "table" or spec.gui.version ~= 1 or type(spec.gui.cards) ~= "table" then
-        error(L["[ExwindGrid] 当前 MODULE_SPEC 缺少 gui.version=1/cards"], 2)
+    if type(spec.gui) ~= "table" or type(spec.gui.static) ~= "table" or type(spec.gui.fields) ~= "table" then
+        error(L["[ExwindGrid] 当前 MODULE_SPEC 缺少 gui.static/gui.fields"], 2)
     end
-    local target
-    for _, card in ipairs(spec.gui.cards) do if card.id == cardData.cardId then target = card break end end
-    if not target then error(L["[ExwindGrid] MODULE_SPEC.gui 缺少当前编辑卡片："] .. cardData.cardId, 2) end
-    if type(target.content) ~= "table" or target.content.kind ~= "grid" then
-        error(L["[ExwindGrid] 当前编辑卡片不是 grid 内容："] .. cardData.cardId, 2)
-    end
-    local targetByKey = {}
-    IndexModuleSpecGuiItems(target.content.items, targetByKey)
-    for _, placement in ipairs(cardData.layout) do
-        local item = targetByKey[tostring(placement.key)]
-        if not item then error(L["[ExwindGrid] 当前卡片布局包含未声明组件："] .. tostring(placement.key), 2) end
-        item.x, item.y, item.w, item.h = placement.x, placement.y, placement.w, placement.h
-    end
+
+    -- 正式 defaults 声明决定可导出的字段；这里读的是当前游戏内 ModuleDB，
+    -- 不会把运行时缓存或未声明字段混进源码。
     spec.defaults = ExwindTools:ExportModuleDefaults(moduleKey)
-    return { defaults = spec.defaults, gui = spec.gui, cardId = cardData.cardId }
+
+    local session = GetExportSession(self)
+    if session then
+        local deletedKeys = {}
+        for id in pairs(session.deleted) do
+            local baseline = session.baseline[id]
+            if baseline then deletedKeys[tostring(baseline.sourceKey)] = true end
+        end
+        spec.gui.static = PruneModuleSpecGuiItems(spec.gui.static, deletedKeys)
+        spec.gui.fields = PruneModuleSpecGuiItems(spec.gui.fields, deletedKeys)
+
+        local sourceByKey = {}
+        IndexModuleSpecGuiItems(spec.gui.static, sourceByKey)
+        IndexModuleSpecGuiItems(spec.gui.fields, sourceByKey)
+        for id, changes in pairs(session.changes) do
+            local baseline = session.baseline[id]
+            local target = baseline and sourceByKey[tostring(baseline.sourceKey)] or nil
+            if target then
+                for _, field in ipairs({ "label", "x", "y", "w", "h" }) do
+                    if changes[field] ~= nil then target[field] = changes[field] end
+                end
+            end
+        end
+
+        local activeByID = {}
+        WalkLayoutItems(self.ActiveLayout, function(item)
+            if item._exGridExportID then activeByID[item._exGridExportID] = item end
+        end)
+        for _, id in ipairs(session.addedOrder or {}) do
+            if not session.deleted[id] then
+                local item = activeByID[id]
+                if item then spec.gui.static[#spec.gui.static + 1] = CopyAddedLayoutItem(item) end
+            end
+        end
+    end
+
+    return { defaults = spec.defaults, gui = spec.gui }
 end
 
 function Grid:BuildModuleSpecExport()
@@ -3336,23 +2881,6 @@ end
 -- 与 defaults 字段形状，全部通过后才允许将这两个区块写回 MODULE_SPEC。
 function Grid:ExportImportPackage()
     local moduleKey = self.ModuleKey
-    local cardData = self:BuildSettingsCardExportData()
-    if cardData and not ResolveCurrentModuleSpec(moduleKey) then
-        local package = "-- EXWIND_GRID_CARD_IMPORT v1\n"
-            .. "local EXWIND_GRID_CARD_IMPORT = {\n"
-            .. "    pageId = " .. string.format("%q", cardData.pageId) .. ",\n"
-            .. "    moduleKey = " .. string.format("%q", cardData.moduleKey or "") .. ",\n"
-            .. "    cardId = " .. string.format("%q", cardData.cardId) .. ",\n"
-            .. "    layout = " .. serializeTable(cardData.layout, 2, true) .. ",\n"
-            .. "}\n"
-        StaticPopupDialogs["EX_EXPORT_IMPORT_PACKAGE"] = {
-            text = L["复制卡片布局导入包（只替换对应 card.content）:"], button1 = L["好的"], hasEditBox = 1,
-            OnShow = function(dialog) dialog.EditBox:SetText(package:gsub("|", "||")); dialog.EditBox:HighlightText() end,
-            timeout = 0, whileDead = true, hideOnEscape = true,
-        }
-        StaticPopup_Show("EX_EXPORT_IMPORT_PACKAGE")
-        return true
-    end
     local moduleSpec, reason = self:BuildModuleSpecExportData()
     local package, dialogText
     if not moduleSpec then
@@ -3550,8 +3078,9 @@ function Grid:DrawEditorGrid(container)
     for i = lineIdx, #self.GridLines do self.GridLines[i]:Hide() end
 end
 
-function ExwindTools:ToggleDevMode(cardId)
-    local session = self.UI and self.UI.ActiveCardSession
-    if not session or session.released then return false end
-    return session:ToggleLiveEdit(cardId)
+function ExwindTools:ToggleDevMode()
+    if not self.UI or not self.UI.ActivePageFrame then
+        return
+    end
+    self.Grid:ToggleLiveEdit(self.UI.ActivePageFrame)
 end

@@ -182,7 +182,9 @@ local MODERN = {
     colors = {
         background = { 0.047, 0.051, 0.063, 1 }, -- #0c0d10
         panel = { 0.078, 0.086, 0.106, 1 },      -- #14161b
-        input = { 0.055, 0.063, 0.078, 1 },      -- #0e1014
+        -- WoW 的深色纹理在游戏画面中会比网页 sRGB 预览更沉。
+        -- 将输入层抬到 #1e2229，实机观感才接近网页的 #1f242c。
+        input = { 0.118, 0.133, 0.161, 1 },      -- #1e2229
         raised = { 0.125, 0.141, 0.173, 1 },     -- #20242c
         hover = { 0.161, 0.176, 0.208, 1 },      -- #292d35
         border = { 0.208, 0.227, 0.271, 1 },     -- #353a45
@@ -411,6 +413,8 @@ local function TrackModernSurfaceFrame(frame)
             for _, cachedSkin in pairs(owner._exModernSurfaces or {}) do
                 if cachedSkin.Layout then cachedSkin.Layout() end
             end
+            local glass = owner._exFrostedGlassDecoration
+            if glass and glass.Layout then glass.Layout() end
         end
     end)
 end
@@ -517,6 +521,139 @@ end
 function EXUI:ApplyModernPanel(frame, elevated)
     self:SetControlSurface(frame, 10, elevated and MC.raised or MC.panel, MC.border)
     return frame
+end
+
+-- CSS 式磨砂面板的静态装饰层。WoW 无法实时模糊背后的场景，
+-- 因此用低透明度蓝光、顶部内高光和三条渐隐阴影建立同样的层次。
+-- 所有纹理仅创建一次，只有尺寸变化时重新排版；没有 OnUpdate。
+local function ApplyFrostedGlassDecoration(frame, role)
+    role = role == "card" and "card" or "panel"
+    local fx = frame._exFrostedGlassDecoration
+    if fx then
+        fx.Layout()
+        return
+    end
+
+    fx = { role = role, glow = {}, highlight = {}, shadow = {} }
+    frame._exFrostedGlassDecoration = fx
+    local white = "Interface\\Buttons\\WHITE8X8"
+
+    local function Texture(layer, sublevel)
+        local texture = frame:CreateTexture(nil, layer, nil, sublevel)
+        texture:SetTexture(white)
+        return texture
+    end
+
+    local function Gradient(texture, orientation, from, to)
+        if texture.SetGradient and _G.CreateColor then
+            texture:SetGradient(orientation,
+                CreateColor(from[1], from[2], from[3], from[4]),
+                CreateColor(to[1], to[2], to[3], to[4]))
+        else
+            texture:SetColorTexture(from[1], from[2], from[3], from[4])
+        end
+    end
+
+    -- 两段式顶部高光：中央清楚、两端自然淡出，不形成第二条硬边。
+    for index = 1, 2 do
+        local highlight = Texture("BORDER", 6)
+        local transparent = { 1, 1, 1, 0 }
+        local bright = { 1, 1, 1, role == "panel" and 0.065 or 0.05 }
+        Gradient(highlight, "HORIZONTAL",
+            index == 1 and transparent or bright,
+            index == 1 and bright or transparent)
+        fx.highlight[index] = highlight
+    end
+
+    if role == "panel" then
+        -- 四个低成本色带近似左上方的径向蓝色光晕。
+        local bands = {
+            { height = 20, alpha = 0.082 },
+            { height = 25, alpha = 0.056 },
+            { height = 30, alpha = 0.034 },
+            { height = 35, alpha = 0.018 },
+            { height = 40, alpha = 0.008 },
+        }
+        for row, band in ipairs(bands) do
+            fx.glow[row] = {}
+            for side = 1, 2 do
+                local glow = Texture("BORDER", 3)
+                glow:SetBlendMode("ADD")
+                local clear = { 0.12, 0.34, 0.85, 0 }
+                local blue = { 0.12, 0.34, 0.85, band.alpha }
+                Gradient(glow, "HORIZONTAL",
+                    side == 1 and clear or blue,
+                    side == 1 and blue or clear)
+                fx.glow[row][side] = glow
+            end
+        end
+        fx.glowBands = bands
+
+        -- 阴影只画在面板外部，不改变面板尺寸或内容布局。
+        local bottom = Texture("BACKGROUND", -8)
+        Gradient(bottom, "VERTICAL", { 0, 0, 0, 0 }, { 0, 0, 0, 0.34 })
+        fx.shadow.bottom = bottom
+        local left = Texture("BACKGROUND", -8)
+        Gradient(left, "HORIZONTAL", { 0, 0, 0, 0 }, { 0, 0, 0, 0.2 })
+        fx.shadow.left = left
+        local right = Texture("BACKGROUND", -8)
+        Gradient(right, "HORIZONTAL", { 0, 0, 0, 0.2 }, { 0, 0, 0, 0 })
+        fx.shadow.right = right
+    end
+
+    fx.Layout = function()
+        local width, height = frame:GetWidth(), frame:GetHeight()
+        if not width or not height or width <= 0 or height <= 0 then return end
+
+        local effectiveScale = frame.GetEffectiveScale and frame:GetEffectiveScale() or 1
+        effectiveScale = type(effectiveScale) == "number" and effectiveScale > 0 and effectiveScale or 1
+        local pixelUtil = _G.PixelUtil
+        local pixel = pixelUtil and pixelUtil.GetNearestPixelSize
+            and pixelUtil.GetNearestPixelSize(1, effectiveScale, 1)
+            or (1 / effectiveScale)
+        pixel = type(pixel) == "number" and pixel > 0 and pixel or (1 / effectiveScale)
+        local half = math.max(1, (width - 28) / 2)
+        fx.highlight[1]:ClearAllPoints()
+        fx.highlight[1]:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -pixel)
+        fx.highlight[1]:SetSize(half, pixel)
+        fx.highlight[2]:ClearAllPoints()
+        fx.highlight[2]:SetPoint("TOPLEFT", frame, "TOPLEFT", 14 + half, -pixel)
+        fx.highlight[2]:SetSize(half, pixel)
+
+        if role ~= "panel" then return end
+
+        local peak = math.max(48, width * 0.15)
+        local extent = math.max(peak + 48, width * 0.58)
+        local y = 1
+        for row, band in ipairs(fx.glowBands) do
+            local leftGlow, rightGlow = fx.glow[row][1], fx.glow[row][2]
+            local startX = row == 1 and 7 or (row == 2 and 2 or 1)
+            leftGlow:ClearAllPoints()
+            leftGlow:SetPoint("TOPLEFT", frame, "TOPLEFT", startX, -y)
+            leftGlow:SetSize(math.max(1, peak - startX), band.height)
+            rightGlow:ClearAllPoints()
+            rightGlow:SetPoint("TOPLEFT", frame, "TOPLEFT", peak, -y)
+            rightGlow:SetSize(math.max(1, extent - peak), band.height)
+            y = y + band.height
+        end
+
+        fx.shadow.bottom:ClearAllPoints()
+        fx.shadow.bottom:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 16, -1)
+        fx.shadow.bottom:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", -16, -1)
+        fx.shadow.bottom:SetHeight(18)
+        fx.shadow.left:ClearAllPoints()
+        fx.shadow.left:SetPoint("TOPRIGHT", frame, "TOPLEFT", -1, -14)
+        fx.shadow.left:SetPoint("BOTTOMRIGHT", frame, "BOTTOMLEFT", -1, 14)
+        fx.shadow.left:SetWidth(11)
+        fx.shadow.right:ClearAllPoints()
+        fx.shadow.right:SetPoint("TOPLEFT", frame, "TOPRIGHT", 1, -14)
+        fx.shadow.right:SetPoint("BOTTOMLEFT", frame, "BOTTOMRIGHT", 1, 14)
+        fx.shadow.right:SetWidth(11)
+    end
+
+    frame:HookScript("OnSizeChanged", fx.Layout)
+    frame:HookScript("OnShow", fx.Layout)
+    fx.Layout()
 end
 
 local function PaintModernButton(frame)
@@ -3337,7 +3474,13 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         if db[field] == nil then db[field] = value end
     end
     local groupWidth, groupHeight = width or 750, 220
-    local fontGroupOuterBorder = { 0.78, 0.81, 0.88, 0.32 }
+    -- 网页参考的实际外层约为 #0f1219。WoW 的深色纹理实机显示更沉，
+    -- 因此这里使用稍亮、略偏蓝灰的补偿色，避免落到接近纯黑的 #070a12。
+    local fontGroupOuterFill = { 0.075, 0.090, 0.122, 0.985 }
+    local fontGroupOuterBorder = { 1, 1, 1, 0.08 }
+    -- 内卡片必须只比外层亮一阶，不能继续使用较亮的通用 raised 色。
+    local fontGroupSectionFill = { 0.086, 0.098, 0.122, 0.965 }
+    local fontGroupSectionBorder = { 1, 1, 1, 0.09 }
     local group, isNew = AcquireCompositeGroup("CompositeFontGroup", parent)
     group._exCompositeLabel = label or L["文字设置"]
     BindCompositeGroup(group, db, onUpdate, opts)
@@ -3345,17 +3488,26 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         if group._exSetUnboundedWidthControls then group:_exSetUnboundedWidthControls(opts) end
         AttachCompositeRelease(group)
         ReflowCompositeGroup(group, groupWidth, groupHeight)
-        EXUI:SetControlSurface(group, 10, MC.panel, fontGroupOuterBorder)
+        EXUI:SetControlSurface(group, 10, fontGroupOuterFill, fontGroupOuterBorder)
+        ApplyFrostedGlassDecoration(group, "panel")
+        for _, surface in ipairs(group._exFrostedSectionSurfaces or {}) do
+            EXUI:SetControlSurface(surface, 10, fontGroupSectionFill, fontGroupSectionBorder)
+            ApplyFrostedGlassDecoration(surface, "card")
+        end
+        for _, popup in ipairs(group._exCompositePopups or {}) do
+            EXUI:SetControlSurface(popup, 10, fontGroupOuterFill, { 1, 1, 1, 0.10 })
+            ApplyFrostedGlassDecoration(popup, "panel")
+        end
         return group
     end
     local proxy = CreateCompositeProxy(group)
     db = proxy
     local palette = {
-        panel = MC.panel,
-        card = MC.raised,
+        panel = fontGroupOuterFill,
+        card = fontGroupSectionFill,
         utility = MC.input,
-        border = MC.border,
-        borderSoft = MC.border,
+        border = { 1, 1, 1, 0.10 },
+        borderSoft = { 1, 1, 1, 0.09 },
         text = { 0.96, 0.96, 0.97, 1 },
         value = { 0.663, 0.792, 1.000, 1 },
         accent = { 0.216, 0.416, 0.816, 1 },
@@ -3614,6 +3766,7 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     end
     group:SetSize(groupWidth, groupHeight)
     EXUI:SetControlSurface(group, 10, palette.panel, fontGroupOuterBorder)
+    ApplyFrostedGlassDecoration(group, "panel")
 
     local header = CreateFrame("Frame", nil, group)
     header:SetSize(groupWidth, 40)
@@ -3647,19 +3800,21 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     -- 三栏各用一整块低对比度底色建立语义分组。相比每个控件一张小卡片，
     -- 它不会产生“卡片套卡片”的重量；相比只画分隔线，也不会让控件悬空。
     local sectionHeight = math.abs(row3 - row1) + metricCardHeight
-    local sectionFill = { palette.card[1], palette.card[2], palette.card[3], 0.72 }
-    local sectionBorder = { 0.78, 0.81, 0.88, 0.36 }
+    local sectionFill = palette.card
+    local sectionBorder = fontGroupSectionBorder
     local function CreateSectionSurface(x, sectionWidth)
         local surface = CreateFrame("Frame", nil, content)
         surface:EnableMouse(false)
         surface:SetPoint("TOPLEFT", content, "TOPLEFT", x, row1)
         surface:SetSize(sectionWidth, sectionHeight)
         EXUI:SetControlSurface(surface, 10, sectionFill, sectionBorder)
+        ApplyFrostedGlassDecoration(surface, "card")
         return surface
     end
     local appearanceSurface = CreateSectionSurface(col1, itemWidth)
     local positionSurface = CreateSectionSurface(col2, itemWidth)
     local utilitySurface = CreateSectionSurface(controlX, controlWidth)
+    group._exFrostedSectionSurfaces = { appearanceSurface, positionSurface, utilitySurface }
 
     local function CreateMetricCard(x, y)
         -- 外层 FontGroup 已经提供完整卡片边界。内部这里只保留透明的布局宿主，
@@ -3745,9 +3900,8 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
 
     local function CreatePopup(titleText, popupWidth, popupHeight)
         local popup = CreateCompositePopupHost(group, popupWidth, popupHeight)
-        popup:SetBackdrop(flatBackdrop)
-        popup:SetBackdropColor(unpack(palette.panel))
-        popup:SetBackdropBorderColor(unpack(palette.border))
+        EXUI:SetControlSurface(popup, 10, palette.panel, palette.border)
+        ApplyFrostedGlassDecoration(popup, "panel")
         popup:Hide()
         local popupTitle = EXUI:CreateVisualFontString(popup, EXFONTFRAME, "GameFontHighlight")
         popupTitle:SetPoint("TOPLEFT", 13, -9)

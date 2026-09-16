@@ -65,6 +65,7 @@ Core\Renderer\ExwindStandardPreview.lua
 Core\Renderer\ExwindStandardTimerBar.lua
 Core\Renderer\ExwindGlow.lua
 Core\GUI\ExwindGrid.lua
+Core\GUI\ExwindGUIShowcase.lua
 Core\GUI\ExwindToolsUI.lua
 Core\Renderer\ExwindModuleDefinition.lua
 Core\Renderer\ExwindCentralRender.lua

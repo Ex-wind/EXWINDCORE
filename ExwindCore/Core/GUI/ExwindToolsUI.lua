@@ -27,7 +27,7 @@ local msyhbd = defaultFontPath
 
 local THEME = {
     -- [v26.7 Style] Protocol 风格：低对比深色画布，强调色只用于状态和主操作。
-    Background = { 0.035, 0.038, 0.055, 0.985 },
+    Background = { 0.078, 0.086, 0.102, 1 }, -- #14161a
     Sidebar = { 0.045, 0.048, 0.065, 0.58 },
     Border = { 0.19, 0.18, 0.24, 0.74 },
     Primary = { 0.57, 0.49, 0.91 },
@@ -726,9 +726,10 @@ local function ApplyModernScrollBarSkin(scrollFrame)
     if not scrollFrame then
         return
     end
-    -- ScrollFrameTemplate owns the native MinimalScrollBar.  This compatibility
-    -- helper intentionally does not create, replace, hide, or rebind it.
+    -- ScrollFrameTemplate owns and binds the only native MinimalScrollBar;
+    -- the shared EXUI entry changes geometry/appearance without replacing it.
     scrollFrame:EnableMouseWheel(true)
+    EXUI:ApplyModernScrollFrame(scrollFrame)
 end
 
 local function ModuleMatchesSidebarSearch(meta, needle)
@@ -804,7 +805,7 @@ function EXUI:CreateMainFrame()
 
     local ambientMask = EXUI:CreateVisualTexture(f, EXBACKGROUNDFRAME)
     ambientMask:SetAllPoints()
-    ambientMask:SetColorTexture(0.018, 0.019, 0.03, 0.38)
+    ambientMask:SetColorTexture(0.078, 0.086, 0.102, 0.38)
     f.AmbientMask = ambientMask
 
     local topLine = EXUI:CreateVisualTexture(f, EXBASEFRAME)
@@ -2682,7 +2683,13 @@ function EXUI:ShowModuleSettingsPage()
             local editBtn = EXUI:CreateSmallButton(page, L["|cff00ff00编辑布局|r"], function()
                 _G.ExwindGrid:ToggleLiveEdit(page, EXUI.CurrentModule)
             end)
-            editBtn:SetPoint("TOPRIGHT", page, "TOPRIGHT", -20, -5)
+            if usesCardDeclaration then
+                -- Card 标题栏右侧属于折叠按钮。开发者入口放进已经为 reset
+                -- 预留的 footer，避免以更高 frame level 盖住第一张卡的交互。
+                editBtn:SetPoint("BOTTOMLEFT", page, "BOTTOMLEFT", 20, 16)
+            else
+                editBtn:SetPoint("TOPRIGHT", page, "TOPRIGHT", -20, -5)
+            end
             editBtn:SetFrameLevel(page:GetFrameLevel() + 50)
             editBtn._exModuleSettingsTransient = true
         end

@@ -229,7 +229,8 @@ local function EnsureShowcaseWindow()
     subtitle:SetText("三种内容来源 · 相对锚点 · 动态高度 · 折叠与回收复用 · /exgridcards")
     window.Subtitle = subtitle
 
-    local close = EXUI:CreateButton(window, 32, 30, "×", function() window:Hide() end, { variant = "soft" })
+    local close = EXUI:CreateButton(window, 32, 30, "×", function() window:Hide() end,
+        { variant = "soft", compact = true })
     close:SetPoint("TOPRIGHT", -16, -15)
     window.CloseButton = close
 
@@ -237,15 +238,13 @@ local function EnsureShowcaseWindow()
     divider:SetPoint("TOPLEFT", 22, -63)
     window.Divider = divider
 
-    local scroll = CreateFrame("ScrollFrame", nil, window, "UIPanelScrollFrameTemplate")
+    local scroll = EXUI:CreateScrollFrame(window)
     scroll:SetPoint("TOPLEFT", 20, -78)
     scroll:SetPoint("BOTTOMRIGHT", -38, 20)
-    scroll:EnableMouseWheel(true)
     scroll:SetScript("OnMouseWheel", function(self, delta)
         local range = self:GetVerticalScrollRange() or 0
         self:SetVerticalScroll(math.max(0, math.min(range, self:GetVerticalScroll() - delta * 44)))
     end)
-    EXUI:ApplyModernScrollFrame(scroll)
     local content = CreateFrame("Frame", nil, scroll)
     content:SetSize(982, 1)
     content:SetPoint("TOPLEFT")

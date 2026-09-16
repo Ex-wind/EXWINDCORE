@@ -5,6 +5,32 @@ local ExwindTools = _G.ExwindTools
 if not ExwindTools or not ExwindTools.UI or not _G.ExwindGrid then return end
 
 local EXUI = ExwindTools.UI
+local Grid = _G.ExwindGrid
+
+-- 4x4 预览只验证这组明确的 UI 单位参数，不修改 Grid 或 SettingsCard 的
+-- 全局布局常量。Showcase 本身已有 8px page padding；renderer 再内缩 8px，
+-- 得到 16px 页面留边。SettingsCard body 固有 12px padding；测试内容再内缩
+-- 4px，得到 16px 内容留边。
+local GRID_4X4_RENDERER = "ExwindGUIShowcase.Fixed4x4"
+local GRID_4X4_PAGE_SUPPLEMENT = 8
+local GRID_4X4_CARD_BODY_PADDING = 12
+local GRID_4X4_CONTENT_SUPPLEMENT = 4
+local GRID_4X4_COLUMN_GAP = 12
+local GRID_4X4_ROW_GAP = 6
+local GRID_4X4_ROW_HEIGHTS = { 28, 47, 48, 36 }
+local GRID_4X4_CARD_HEADER_HEIGHT = 48
+
+local function Grid4x4BodyHeight()
+    local height = GRID_4X4_CONTENT_SUPPLEMENT * 2
+        + GRID_4X4_ROW_GAP * (#GRID_4X4_ROW_HEIGHTS - 1)
+    for _, rowHeight in ipairs(GRID_4X4_ROW_HEIGHTS) do height = height + rowHeight end
+    return height
+end
+
+local GRID_4X4_BODY_HEIGHT = Grid4x4BodyHeight()
+local GRID_4X4_CARD_HEIGHT = GRID_4X4_CARD_HEADER_HEIGHT
+    + GRID_4X4_CARD_BODY_PADDING * 2 + GRID_4X4_BODY_HEIGHT
+local GRID_4X4_SECTION_HEIGHT = GRID_4X4_PAGE_SUPPLEMENT * 2 + GRID_4X4_CARD_HEIGHT
 
 local sampleDB = {
     dropdown = "balanced",
@@ -54,7 +80,198 @@ local sampleDB = {
     },
     choiceTabs = "overview",
     choiceOptions = { alpha = true, gamma = true },
+    grid4x4CheckA = true,
+    grid4x4CheckB = false,
+    grid4x4CheckC = true,
+    grid4x4CheckD = false,
+    grid4x4InputA = "Alpha",
+    grid4x4InputB = "Bravo",
+    grid4x4InputC = "Charlie",
+    grid4x4InputD = "Delta",
+    grid4x4DropdownA = "balanced",
+    grid4x4DropdownB = "manual",
+    grid4x4SliderA = 42,
+    grid4x4SliderB = 75,
+    grid4x4AccentR = 0.216,
+    grid4x4AccentG = 0.616,
+    grid4x4AccentB = 0.916,
+    grid4x4AccentA = 1,
+    grid4x4WarningR = 0.94,
+    grid4x4WarningG = 0.54,
+    grid4x4WarningB = 0.2,
+    grid4x4WarningA = 1,
+    grid4x4ButtonClicks = 0,
 }
+
+local function ReleaseGrid4x4Control(control)
+    if not control then return end
+    local factory = _G.ExwindFactory
+    if factory and factory.ReleaseGridWidget then
+        factory:ReleaseGridWidget(control)
+    else
+        control:Hide()
+        control:ClearAllPoints()
+        control:SetParent(nil)
+    end
+end
+
+local function ReleaseGrid4x4Preview(host)
+    local preview = host and host._exGrid4x4Preview
+    if not preview then return end
+    for index = #preview.controls, 1, -1 do
+        local control = preview.controls[index]
+        -- ColorPickerFrame 是全局浮层。只关闭当前预览自己登记的 transaction
+        -- owner，不能让已归池的按钮继续收到 picker 回调，也不能误关别页 picker。
+        local picker = _G.ColorPickerFrame
+        if picker and picker._exuiColorTransactionOwner == control then
+            if picker:IsShown() then
+                picker:Hide()
+            else
+                local token = picker._exuiColorTransactionToken
+                picker._exuiColorTransactionOwner = nil
+                picker._exuiColorTransactionToken = nil
+                control:FinishColorTransaction(token)
+            end
+        end
+        if control._gridType == "GridColorButton" then
+            control._currentDb = nil
+            control._currentKey = nil
+            control._currentOnUpdate = nil
+            control._currentChangeFlow = nil
+            control._colorPickerSession = nil
+        end
+        ReleaseGrid4x4Control(control)
+        preview.controls[index] = nil
+    end
+    if preview.card then preview.card:Release() end
+    host._exGrid4x4Preview = nil
+end
+
+local function CreateGrid4x4Controls(host, ctx)
+    ReleaseGrid4x4Preview(host)
+
+    -- Grid item 的右侧还会保留 Grid.Padding（当前 2px）；右补边扣掉该值，
+    -- 使 page 8 + renderer 右补边 + Grid.Padding 仍精确合计 16。
+    local gridItemRightGap = math.max(0, tonumber(ctx.grid and ctx.grid.Padding) or 0)
+    local rightSupplement = math.max(0, GRID_4X4_PAGE_SUPPLEMENT - gridItemRightGap)
+    local cardWidth = math.max(640,
+        ctx._layoutWidth - GRID_4X4_PAGE_SUPPLEMENT - rightSupplement)
+    local card = EXUI:CreateSettingsCard(host, {
+        id = "showcase-fixed-4x4",
+        title = "四栏×四行布局预览",
+        collapsible = false,
+        minBodyHeight = GRID_4X4_BODY_HEIGHT,
+    })
+    card:ClearAllPoints()
+    card:SetPoint("TOPLEFT", host, "TOPLEFT", GRID_4X4_PAGE_SUPPLEMENT, -GRID_4X4_PAGE_SUPPLEMENT)
+    card:SetWidth(cardWidth)
+    card:SetContentHeight(GRID_4X4_BODY_HEIGHT)
+    card:Show()
+
+    local body = card:GetBody()
+    local contentWidth = cardWidth - GRID_4X4_CARD_BODY_PADDING * 2
+        - GRID_4X4_CONTENT_SUPPLEMENT * 2
+    local columnWidth = (contentWidth - GRID_4X4_COLUMN_GAP * 3) / 4
+    local preview = { card = card, controls = {} }
+    host._exGrid4x4Preview = preview
+
+    local rowTops = { GRID_4X4_CONTENT_SUPPLEMENT }
+    for rowIndex = 2, #GRID_4X4_ROW_HEIGHTS do
+        rowTops[rowIndex] = rowTops[rowIndex - 1]
+            + GRID_4X4_ROW_HEIGHTS[rowIndex - 1] + GRID_4X4_ROW_GAP
+    end
+
+    local function Place(control, rowIndex, columnIndex, labelOffset)
+        preview.controls[#preview.controls + 1] = control
+        control:ClearAllPoints()
+        control:SetPoint("TOPLEFT", body, "TOPLEFT",
+            GRID_4X4_CONTENT_SUPPLEMENT
+                + (columnIndex - 1) * (columnWidth + GRID_4X4_COLUMN_GAP),
+            -(rowTops[rowIndex] + (labelOffset or 0)))
+        control:SetWidth(columnWidth)
+        control:Show()
+        return control
+    end
+
+    local function Checkbox(key, label, column)
+        return Place(EXUI:CreateCheckbox(body, label, sampleDB[key] == true, function(value)
+            sampleDB[key] = value == true
+        end), 1, column)
+    end
+
+    Checkbox("grid4x4CheckA", "启用提示", 1)
+    Checkbox("grid4x4CheckB", "显示计时", 2)
+    Checkbox("grid4x4CheckC", "锁定位置", 3)
+    Checkbox("grid4x4CheckD", "仅战斗中", 4)
+
+    local function Input(key, label, column)
+        return Place(EXUI:CreateEditBox(body, sampleDB[key], columnWidth, 28, label, {
+            onEnter = function(value) sampleDB[key] = value end,
+            onEditFocusLost = function(value) sampleDB[key] = value end,
+        }), 2, column, 18)
+    end
+
+    Input("grid4x4InputA", "名称 A", 1)
+    Input("grid4x4InputB", "名称 B", 2)
+    Input("grid4x4InputC", "名称 C", 3)
+    Input("grid4x4InputD", "名称 D", 4)
+
+    local function ColorChangeFlow(key)
+        return function()
+            local function Store(value)
+                sampleDB[key .. "R"] = value.r
+                sampleDB[key .. "G"] = value.g
+                sampleDB[key .. "B"] = value.b
+                sampleDB[key .. "A"] = value.a
+            end
+            return {
+                onBegin = function() end,
+                onLive = Store,
+                onCommit = Store,
+            }
+        end
+    end
+
+    local modeItems = { { "平衡", "balanced" }, { "性能", "performance" }, { "精确", "precise" } }
+    Place(EXUI:CreateDropdown(body, columnWidth, "运行模式", modeItems,
+        sampleDB.grid4x4DropdownA, function(value) sampleDB.grid4x4DropdownA = value end), 3, 1, 18)
+    Place(EXUI:CreateDropdown(body, columnWidth, "触发方式",
+        { { "自动", "auto" }, { "手动", "manual" }, { "混合", "hybrid" } },
+        sampleDB.grid4x4DropdownB, function(value) sampleDB.grid4x4DropdownB = value end), 3, 2, 18)
+    Place(EXUI:CreateSlider(body, columnWidth, "强度", 0, 100, sampleDB.grid4x4SliderA, 1,
+        nil, {
+            onLive = function(value) sampleDB.grid4x4SliderA = value end,
+            onCommit = function(value) sampleDB.grid4x4SliderA = value end,
+        }), 3, 3)
+    Place(EXUI:CreateSlider(body, columnWidth, "透明度", 0, 100, sampleDB.grid4x4SliderB, 1,
+        nil, {
+            onLive = function(value) sampleDB.grid4x4SliderB = value end,
+            onCommit = function(value) sampleDB.grid4x4SliderB = value end,
+        }), 3, 4)
+
+    Place(EXUI:CreateColorButton(body, "强调色", sampleDB, "grid4x4Accent", true, nil,
+        { _changeFlow = ColorChangeFlow("grid4x4Accent") }), 4, 1)
+    Place(EXUI:CreateColorButton(body, "警告色", sampleDB, "grid4x4Warning", true, nil,
+        { _changeFlow = ColorChangeFlow("grid4x4Warning") }), 4, 2)
+    Place(EXUI:CreateButton(body, columnWidth, 32, "应用示例", function()
+        sampleDB.grid4x4ButtonClicks = sampleDB.grid4x4ButtonClicks + 1
+    end, { variant = "primary" }), 4, 3)
+    Place(EXUI:CreateButton(body, columnWidth, 32, "重置计数", function()
+        sampleDB.grid4x4ButtonClicks = 0
+    end), 4, 4)
+end
+
+Grid:RegisterCustomRenderer(GRID_4X4_RENDERER, {
+    measure = function()
+        return GRID_4X4_SECTION_HEIGHT
+    end,
+    mount = function(host, ctx)
+        CreateGrid4x4Controls(host, ctx)
+    end,
+    release = function(host)
+        ReleaseGrid4x4Preview(host)
+    end,
+})
 
 local layout = {}
 local row = 1
@@ -62,7 +279,7 @@ local window
 
 local function RefreshShowcase()
     C_Timer.After(0, function()
-        if window then window:Render(layout, sampleDB, 100, true) end
+        if window and window:IsShown() then window:Render(layout, sampleDB, 100, true) end
     end)
 end
 
@@ -121,9 +338,10 @@ Add({
 
 Chapter("5", "5 · Button")
 AddRow(5, {
-    { type = "button", key = "buttonPrimary", label = "Primary", variant = "primary", x = 1, w = 30 },
-    { type = "button", key = "buttonNeutral", label = "Neutral", x = 35, w = 30 },
-    { type = "button", key = "buttonDisabled", label = "Disabled", disabled = true, x = 69, w = 30 },
+    { type = "button", key = "buttonPrimary", label = "Primary", variant = "primary", x = 1, w = 22 },
+    { type = "button", key = "buttonSecondary", label = "Secondary", variant = "secondary", x = 26, w = 22 },
+    { type = "button", key = "buttonDanger", label = "Danger", variant = "danger", x = 51, w = 22 },
+    { type = "button", key = "buttonDisabled", label = "Disabled", variant = "secondary", disabled = true, x = 76, w = 22 },
 })
 
 Chapter("5b", "5b · PicButton")
@@ -265,6 +483,12 @@ Add({
     },
 })
 
+Chapter("fixed_4x4", "四栏×四行布局预览")
+Add({
+    type = "custom", key = "fixedGrid4x4", renderer = GRID_4X4_RENDERER,
+    measure = true, h = 28,
+})
+
 Chapter("standard_page", "控制器说明 · StandardModulePage")
 Add({
     type = "card", key = "standardModulePageNote", h = 10,
@@ -277,6 +501,10 @@ window = EXUI:CreateShowcaseWindow({
     subtitle = "内存样例 · ExwindGrid 声明式渲染 · /exuishowcase",
 })
 local rendered = false
+window:SetScript("OnHide", function(self)
+    self:Release()
+    rendered = false
+end)
 
 SLASH_EXWINDGUISHOWCASE1 = "/exuishowcase"
 SLASH_EXWINDGUISHOWCASE2 = "/exgui"

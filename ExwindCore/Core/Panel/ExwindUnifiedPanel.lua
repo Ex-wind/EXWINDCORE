@@ -583,8 +583,7 @@ function SettingsProvider:Mount(hosts)
     root:SetAllPoints()
     self.Root = root
 
-    local scrollFrame = CreateFrame("ScrollFrame", nil, root, "ScrollFrameTemplate")
-    scrollFrame:EnableMouseWheel(true)
+    local scrollFrame = EXUI:CreateScrollFrame(root)
     scrollFrame:SetPoint("TOPLEFT", root, "TOPLEFT", 4, -4)
     scrollFrame:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", -24, 4)
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)

@@ -395,8 +395,7 @@ local function CreatePoolRow(content)
         header:SetText("|cffA330C9" .. poolType .. "|r 活跃对象 (" .. count .. ")")
 
         -- 滚动区域
-        local sf = CreateFrame("ScrollFrame", nil, popup, "ScrollFrameTemplate")
-        sf:EnableMouseWheel(true)
+        local sf = EXUI:CreateScrollFrame(popup)
         sf:SetPoint("TOPLEFT", 6, -24)
         sf:SetPoint("BOTTOMRIGHT", -24, 4)
         local sc = CreateFrame("Frame", nil, sf)
@@ -433,8 +432,7 @@ local function CreatePoolMonitor(parent)
     title:SetText("|cffA330C9框架池状态|r |cff666666(实时，点击查看地址)|r")
 
     -- 滚动框架
-    local scrollFrame = CreateFrame("ScrollFrame", nil, monitor, "ScrollFrameTemplate")
-    scrollFrame:EnableMouseWheel(true)
+    local scrollFrame = EXUI:CreateScrollFrame(monitor)
     scrollFrame:SetPoint("TOPLEFT", 10, -28)
     scrollFrame:SetPoint("BOTTOMRIGHT", -30, 8)
 

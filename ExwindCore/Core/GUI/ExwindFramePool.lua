@@ -662,6 +662,7 @@ end)
 -- 组合控件的公共宿主池。实际子控件由对应 GUI 构造器首次借用时建立，
 -- 并在归还时通过 AttachPoolRelease 清理回调和临时引用。
 EXFactory:InitCompositePool("CompositeFontGroup")
+EXFactory:InitCompositePool("CompositeSettingsCard")
 EXFactory:InitCompositePool("CompositeSoundGroup")
 EXFactory:InitCompositePool("CompositeIconGroup")
 EXFactory:InitCompositePool("CompositeTimerBarGroup")

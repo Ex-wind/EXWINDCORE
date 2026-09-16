@@ -6,6 +6,7 @@
 
 local ExwindTools = _G.ExwindTools
 if not ExwindTools then return end
+local EXUI = ExwindTools.UI
 
 local L = ExwindTools.L
     or (_G.ExwindLocale and _G.ExwindLocale.GetProxy and _G.ExwindLocale.GetProxy())
@@ -274,8 +275,7 @@ local function EnsureViewerFrame()
     viewerFrame.TabHost = tabHost
     viewerFrame.TabButtons = {}
 
-    local scrollFrame = CreateFrame("ScrollFrame", nil, viewerFrame, "ScrollFrameTemplate")
-    scrollFrame:EnableMouseWheel(true)
+    local scrollFrame = EXUI:CreateScrollFrame(viewerFrame)
     scrollFrame:SetPoint("TOPLEFT", 18, -82)
     scrollFrame:SetPoint("BOTTOMRIGHT", -34, 18)
     viewerFrame.ScrollFrame = scrollFrame

@@ -1292,8 +1292,7 @@ local function EnsurePanel()
     overlay:SetPoint("TOPRIGHT", panel, "TOPRIGHT", -42, -12)
     panel.overlay = overlay
 
-    local scrollFrame = CreateFrame("ScrollFrame", nil, panel, "ScrollFrameTemplate")
-    scrollFrame:EnableMouseWheel(true)
+    local scrollFrame = EXUI:CreateScrollFrame(panel)
     scrollFrame:SetPoint("TOPLEFT", 12, -58)
     scrollFrame:SetPoint("BOTTOMRIGHT", -30, 50)
     local content = CreateFrame("Frame", nil, scrollFrame)

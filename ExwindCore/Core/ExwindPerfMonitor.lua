@@ -343,8 +343,7 @@ local function CreateCopyBox()
     closeBtn:SetPoint("TOPRIGHT", 2, 2)
     closeBtn:SetScript("OnClick", function() f:Hide() end)
 
-    local scroll = CreateFrame("ScrollFrame", nil, f, "ScrollFrameTemplate")
-    scroll:EnableMouseWheel(true)
+    local scroll = EXUI:CreateScrollFrame(f)
     scroll:SetPoint("TOPLEFT", 10, -30)
     scroll:SetPoint("BOTTOMRIGHT", -28, 10)
 

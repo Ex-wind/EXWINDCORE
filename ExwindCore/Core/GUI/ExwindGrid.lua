@@ -30,6 +30,9 @@ local Grid = {
     CardSessions = setmetatable({}, { __mode = "k" }),
     CardSessionOwners = setmetatable({}, { __mode = "k" }),
     CardScrollSessions = setmetatable({}, { __mode = "k" }),
+    CardBodyOnlyComponents = { fontgroup = true, icongroup = true },
+    EditorGridLinesByContainer = setmetatable({}, { __mode = "k" }),
+    EditorRowGuidesByContainer = setmetatable({}, { __mode = "k" }),
     _effectiveCols = 50,
 }
 
@@ -83,7 +86,7 @@ local function WalkLayoutItems(items, callback)
 end
 
 local function GetExportSession(grid)
-    local container = grid and grid.LiveContainer
+    local container = grid and (grid.LiveEditContainer or grid.LiveContainer)
     local state = container and grid.ContainerStates[container]
     return state and state.exportSession or nil
 end
@@ -111,6 +114,27 @@ end
 
 function Grid:RecordModuleSpecLayoutChange(item, changes)
     if type(item) ~= "table" or type(changes) ~= "table" then return end
+
+    -- Card 编辑器操作的是测量后的 Body 工作副本。把允许编辑的字段同步回
+    -- session.declaration 内对应的纯声明 item；否则下一次 Card reflow 会从
+    -- 原声明重建并吞掉用户刚完成的拖动/改名/缩放。
+    local cardSource = item._exCardSourceItem
+    if type(cardSource) == "table" then
+        for field, value in pairs(changes) do
+            if field == "y" and type(value) == "number" then
+                value = math.max(1, math.floor(value
+                    + (tonumber(item._declaredY) or tonumber(cardSource.y) or 1)
+                    - (tonumber(item._exCardRenderedY) or tonumber(item.y) or 1)))
+            elseif field == "h" and type(value) == "number" then
+                value = math.max(1, math.floor(value
+                    + (tonumber(item._declaredH) or tonumber(cardSource.h) or 1)
+                    - (tonumber(item._exCardRenderedH) or tonumber(item.h) or 1)))
+            end
+            cardSource[field] = value
+        end
+        return
+    end
+
     local session, id = GetExportSession(self), item._exGridExportID
     local baseline = session and id and session.baseline[id]
     if not baseline then return end
@@ -366,6 +390,22 @@ function Grid:ApplyPixelLayout(widget, container, element)
     local px, py, pw, ph = self:GetPixelRect(element.x, element.y, element.w, element.h, container)
     local width = widget._exGridWidth or pw
     local height = widget._exGridFixedHeight or widget._exGridCardMeasuredHeight or ph
+
+    -- CreateButton 已按共享主题钳制普通文字按钮；Grid 是最终尺寸落点，不能再
+    -- 用声明格尺寸把它缩回主题下限以下。compact 必须由调用方显式声明，不能
+    -- 根据窄宽度猜测，否则普通按钮会绕过统一语义。
+    if element.type == "button" and widget._exButtonCompact ~= true then
+        local theme = EXUI and EXUI.ModernTheme
+        local style = theme and theme.buttonStyle
+        local metrics = theme and theme.metrics
+        local minimumWidth = style and tonumber(style.minWidth)
+        local paddingY = style and tonumber(style.paddingY)
+        local textHeight = metrics and tonumber(metrics.button)
+        if minimumWidth then width = math.max(width, minimumWidth) end
+        if paddingY and textHeight then
+            height = math.max(height, textHeight + paddingY * 2)
+        end
+    end
 
     widget:ClearAllPoints()
     SetPhysicalPoint(widget, "TOPLEFT", container, "TOPLEFT", px, py)
@@ -862,12 +902,13 @@ function Grid:Render(container, layoutData, config, moduleKey, onFinished)
 
     -- live edit 是容器级上下文。即使别的容器在运行时重渲染，
     -- 也不能把当前编辑会话的 ActiveLayout / WidgetMap / ModuleKey 偷换掉。
-    if self.IsLiveEditing and self.LiveContainer and self.LiveContainer ~= container then
-        local liveState = GetContainerState(self, self.LiveContainer)
+    local liveContainer = self.LiveEditContainer or self.LiveContainer
+    if self.IsLiveEditing and liveContainer and liveContainer ~= container then
+        local liveState = GetContainerState(self, liveContainer)
         if liveState then
-            ActivateContainerState(self, self.LiveContainer, liveState)
-            if self.LiveContainer.GetWidth then
-                self:UpdateMetrics(self.LiveContainer:GetWidth(), self.LiveContainer)
+            ActivateContainerState(self, liveContainer, liveState)
+            if liveContainer.GetWidth then
+                self:UpdateMetrics(liveContainer:GetWidth(), liveContainer)
             end
         end
     end
@@ -1093,7 +1134,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
                 ExwindTools:UpdateState(moduleKey .. ".ButtonClicked",
                     { key = ele.key, fullPath = fullPath, ts = GetTime() })
             end
-        end, { variant = ele.variant })
+        end, { variant = ele.variant, compact = ele.compact == true })
     elseif ele.type == "picbutton" then
         local nTex, pTex = ele.iconNormal, ele.iconPushed
         if ele.atlas then
@@ -1349,8 +1390,17 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         else
             widget = EXUI:CreateHeader(container, L["未注册的自定义组件"], pw)
         end
-    elseif ele.type == "dropdown" then
+    elseif ele.type == "dropdown" or ele.type == "select" then
         local rawItems = ele.items
+        if rawItems == nil and type(ele.options) == "table" then
+            rawItems = {}
+            local optionKeys = {}
+            for value in pairs(ele.options) do optionKeys[#optionKeys + 1] = value end
+            table.sort(optionKeys, function(a, b) return tostring(a) < tostring(b) end)
+            for _, value in ipairs(optionKeys) do
+                rawItems[#rawItems + 1] = { ele.options[value], value }
+            end
+        end
         local itemsList = {}
         local function ParseInlineDropdownItems(rawText)
             local parsed = {}
@@ -1747,10 +1797,11 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         end
         -- [v4.3.1] 映射到池类型
         local EXFactory = _G.ExwindFactory
+        local gridType = ele.type == "select" and "dropdown" or ele.type
         if EXFactory and EXFactory.GridTypeMap then
-            widget._gridType = EXFactory.GridTypeMap[ele.type] or ele.type
+            widget._gridType = EXFactory.GridTypeMap[gridType] or gridType
         else
-            widget._gridType = ele.type
+            widget._gridType = gridType
         end
         self.Widgets[ele.key] = widget
         self.WidgetInstances = self.WidgetInstances or {}
@@ -1775,7 +1826,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         end
         if EXUI.ApplyControlAppearance then EXUI:ApplyControlAppearance(widget) end
 
-        if self.IsLiveEditing and self.LiveContainer == container then
+        if self.IsLiveEditing and (self.LiveEditContainer or self.LiveContainer) == container then
             self:WrapWidgetForEdit(widget, ele.key, container)
         end
     end
@@ -1798,6 +1849,9 @@ Grid.CardLayoutDefaults = Grid.CardLayoutDefaults or {
 }
 
 local CARD_GRID_COLS = 200
+-- SettingsCard body 左右各有 12px 内边距；Font/Icon 的窄版内部仍需至少
+-- 110px 才能维持两列字段为正宽。用外壳最小 136px 留出边框取整余量。
+local CARD_COMPOSITE_MIN_OUTER_WIDTH = 136
 local CARD_CONTAINER_TARGET = "$container"
 local CARD_POINT_FACTORS = {
     TOPLEFT = { 0, 0 }, TOP = { 0.5, 0 }, TOPRIGHT = { 1, 0 },
@@ -1862,17 +1916,28 @@ local function ValidateCardContent(grid, content, location)
         if content.component ~= nil or content.renderer ~= nil then
             return nil, location .. ": grid content cannot declare component or renderer"
         end
+        if content.ownsScroll ~= nil then
+            return nil, location .. ": grid content cannot declare ownsScroll"
+        end
         return ValidateGridCardItems(content.items, location)
     end
     if kind == "composite" then
         if content.items ~= nil or content.renderer ~= nil then
             return nil, location .. ": composite content cannot declare items or renderer"
         end
+        if content.ownsScroll ~= nil then
+            return nil, location .. ": composite content cannot declare ownsScroll"
+        end
         if type(content.component) ~= "string" or content.component == "" then
             return nil, location .. ": composite content requires component"
         end
+        local component = string.lower(content.component)
+        if not grid.CardBodyOnlyComponents[component] then
+            return nil, location .. ": composite component does not implement the Card bodyOnly contract: "
+                .. tostring(content.component)
+        end
         local measures = EXUI and EXUI.GridComponentMeasures
-        if type(measures) ~= "table" or type(measures[string.lower(content.component)]) ~= "function" then
+        if type(measures) ~= "table" or type(measures[component]) ~= "function" then
             return nil, location .. ": composite component has no registered Grid measure: "
                 .. tostring(content.component)
         end
@@ -1886,6 +1951,9 @@ local function ValidateCardContent(grid, content, location)
     end
     if type(content.renderer) ~= "string" or content.renderer == "" then
         return nil, location .. ": custom content requires renderer"
+    end
+    if content.ownsScroll ~= nil and type(content.ownsScroll) ~= "boolean" then
+        return nil, location .. ": custom content.ownsScroll must be boolean"
     end
     if not grid:GetCustomRenderer(content.renderer) then
         return nil, location .. ": unregistered custom renderer: " .. tostring(content.renderer)
@@ -1942,6 +2010,12 @@ function Grid:ValidateCardDeclaration(declaration, context)
         end
         if ids[definition.id] then return nil, base .. ": duplicate card.id" end
         ids[definition.id] = true
+        for _, field in ipairs({ "icon", "headerIcon" }) do
+            local icon = definition[field]
+            if icon ~= nil and type(icon) ~= "string" and type(icon) ~= "number" then
+                return nil, base .. ": card." .. field .. " must be a string or number"
+            end
+        end
         if definition.collapsed == true and definition.collapsible ~= true then
             return nil, base .. ": collapsed=true requires collapsible=true"
         end
@@ -2001,6 +2075,16 @@ function Grid:ValidateCardDeclaration(declaration, context)
         end
         local ok, reason = ValidateCardContent(self, definition.content, base)
         if not ok then return nil, reason end
+        if maximum ~= nil
+            and not (definition.content.kind == "custom" and definition.content.ownsScroll == true) then
+            return nil, base .. ": maxBodyHeight requires custom content with ownsScroll=true"
+        end
+        if definition.content.kind == "composite" and type(placement) == "table"
+            and type(placement.width) == "number"
+            and placement.width < CARD_COMPOSITE_MIN_OUTER_WIDTH then
+            return nil, base .. ": composite Card width must be at least "
+                .. tostring(CARD_COMPOSITE_MIN_OUTER_WIDTH)
+        end
     end
     return true
 end
@@ -2090,6 +2174,9 @@ local function BuildCardMeasuredItems(grid, container, sourceItems, config, cont
     local measured = {}
     for _, source in ipairs(sourceItems or {}) do
         local item = CopyShallow(source)
+        item._exCardSourceItem = source
+        item._declaredY = math.max(1, tonumber(source.y) or 1)
+        item._declaredH = math.max(1, tonumber(source.h) or 1)
         local currentPath = contextPath
         if item.parentKey then
             currentPath = currentPath and (currentPath .. "." .. item.parentKey) or item.parentKey
@@ -2112,10 +2199,11 @@ local function BuildCardMeasuredItems(grid, container, sourceItems, config, cont
             pixelHeight = NormalizeMeasuredHeight(GetMeasureResult(grid, item, pixelWidth, scopedDB))
         end
         if pixelHeight and pixelHeight >= 0 and grid.CellSize > 0 then
-            item._declaredH = math.max(1, tonumber(source.h) or 1)
             item.h = math.max(1, math.ceil((pixelHeight + grid.Padding) / grid.CellSize))
             item._exMeasuredPixelHeight = pixelHeight
         end
+        item._exCardRenderedY = math.max(1, tonumber(item.y) or 1)
+        item._exCardRenderedH = math.max(1, tonumber(item.h) or 1)
         if source.children then
             item.children = BuildCardMeasuredItems(grid, container, source.children, config, currentPath, cardState)
         end
@@ -2204,12 +2292,17 @@ local function ReflowCardBody(grid, cardState, bodyWidth)
     end
 
     state.layout = layout
+    if grid.IsLiveEditing and grid.LiveEditContainer == body then
+        grid.ActiveLayout = layout
+    end
     local maxBottom = 0
     for ordinal, entry in ipairs(renderables) do
         local item = entry.item
         local widget = cardState.widgetsByOrdinal[ordinal]
         local _, py, pw, ph = grid:GetPixelRect(item.x, item.y, item.w, item.h, body)
         if widget then
+            local meta = state.widgetMap and state.widgetMap[widget]
+            if meta then meta.item = item end
             if type(widget._exCompositeReflow) == "function" then
                 widget._exGridWidth = pw
                 widget:_exCompositeReflow(pw, item._exMeasuredPixelHeight or ph)
@@ -2418,6 +2511,12 @@ local function MeasureSessionCards(session, availableWidth)
         local width = ResolveDeclaredWidth(placement.width, availableWidth)
         if not width then width = availableWidth end
         cardState.width = math.max(1, width)
+        if cardState.content.kind == "composite"
+            and cardState.width < CARD_COMPOSITE_MIN_OUTER_WIDTH then
+            error("[ExwindGrid] " .. CardLocation(session.context, cardState.id)
+                .. ": resolved composite Card width must be at least "
+                .. tostring(CARD_COMPOSITE_MIN_OUTER_WIDTH), 0)
+        end
         SetCardWidth(cardState.card, cardState.width)
 
         local bodyWidth = cardState.body:GetWidth()
@@ -2493,8 +2592,25 @@ local function ResolveSessionPositions(session, metrics, parentWidth, parentHeig
         if placement then
             targetId = placement.target or CARD_CONTAINER_TARGET
         elseif cardState.previous then
-            targetId = cardState.previous.id
-            placement = { target = targetId, side = "below", align = "start" }
+            -- 默认纵排只在可见 Card 之间留一个 gap。隐藏 Card 仍保留稳定
+            -- id/内容与显式 placement 语义，但不能作为隐式前驱累计空白。
+            local previousVisible = cardState.previous
+            while previousVisible and not previousVisible.visible do
+                previousVisible = previousVisible.previous
+            end
+            if not previousVisible then
+                targetId = CARD_CONTAINER_TARGET
+                placement = {
+                    target = targetId,
+                    point = "TOPLEFT",
+                    relativePoint = "TOPLEFT",
+                    x = 0,
+                    y = 0,
+                }
+            else
+                targetId = previousVisible.id
+                placement = { target = targetId, side = "below", align = "start" }
+            end
         else
             targetId = CARD_CONTAINER_TARGET
             placement = {
@@ -2850,6 +2966,8 @@ function Grid:MountCards(parent, declaration, context)
             local card = EXUI:CreateSettingsCard(parent, {
                 id = definition.id,
                 title = definition.title,
+                icon = definition.icon,
+                headerIcon = definition.headerIcon,
                 collapsible = definition.collapsible == true,
                 collapsed = definition.collapsed == true,
                 minBodyHeight = tonumber(definition.minBodyHeight) or 0,
@@ -3049,8 +3167,70 @@ function Grid:RefreshMountedValues(container)
     return false
 end
 
+function Grid:GetLiveCardSession()
+    local session = self.LiveCardSession
+    if session and not session.released then return session end
+    session = self.LiveContainer and self:GetMountedCardSession(self.LiveContainer) or nil
+    return session
+end
+
+local function HideEditorGuideSet(lines)
+    for _, region in ipairs(lines or {}) do
+        if region and region.Hide then region:Hide() end
+    end
+end
+
+function Grid:ActivateLiveEditContainer(container)
+    if not self.IsLiveEditing or not container then return false end
+    local state = self.ContainerStates[container]
+    if not state then return false end
+
+    if self.LiveEditContainer ~= container then
+        HideEditorGuideSet(self.GridLines)
+        HideEditorGuideSet(self.RowGuides)
+    end
+    ActivateContainerState(self, container, state)
+    self.LiveEditContainer = container
+    self:UpdateMetrics(container:GetWidth(), container)
+    self:DrawEditorGrid(container)
+    self:DrawRowGuides(container)
+    return true
+end
+
+function Grid:WrapCardBodyForLiveEdit(cardState)
+    if not cardState or not cardState.body or cardState.content.kind ~= "grid" then return false end
+    local state = self.ContainerStates[cardState.body]
+    if not state then return false end
+    for key, widget in pairs(state.widgets or {}) do
+        self:WrapWidgetForEdit(widget, key, cardState.body)
+    end
+    return true
+end
+
+-- Flat 页面继续直接 Render；Card 页面则只重建被编辑的 Body，并继续使用原
+-- Card session 做测量、定位与回收。这样在线编辑不会把多卡声明压成一张平面表。
+function Grid:RefreshLiveEditLayout(container)
+    container = container or self.LiveEditContainer or self.LiveContainer
+    local owner = container and self.CardSessionOwners[container]
+    if owner and owner.session and owner.card and not owner.session.released then
+        local session, cardState = owner.session, owner.card
+        if cardState.content.kind ~= "grid" then return false end
+        session:ReplaceCardContent(cardState.id, cardState.content)
+        self:ActivateLiveEditContainer(cardState.body)
+        self:WrapCardBodyForLiveEdit(cardState)
+        if self.PropPanel then self.PropPanel:Hide() end
+        self.Cur = nil
+        return true
+    end
+
+    if not container then return false end
+    self:Render(container, self.ActiveLayout, self.LastConfig, self.ModuleKey)
+    return true
+end
+
 function Grid:ToggleLiveEdit(container)
-    if container then
+    local cardSession = container and self:GetMountedCardSession(container) or nil
+    if container and not cardSession then
         local state = GetContainerState(self, container)
         ActivateContainerState(self, container, state)
     end
@@ -3058,34 +3238,56 @@ function Grid:ToggleLiveEdit(container)
     self.LiveContainer = container
 
     if self.IsLiveEditing then
-        if container then
+        self.LiveCardSession = cardSession
+        if cardSession then
+            local firstEditable
+            for _, cardState in ipairs(cardSession.cards) do
+                if cardState.content.kind == "grid" then
+                    firstEditable = firstEditable or cardState.body
+                    self:WrapCardBodyForLiveEdit(cardState)
+                end
+            end
+            if firstEditable then self:ActivateLiveEditContainer(firstEditable) end
+        elseif container then
             self._activeContainer = container
+            self.LiveEditContainer = container
             self:UpdateMetrics(container:GetWidth(), container)
             self:BeginModuleSpecExportSession(container)
+            self:DrawEditorGrid(container)
+            self:DrawRowGuides(container) -- [新增] 绘制行号尺
+            for k, w in pairs(self.Widgets) do self:WrapWidgetForEdit(w, k, container) end
         end
-        self:DrawEditorGrid(container)
-        self:DrawRowGuides(container) -- [新增] 绘制行号尺
-
-        for k, w in pairs(self.Widgets) do self:WrapWidgetForEdit(w, k, container) end
         self:ShowToolbar(); self:ShowPalette(); self:CreatePropertyPanel()
 
         print(L["|cff00ffff[ExwindGrid]|r 编辑模式已激活。请在左侧点击行号进行管理。"])
     else
-        if self.GridLines then for _, l in ipairs(self.GridLines) do l:Hide() end end
-        if self.RowGuides then for _, b in ipairs(self.RowGuides) do b:Hide() end end -- [新增] 隐藏行号
+        HideEditorGuideSet(self.GridLines)
+        HideEditorGuideSet(self.RowGuides)
 
         -- 恢复容器状态
-        if container then
+        if container and not self.LiveCardSession then
             container:EnableMouse(false)
             -- 清理脚本以防万一
             if container.SetScript then
             end
         end
 
-        for _, w in pairs(self.Widgets) do if w.dragOverlay then w.dragOverlay:Hide() end end
+        if self.LiveCardSession and not self.LiveCardSession.released then
+            for _, cardState in ipairs(self.LiveCardSession.cards) do
+                local state = self.ContainerStates[cardState.body]
+                for _, widget in ipairs(state and state.instances or {}) do
+                    if widget.dragOverlay then widget.dragOverlay:Hide() end
+                end
+            end
+        else
+            for _, w in pairs(self.Widgets) do if w.dragOverlay then w.dragOverlay:Hide() end end
+        end
         if self.LiveToolbar then self.LiveToolbar:Hide() end
         if self.Palette then self.Palette:Hide() end
         if self.PropPanel then self.PropPanel:Hide() end
+        self.LiveCardSession = nil
+        self.LiveEditContainer = nil
+        self.Cur = nil
     end
 end
 
@@ -3103,7 +3305,7 @@ function Grid:ShiftRows(startY, delta)
             self:RecordModuleSpecLayoutChange(item, { y = item.y })
         end
     end
-    self:Render(self.LiveContainer, self.ActiveLayout, self.LastConfig, self.ModuleKey)
+    self:RefreshLiveEditLayout(self.LiveEditContainer or self.LiveContainer)
 end
 
 function Grid:ShowRowContextMenu(row, x, y)
@@ -3184,6 +3386,7 @@ function Grid:WrapWidgetForEdit(widget, key, container)
     if widget.SetMovable then widget:SetMovable(true) end
     drag:SetScript("OnMouseDown",
         function(f, b)
+            Grid:ActivateLiveEditContainer(container)
             if b == "LeftButton" then
                 widget:StartMoving(); widget.isDragging = true
             end
@@ -3212,7 +3415,7 @@ function Grid:WrapWidgetForEdit(widget, key, container)
                 end
 
                 -- 刷新
-                Grid:Render(container, Grid.ActiveLayout, Grid.LastConfig, Grid.ModuleKey)
+                Grid:RefreshLiveEditLayout(container)
             end
         end
     end)
@@ -3235,6 +3438,7 @@ function Grid:WrapWidgetForEdit(widget, key, container)
     local r = drag.resizer
     r:SetScript("OnMouseDown", function(_, button)
         if button ~= "LeftButton" then return end
+        Grid:ActivateLiveEditContainer(container)
         widget.isDragging = false
         drag.isResizing = true
         r:SetScript("OnUpdate", function()
@@ -3288,7 +3492,7 @@ function Grid:WrapWidgetForEdit(widget, key, container)
                     item.w, item.h = gw, gh
                     Grid:RecordModuleSpecLayoutChange(item, { w = item.w, h = item.h })
                 end
-                Grid:Render(container, Grid.ActiveLayout, Grid.LastConfig, Grid.ModuleKey)
+                Grid:RefreshLiveEditLayout(container)
             end
         end
     end)
@@ -3298,14 +3502,19 @@ end
 
 -- [新增] 绘制左侧行号 Excel 风格
 function Grid:DrawRowGuides(container)
-    if not self.RowGuides then self.RowGuides = {} end
+    local rowGuides = self.EditorRowGuidesByContainer[container]
+    if not rowGuides then
+        rowGuides = {}
+        self.EditorRowGuidesByContainer[container] = rowGuides
+    end
+    self.RowGuides = rowGuides
     -- 先隐藏旧的
-    for _, b in ipairs(self.RowGuides) do b:Hide() end
+    for _, b in ipairs(rowGuides) do b:Hide() end
 
     local rowsToDraw = 100 -- 默认画 100 行，如果内容更多可以扩展
 
     for i = 1, rowsToDraw do
-        local btn = self.RowGuides[i]
+        local btn = rowGuides[i]
         if not btn then
             -- 使用 Button 模板，天生支持 OnClick，无报错风险
             btn = CreateFrame("Button", nil, container, "BackdropTemplate")
@@ -3322,7 +3531,7 @@ function Grid:DrawRowGuides(container)
             btn.text = EXUI:CreateVisualFontString(btn, EXFONTFRAME, "GameFontHighlightSmall")
             btn.text:SetPoint("CENTER", 0, 0)
 
-            self.RowGuides[i] = btn
+            rowGuides[i] = btn
         end
 
         -- 更新以适应当前的 Parent (container)
@@ -3338,6 +3547,7 @@ function Grid:DrawRowGuides(container)
         -- 交互逻辑
         btn:SetScript("OnClick", function(self, button)
             if button == "RightButton" then
+                Grid:ActivateLiveEditContainer(container)
                 -- 呼出菜单
                 local mx, my = GetCursorPosition()
                 local s = self:GetEffectiveScale()
@@ -3365,28 +3575,35 @@ local function SetupLineThickness(line, pixelWidth)
 end
 
 function Grid:DrawEditorGrid(canvas)
-    if not self.GridLines then self.GridLines = {} end
+    local gridLines = self.EditorGridLinesByContainer[canvas]
+    if not gridLines then
+        gridLines = {}
+        self.EditorGridLinesByContainer[canvas] = gridLines
+    end
+    self.GridLines = gridLines
     -- 清理旧的（由于 Line 和 Texture 是不同对象，需要彻底重置）
-    for _, l in ipairs(self.GridLines) do
+    for _, l in ipairs(gridLines) do
         if l.Hide then l:Hide() end
     end
 
     local idx = 1
     local linePixelWidth = 1.2 -- 稍微加粗，确保可见
     local gridAlpha = 0.15     -- 提高透明度，确保在深色背景下可见
+    local padding = self:GetContainerPadding(canvas)
+    local cols = self:GetContainerCols(canvas) or self.Cols
 
     -- 绘制垂直线
-    for i = 0, self.Cols do
-        local l = self.GridLines[idx]
+    for i = 0, cols do
+        local l = gridLines[idx]
         if not l or (l.GetObjectType and l:GetObjectType() ~= "Line") then
             l = canvas:CreateLine(nil, "BACKGROUND")
-            self.GridLines[idx] = l
+            gridLines[idx] = l
         end
 
         l:SetColorTexture(1, 1, 1, gridAlpha)
         -- [Fix] 显式传入 canvas 作为锚点目标，防止坐标偏移
-        l:SetStartPoint("TOPLEFT", canvas, 10 + i * self.CellSize, 0)
-        l:SetEndPoint("BOTTOMLEFT", canvas, 10 + i * self.CellSize, -3000)
+        l:SetStartPoint("TOPLEFT", canvas, padding.left + i * self.CellSize, 0)
+        l:SetEndPoint("BOTTOMLEFT", canvas, padding.left + i * self.CellSize, -3000)
         SetupLineThickness(l, linePixelWidth)
         l:Show()
         idx = idx + 1
@@ -3394,16 +3611,16 @@ function Grid:DrawEditorGrid(canvas)
 
     -- 绘制水平线
     for i = 0, 150 do
-        local l = self.GridLines[idx]
+        local l = gridLines[idx]
         if not l or (l.GetObjectType and l:GetObjectType() ~= "Line") then
             l = canvas:CreateLine(nil, "BACKGROUND")
-            self.GridLines[idx] = l
+            gridLines[idx] = l
         end
 
         l:SetColorTexture(1, 1, 1, gridAlpha)
         -- [Fix] 显式传入 canvas 作为锚点目标
-        l:SetStartPoint("TOPLEFT", canvas, 0, -10 - i * self.CellSize)
-        l:SetEndPoint("TOPRIGHT", canvas, 0, -10 - i * self.CellSize)
+        l:SetStartPoint("TOPLEFT", canvas, 0, -padding.top - i * self.CellSize)
+        l:SetEndPoint("TOPRIGHT", canvas, 0, -padding.top - i * self.CellSize)
         SetupLineThickness(l, linePixelWidth)
         l:Show()
         idx = idx + 1
@@ -3412,6 +3629,10 @@ end
 
 function Grid:ShowToolbar()
     if self.LiveToolbar then
+        if self.LiveToolbar.ExportButton then
+            self.LiveToolbar.ExportButton:SetText(self:GetLiveCardSession()
+                and L["导出 Card 包"] or L["导出导入包"])
+        end
         self.LiveToolbar:Show(); return
     end
     local tb = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
@@ -3422,8 +3643,10 @@ function Grid:ShowToolbar()
     tb:SetFrameStrata("HIGH")
 
     local b1 = CreateFrame("Button", nil, tb, "UIPanelButtonTemplate")
-    b1:SetSize(140, 28); b1:SetPoint("LEFT", 10, 0); b1:SetText(L["导出导入包"])
+    b1:SetSize(140, 28); b1:SetPoint("LEFT", 10, 0)
+    b1:SetText(self:GetLiveCardSession() and L["导出 Card 包"] or L["导出导入包"])
     b1:SetScript("OnClick", function() Grid:ExportImportPackage() end)
+    tb.ExportButton = b1
 
     local b2 = CreateFrame("Button", nil, tb, "UIPanelButtonTemplate")
     b2:SetSize(100, 28); b2:SetPoint("LEFT", 155, 0); b2:SetText(L["保存退出"])
@@ -3463,13 +3686,17 @@ function Grid:ShowPalette()
     local y = -15
     for _, i in ipairs(types) do
         local b = CreateFrame("Button", nil, p, "UIPanelButtonTemplate"); b:SetSize(140, 24); b:SetPoint("TOP", 0, y); b
-            :SetText(i.n); b:SetScript("OnClick", function() Grid:AddNewWidget(i.t, Grid.LiveContainer) end)
+            :SetText(i.n); b:SetScript("OnClick", function()
+                Grid:AddNewWidget(i.t, Grid.LiveEditContainer or Grid.LiveContainer)
+            end)
         y = y - 28
     end
     self.Palette = p
 end
 
 function Grid:AddNewWidget(t, c)
+    c = c or self.LiveEditContainer or self.LiveContainer
+    if c then self:ActivateLiveEditContainer(c) end
     local k = t .. "_" .. math.random(1000, 9999); local w, h = 12, 2
     if t == "checkbox" then
         w, h = 2, 2
@@ -3511,10 +3738,31 @@ function Grid:AddNewWidget(t, c)
     end
     for i = 1, 200 do
         if t == "card" or t == "modulecommonsettings" or Grid:IsAreaEmpty(1, i, w, h) then
-            e.y = i; table.insert(Grid.ActiveLayout, e); Grid:RecordModuleSpecLayoutAddition(e); break
+            e.y = i
+            local owner = c and Grid.CardSessionOwners[c]
+            if owner and owner.card and owner.card.content.kind == "grid" then
+                table.insert(owner.card.content.items, e)
+            else
+                table.insert(Grid.ActiveLayout, e)
+                Grid:RecordModuleSpecLayoutAddition(e)
+            end
+            break
         end
     end
-    Grid:Render(c, Grid.ActiveLayout, Grid.LastConfig, Grid.ModuleKey)
+    Grid:RefreshLiveEditLayout(c)
+end
+
+local function RemoveCardSourceItem(items, target)
+    for index, item in ipairs(items or {}) do
+        if item == target then
+            table.remove(items, index)
+            return true
+        end
+        if type(item.children) == "table" and RemoveCardSourceItem(item.children, target) then
+            return true
+        end
+    end
+    return false
 end
 
 function Grid:CreatePropertyPanel()
@@ -3575,6 +3823,7 @@ function Grid:CreatePropertyPanel()
             local e = Grid.Cur
             if e then
                 e.labelPos = val
+                if e._exCardSourceItem then e._exCardSourceItem.labelPos = val end
                 Grid:RecordModuleSpecLayoutChange(e, { labelPos = e.labelPos })
                 -- [Real-time] 立即更新样式
                 if Grid.Widgets[e.key] then
@@ -3625,22 +3874,37 @@ function Grid:CreatePropertyPanel()
                 if e[field] ~= before[field] then changes[field] = e[field] end
             end
             Grid:RecordModuleSpecLayoutChange(e, changes)
+            if e._exCardSourceItem then
+                -- nil 不能进入 changes 表；Card 纯声明需显式同步这些属性，
+                -- 同时保持 legacy MODULE_SPEC 只接受原有可编辑字段的白名单。
+                e._exCardSourceItem.setKey = e.setKey
+                e._exCardSourceItem.min = e.min
+                e._exCardSourceItem.max = e.max
+                e._exCardSourceItem.items = e.items
+            end
 
             -- [Core] Label 属性已由实时控件更新到 'e' 中，此处**不要**从隐藏的 EditBox 覆盖它们
         end
-        p:Hide(); Grid:Render(Grid.LiveContainer, Grid.ActiveLayout, Grid.LastConfig, Grid.ModuleKey)
+        p:Hide(); Grid:RefreshLiveEditLayout(Grid.LiveEditContainer or Grid.LiveContainer)
     end)
 
 
     local d = CreateFrame("Button", nil, p, "UIPanelButtonTemplate"); d:SetSize(130, 32); d:SetPoint("BOTTOMRIGHT", -20,
         20); d:SetText(L["|cffff0000删除组件|r"]); d:SetScript("OnClick", function()
-        for i, e in ipairs(Grid.ActiveLayout) do
-            if e.key == Grid.Cur.key then
-                Grid:RecordModuleSpecLayoutDeletion(e)
-                table.remove(Grid.ActiveLayout, i); break
+        local current = Grid.Cur
+        local source = current and current._exCardSourceItem
+        local owner = Grid.LiveEditContainer and Grid.CardSessionOwners[Grid.LiveEditContainer]
+        if source and owner and owner.card and owner.card.content.kind == "grid" then
+            RemoveCardSourceItem(owner.card.content.items, source)
+        else
+            for i, e in ipairs(Grid.ActiveLayout) do
+                if current and e.key == current.key then
+                    Grid:RecordModuleSpecLayoutDeletion(e)
+                    table.remove(Grid.ActiveLayout, i); break
+                end
             end
         end
-        p:Hide(); Grid:Render(Grid.LiveContainer, Grid.ActiveLayout, Grid.LastConfig, Grid.ModuleKey)
+        p:Hide(); Grid:RefreshLiveEditLayout(Grid.LiveEditContainer or Grid.LiveContainer)
     end)
     self.PropPanel = p
 end
@@ -3723,6 +3987,9 @@ function Grid:ShowPropertyPanelFor(key)
 end
 
 function Grid:ExportLayout()
+    if self:GetLiveCardSession() then
+        error(L["[ExwindGrid] Card 页面必须导出完整 version=1/cards 声明，不能扁平化为 legacy layout"], 2)
+    end
     local layoutStr = "local layout = {\n"
     local defaults = {}
 
@@ -4027,6 +4294,30 @@ local function serializeTable(t, indent, localizeLabels)
     return s .. string.rep("    ", indent - 1) .. "}"
 end
 
+-- Card session 的 declaration 是登记纯声明的运行副本，也是在线编辑的结构真源。
+-- 导出必须整棵保留 version/cards/placement/content，禁止把各 Body 拼回 legacy layout。
+function Grid:BuildCardPageExportData()
+    local session = self:GetLiveCardSession()
+    if not session then return nil end
+    local moduleKey = session.context and session.context.moduleKey or self.ModuleKey
+    if type(moduleKey) ~= "string" or moduleKey == "" then
+        error(L["[ExwindGrid] 导出失败：当前页面没有模块标识"], 2)
+    end
+    local ok, reason = self:ValidateCardDeclaration(session.declaration, session.context)
+    if not ok then error(reason, 2) end
+
+    local defaults
+    local declarations = ExwindTools.ModuleDefaultDeclarations
+    if type(declarations) == "table" and declarations[moduleKey] then
+        defaults = ExwindTools:ExportModuleDefaults(moduleKey)
+    end
+    return {
+        moduleKey = moduleKey,
+        gui = session.declaration,
+        defaults = defaults,
+    }
+end
+
 local function CopyModuleSpecExportValue(value, seen)
     if type(value) ~= "table" then return value end
     seen = seen or {}
@@ -4219,6 +4510,34 @@ end
 -- 与 defaults 字段形状，全部通过后才允许将这两个区块写回 MODULE_SPEC。
 function Grid:ExportImportPackage()
     local moduleKey = self.ModuleKey
+    local cardPage = self:BuildCardPageExportData()
+    if cardPage then
+        -- 目前没有游戏内 Card package importer；这是供复制、审查和源码回填
+        -- 的完整导出载荷。名称不得暗示已经实现未授权的配置导入流程。
+        local package = "-- EXWIND_GRID_CARD_EXPORT v1\n"
+            .. "local EXWIND_GRID_CARD_EXPORT = {\n"
+            .. "    moduleKey = " .. string.format("%q", cardPage.moduleKey) .. ",\n"
+            .. "    gui = " .. serializeTable(cardPage.gui, 2, true) .. ",\n"
+        if cardPage.defaults ~= nil then
+            package = package .. "    defaults = " .. serializeTable(cardPage.defaults, 2) .. ",\n"
+        end
+        package = package .. "}\n"
+        StaticPopupDialogs["EX_EXPORT_IMPORT_PACKAGE"] = {
+            text = L["复制完整 Card 导出包（发送给 Codex 验收）:"],
+            button1 = L["好的"],
+            hasEditBox = 1,
+            OnShow = function(dialog)
+                dialog.EditBox:SetText(package:gsub("|", "||"))
+                dialog.EditBox:HighlightText()
+            end,
+            timeout = 0,
+            whileDead = true,
+            hideOnEscape = true,
+        }
+        StaticPopup_Show("EX_EXPORT_IMPORT_PACKAGE")
+        return true
+    end
+
     local moduleSpec, reason = self:BuildModuleSpecExportData()
     local package, dialogText
     if not moduleSpec then
@@ -4260,6 +4579,25 @@ end
 
 -- 仅导出布局
 function Grid:ExportLayoutOnly()
+    local cardPage = self:BuildCardPageExportData()
+    if cardPage then
+        local layoutStr = "gui = " .. serializeTable(cardPage.gui, 1, true)
+        StaticPopupDialogs["EX_EXPORT_LAYOUT"] = {
+            text = L["复制 Card gui 区块（保留 version/cards 结构）:"],
+            button1 = L["好的"],
+            hasEditBox = 1,
+            OnShow = function(dialog)
+                dialog.EditBox:SetText(layoutStr:gsub("|", "||"))
+                dialog.EditBox:HighlightText()
+            end,
+            timeout = 0,
+            whileDead = true,
+            hideOnEscape = true,
+        }
+        StaticPopup_Show("EX_EXPORT_LAYOUT")
+        return true
+    end
+
     local moduleSpec, reason = self:BuildModuleSpecExportData()
     local layoutStr, dialogText
     if moduleSpec then
@@ -4328,92 +4666,6 @@ function Grid:ExportDefaultsOnly()
         hideOnEscape = true
     }
     StaticPopup_Show("EX_EXPORT_DEFAULTS")
-end
-
--- [v4.3.4 Fix] Revert to simple lines
-function Grid:DrawEditorGrid(container)
-    if not self.GridLines then self.GridLines = {} end
-    -- Show/Create Lines
-    local w, h = container:GetSize()
-    local step = self.CellSize or 20
-
-    local lineIdx = 1
-
-    -- Horizontal
-    for y = 0, h, step do
-        local line = self.GridLines[lineIdx]
-        if not line then
-            line = container:CreateLine()
-            line:SetThickness(1)
-            line:SetColorTexture(1, 1, 1, 0.1)
-            table.insert(self.GridLines, line)
-        end
-        line:Show()
-        line:SetStartPoint("TOPLEFT", 0, -y)
-        line:SetEndPoint("TOPRIGHT", 0, -y)
-        lineIdx = lineIdx + 1
-    end
-
-    -- Vertical
-    for x = 0, w, step do
-        local line = self.GridLines[lineIdx]
-        if not line then
-            line = container:CreateLine()
-            line:SetThickness(1)
-            line:SetColorTexture(1, 1, 1, 0.1)
-            table.insert(self.GridLines, line)
-        end
-        line:Show()
-        line:SetStartPoint("TOPLEFT", x, 0)
-        line:SetEndPoint("BOTTOMLEFT", x, 0)
-        lineIdx = lineIdx + 1
-    end
-
-    -- Hide unused
-    for i = lineIdx, #self.GridLines do self.GridLines[i]:Hide() end
-end
-
--- [v4.3.4 Fix] Revert to simple lines
-function Grid:DrawEditorGrid(container)
-    if not self.GridLines then self.GridLines = {} end
-    -- Show/Create Lines
-    local w, h = container:GetSize()
-    local step = self.CellSize or 20
-
-    local lineIdx = 1
-
-    -- Horizontal
-    for y = 0, h, step do
-        local line = self.GridLines[lineIdx]
-        if not line then
-            line = container:CreateLine()
-            line:SetThickness(1)
-            line:SetColorTexture(1, 1, 1, 0.1)
-            table.insert(self.GridLines, line)
-        end
-        line:Show()
-        line:SetStartPoint("TOPLEFT", 0, -y)
-        line:SetEndPoint("TOPRIGHT", 0, -y)
-        lineIdx = lineIdx + 1
-    end
-
-    -- Vertical
-    for x = 0, w, step do
-        local line = self.GridLines[lineIdx]
-        if not line then
-            line = container:CreateLine()
-            line:SetThickness(1)
-            line:SetColorTexture(1, 1, 1, 0.1)
-            table.insert(self.GridLines, line)
-        end
-        line:Show()
-        line:SetStartPoint("TOPLEFT", x, 0)
-        line:SetEndPoint("BOTTOMLEFT", x, 0)
-        lineIdx = lineIdx + 1
-    end
-
-    -- Hide unused
-    for i = lineIdx, #self.GridLines do self.GridLines[i]:Hide() end
 end
 
 function ExwindTools:ToggleDevMode()

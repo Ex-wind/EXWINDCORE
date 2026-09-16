@@ -180,26 +180,62 @@ EXUI.TooltipBackdrop = {
 local MODERN_MEDIA = "Interface\\AddOns\\ExwindCore\\Textures\\GUI\\"
 local MODERN = {
     colors = {
-        background = { 0.047, 0.051, 0.063, 1 }, -- #0c0d10
-        panel = { 0.078, 0.086, 0.106, 1 },      -- #14161b
-        input = { 0.055, 0.063, 0.078, 1 },      -- #0e1014
-        raised = { 0.125, 0.141, 0.173, 1 },     -- #20242c
-        hover = { 0.161, 0.176, 0.208, 1 },      -- #292d35
-        border = { 0.208, 0.227, 0.271, 1 },     -- #353a45
-        text = { 0.922, 0.929, 0.949, 1 },       -- #ebedf2
-        muted = { 0.584, 0.616, 0.667, 1 },      -- #959daa
+        background = { 0.078, 0.086, 0.102, 1 }, -- #14161a
+        panel = { 0.106, 0.118, 0.137, 1 },      -- #1b1e23
+        input = { 0.090, 0.098, 0.114, 1 },      -- #17191d
+        raised = { 0.133, 0.149, 0.173, 1 },     -- #22262c
+        hover = { 0.165, 0.188, 0.220, 1 },      -- #2a3038
+        border = { 0.204, 0.227, 0.259, 1 },     -- #343a42
+        text = { 0.925, 0.933, 0.945, 1 },       -- #eceef1
+        muted = { 0.655, 0.678, 0.710, 1 },      -- #a7adb5
         disabled = { 0.36, 0.38, 0.43, 1 },
-        blue = { 0.216, 0.416, 0.816, 1 },       -- #376ad0
-        blueHover = { 0.278, 0.482, 0.886, 1 },  -- #477be2
-        lightBlue = { 0.663, 0.792, 1.000, 1 },  -- #a9caff
-        blueSoft = { 0.106, 0.169, 0.271, 1 },   -- #1b2b45
-        focus = { 0.412, 0.620, 0.969, 1 },      -- #699ef7
-        accent = { 0.216, 0.416, 0.816, 1 },
+        blue = { 0.659, 0.847, 1.000, 1 },       -- #a8d8ff
+        blueHover = { 0.796, 0.906, 1.000, 1 },  -- #cbe7ff
+        primaryHover = { 194/255, 228/255, 255/255, 1 },  -- #c2e4ff
+        primaryPressed = { 140/255, 198/255, 245/255, 1 },-- #8cc6f5
+        lightBlue = { 0.796, 0.906, 1.000, 1 },  -- #cbe7ff
+        blueSoft = { 0.133, 0.173, 0.216, 1 },   -- #222c37
+        focus = { 0.431, 0.608, 0.765, 1 },      -- #6e9bc3
+        accent = { 0.659, 0.847, 1.000, 1 },     -- #a8d8ff
+        sliderTrack = { 0.212, 0.235, 0.267, 1 },-- #363c44
+        popup = { 0.165, 0.184, 0.212, 1 },      -- #2a2f36
+        popupBorder = { 0.290, 0.322, 0.361, 1 },-- #4a525c
+        menuSelected = { 0.659, 0.847, 1.000, 0.18 },
+        menuHover = { 0.659, 0.847, 1.000, 0.26 },
+        primaryFill = { 168/255, 216/255, 1, 1 },
+        primaryText = { 15/255, 26/255, 36/255, 1 },-- #0f1a24
+        secondaryBorder = { 74/255, 82/255, 92/255, 1 },      -- #4a525c
+        secondaryText = { 213/255, 217/255, 222/255, 1 },        -- #d5d9de
+        secondaryHoverFill = { 1, 1, 1, 0.05 },
+        secondaryHoverBorder = { 95/255, 104/255, 115/255, 1 }, -- #5f6873
+        secondaryPressedFill = { 1, 1, 1, 0.09 },
+        secondaryPressedText = { 184/255, 190/255, 197/255, 1 }, -- #b8bec5
+        dangerFill = { 242/255, 139/255, 139/255, .05 },
+        dangerBorder = { 242/255, 139/255, 139/255, 1 },         -- #f28b8b
+        dangerText = { 246/255, 165/255, 165/255, 1 },           -- #f6a5a5
+        dangerHoverFill = { 242/255, 139/255, 139/255, .14 },
+        dangerHover = { 246/255, 165/255, 165/255, 1 },          -- #f6a5a5
+        dangerPressedFill = { 242/255, 139/255, 139/255, .22 },
+        disabledFill = { 31/255, 34/255, 39/255, 1 },         -- #1f2227
+        disabledBorder = { 48/255, 53/255, 60/255, 1 },       -- #30353c
+        disabledText = { 95/255, 102/255, 111/255, 1 },         -- #5f666f
+        transparent = { 0, 0, 0, 0 },
+        white = { 1, 1, 1, 1 },
         neutral = { 0.584, 0.616, 0.667, 1 },
         include = { 0.412, 0.620, 0.969, 1 },
         exclude = { 0.933, 0.443, 0.502, 1 },
     },
-    metrics = { title = 15, section = 15, text = 13, control = 13, hint = 11, height = 30 },
+    metrics = {
+        title = 15,
+        cardTitle = 18,
+        section = 15,
+        text = 13,
+        control = 13,
+        fieldValue = 15,
+        button = 15,
+        hint = 11,
+        height = 30,
+    },
 }
 EXUI.ModernTheme = MODERN
 EXUI.ControlAppearance = MODERN
@@ -217,7 +253,7 @@ local function CreateModernMenuFontObject(globalName, size)
 end
 
 MODERN.menuFonts = {
-    control = CreateModernMenuFontObject("ExwindCoreModernMenuControlFont", MODERN.metrics.control),
+    control = CreateModernMenuFontObject("ExwindCoreModernMenuControlFont", MODERN.metrics.fieldValue),
     title = CreateModernMenuFontObject("ExwindCoreModernMenuTitleFont", MODERN.metrics.title),
 }
 
@@ -322,8 +358,11 @@ end
 
 MODERN.typography = {
     title = { size = MODERN.metrics.title, color = MC.text, template = "GameFontHighlight" },
+    cardTitle = { size = MODERN.metrics.cardTitle, color = MC.text, template = "GameFontHighlight" },
     body = { size = MODERN.metrics.text, color = MC.text, template = "GameFontHighlight" },
     control = { size = MODERN.metrics.control, color = MC.text, template = "GameFontHighlight" },
+    fieldValue = { size = MODERN.metrics.fieldValue, color = MC.text, template = "GameFontHighlight" },
+    button = { size = MODERN.metrics.button, color = MC.text, template = "GameFontHighlight" },
     hint = { size = MODERN.metrics.hint, color = MC.muted, template = "GameFontHighlightSmall" },
 }
 
@@ -454,7 +493,7 @@ local function GetModernSurface(frame, radius)
             or (1 / effectiveScale)
         pixel = type(pixel) == "number" and pixel > 0 and pixel or (1 / effectiveScale)
         for _, piece in ipairs(skin.pieces) do
-            local inset = piece.layer == 2 and math.min(pixel, width / 2, height / 2) or 0
+            local inset = piece.layer == 2 and math.min(pixel * (skin.borderPixels or 1), width / 2, height / 2) or 0
             local innerWidth, innerHeight = width - inset * 2, height - inset * 2
             local targetRadius = math.max(0, radius - inset)
             local scale = math.min(
@@ -499,6 +538,7 @@ function EXUI:SetControlSurface(frame, radius, fill, border)
         end
     end
     local skin = GetModernSurface(frame, radius)
+    skin.fill = fill or MC.input
     for _, piece in ipairs(skin.pieces) do
         piece.texture:SetVertexColor(unpack(piece.layer == 1 and (border or MC.border) or (fill or MC.input)))
         piece.texture:Show()
@@ -519,26 +559,154 @@ function EXUI:ApplyModernPanel(frame, elevated)
     return frame
 end
 
+-- Shared text-button geometry and finite native transitions; no Lua frame polling.
+local BUTTON_STYLE = { paddingX = 16, paddingY = 6, minWidth = 104, radius = 4, transition = .12 }
+MODERN.buttonStyle = BUTTON_STYLE
+MODERN.buttonFont = CreateModernMenuFontObject("ExwindCoreModernButtonFont", MODERN.metrics.button)
+
+local function SetButtonRegionColor(region, color, animate, isText)
+    local cache = region._exButtonColor
+    local target = { color[1], color[2], color[3], color[4] or 1 }
+    local function apply(value)
+        if isText then region:SetTextColor(unpack(value)) else region:SetVertexColor(unpack(value)) end
+    end
+    if cache and cache.target then
+        local same = true
+        for i = 1, 4 do if cache.target[i] ~= target[i] then same = false; break end end
+        if same and animate then return end
+    end
+    if not cache then
+        cache = {}
+        region._exButtonColor = cache
+        cache.group = region:CreateAnimationGroup()
+        cache.animation = cache.group:CreateAnimation("VertexColor")
+        cache.animation:SetDuration(BUTTON_STYLE.transition)
+        cache.animation:SetSmoothing("NONE")
+        cache.group:SetScript("OnFinished", function() apply(cache.target) end)
+    end
+    local start = cache.target or target
+    if cache.group:IsPlaying() and cache.start then
+        local progress = cache.animation:GetProgress()
+        start = {}
+        for i = 1, 4 do start[i] = cache.start[i] + (cache.target[i] - cache.start[i]) * progress end
+    end
+    cache.group:Stop()
+    cache.start, cache.target = start, target
+    if animate then
+        apply(start)
+        cache.animation:SetStartColor(CreateColor(unpack(start)))
+        cache.animation:SetEndColor(CreateColor(unpack(target)))
+        cache.group:Play()
+    else
+        apply(target)
+    end
+end
+
+-- Resolve the existing container surface for translucent button state colors.
+-- The shared input surface uses an outer fill and an inset fill, so composite
+-- alpha here instead of introducing a second rounded-border renderer.
+local function GetButtonBackground(frame)
+    local parent = frame:GetParent()
+    while parent do
+        for _, skin in pairs(parent._exModernSurfaces or {}) do
+            if skin.fill and skin.pieces[1] and skin.pieces[1].texture:IsShown() then
+                return skin.fill
+            end
+        end
+        parent = parent:GetParent()
+    end
+    return MC.panel
+end
+
+local function PaintTextButtonSurface(frame, fill, edge, text, enabled)
+    local background = GetButtonBackground(frame)
+    local alpha = fill[4] or 1
+    local surfaceFill = {
+        fill[1] * alpha + background[1] * (1 - alpha),
+        fill[2] * alpha + background[2] * (1 - alpha),
+        fill[3] * alpha + background[3] * (1 - alpha),
+        1,
+    }
+    local animate = frame:IsShown() and frame._exButtonPainted == true
+    -- Exactly the same R4 mask, nine-slice layout and physical-pixel border
+    -- as input boxes and dropdown controls. No button-only outline geometry.
+    EXUI:SetControlSurface(frame, BUTTON_STYLE.radius, surfaceFill, edge)
+    for _, piece in ipairs(frame._exModernSurfaces[BUTTON_STYLE.radius].pieces) do
+        SetButtonRegionColor(piece.texture, piece.layer == 1 and edge or surfaceFill, animate)
+    end
+    local focused = enabled and frame:IsShown() and frame._exButtonKeyboardFocused == true
+    local focus = frame._exButtonFocusSurface
+    if focused then
+        if not focus then
+            focus = CreateFrame("Frame", nil, frame:GetParent())
+            focus:EnableMouse(false)
+            frame._exButtonFocusSurface = focus
+        end
+        focus:SetParent(frame:GetParent())
+        focus:SetFrameStrata(frame:GetFrameStrata())
+        focus:SetFrameLevel(math.max(0, frame:GetFrameLevel() - 1))
+        local scale = frame:GetEffectiveScale()
+        local pixel = PixelUtil and PixelUtil.GetNearestPixelSize(1, scale, 1) or 1 / scale
+        focus:ClearAllPoints()
+        focus:SetPoint("TOPLEFT", frame, "TOPLEFT", -4 * pixel, 4 * pixel)
+        focus:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 4 * pixel, -4 * pixel)
+        GetModernSurface(focus, BUTTON_STYLE.radius).borderPixels = 2
+        EXUI:SetControlSurface(focus, BUTTON_STYLE.radius, background, MC.primaryFill)
+        focus:Show()
+    elseif focus then
+        focus:Hide()
+    end
+    local label = frame:GetFontString()
+    if label then SetButtonRegionColor(label, text, animate, true) end
+    frame._exButtonPainted = true
+end
+
 local function PaintModernButton(frame)
     local enabled = not frame.IsEnabled or frame:IsEnabled()
-    local variant = frame._exButtonVariant or "neutral"
+    local variant = frame._exButtonVariant or "secondary"
     local isColorButton = frame._gridType == "GridColorButton"
-    local fill, edge, text = MC.raised, MC.border, MC.text
-    if variant == "primary" then fill, edge, text = MC.blue, MC.blue, MC.text
-    elseif variant == "soft" then fill, edge, text = MC.blueSoft, MC.border, MC.lightBlue end
-    if frame._exModernPressed and enabled then
-        fill = variant == "primary" and MC.blue or MC.blueSoft
-        edge = MC.focus
-    elseif frame._exModernHover and enabled then
-        fill = variant == "primary" and MC.blueHover or MC.hover
-        edge = variant == "primary" and MC.blueHover or MC.focus
-        text = variant == "neutral" and MC.lightBlue or text
-    elseif not enabled then
-        fill, edge, text = MC.input, MC.border, MC.disabled
+    local fill, edge, text
+
+    if isColorButton then
+        fill, edge, text = MC.input, MC.border, MC.text
+        if frame._exModernPressed and enabled then
+            fill, edge = MC.secondaryPressedFill, MC.secondaryBorder
+        elseif frame._exModernHover and enabled then
+            fill, edge, text = MC.secondaryHoverFill, MC.secondaryHoverBorder, MC.text
+        end
+    elseif variant == "primary" then
+        fill, edge, text = MC.primaryFill, MC.primaryFill, MC.primaryText
+        if frame._exModernPressed and enabled then
+            fill, edge = MC.primaryPressed, MC.primaryPressed
+        elseif frame._exModernHover and enabled then
+            fill, edge = MC.primaryHover, MC.primaryHover
+        end
+    elseif variant == "danger" then
+        fill, edge, text = MC.dangerFill, MC.dangerBorder, MC.dangerText
+        if frame._exModernPressed and enabled then
+            fill, edge, text = MC.dangerPressedFill, MC.dangerBorder, MC.dangerBorder
+        elseif frame._exModernHover and enabled then
+            fill, edge, text = MC.dangerHoverFill, MC.dangerHover, MC.dangerHover
+        end
+    else
+        fill, edge, text = MC.transparent, MC.secondaryBorder, MC.secondaryText
+        if frame._exModernPressed and enabled then
+            fill, edge, text = MC.secondaryPressedFill, MC.secondaryBorder, MC.secondaryPressedText
+        elseif frame._exModernHover and enabled then
+            fill, edge, text = MC.secondaryHoverFill, MC.secondaryHoverBorder, MC.white
+        end
     end
-    EXUI:SetControlSurface(frame, (frame:GetWidth() or 0) <= 30 and 4 or 4, fill, edge)
-    local label = frame.GetFontString and frame:GetFontString() or frame.label
-    if label then label:SetTextColor(unpack(text)) end
+
+    if not enabled then
+        fill, edge, text = MC.disabledFill, MC.disabledBorder, MC.disabledText
+    end
+    if not isColorButton then
+        PaintTextButtonSurface(frame, fill, edge, text, enabled)
+    else
+        EXUI:SetControlSurface(frame, 4, fill, edge)
+        local label = frame.GetFontString and frame:GetFontString() or frame.label
+        if label then label:SetTextColor(unpack(text)) end
+    end
     -- 颜色按钮除了整块底色，也让预览色块的细边框一起响应。
     -- 这样即使背景色差在某些显示器上不明显，鼠标提示仍然清楚。
     if isColorButton and frame.swatchBorder then
@@ -550,6 +718,13 @@ local function PaintModernButton(frame)
             frame.swatchBorder:SetBackdropBorderColor(unpack(MC.border))
         end
     end
+end
+
+-- A keyboard-navigation owner supplies focus; this does not install key handlers.
+function EXUI:SetButtonKeyboardFocus(button, focused)
+    if not button or button._gridType ~= "GridButton" then return end
+    button._exButtonKeyboardFocused = focused == true
+    PaintModernButton(button)
 end
 
 local function ApplyModernButton(frame)
@@ -579,12 +754,29 @@ local function ApplyModernButton(frame)
         frame:HookScript("OnHide", function(self)
             self._exModernHover = nil
             self._exModernPressed = nil
+            self._exButtonKeyboardFocused = nil
+            self._exButtonPainted = nil
+            if self._exButtonFocusSurface then self._exButtonFocusSurface:Hide() end
+            local skin = self._exModernSurfaces and self._exModernSurfaces[BUTTON_STYLE.radius]
+            for _, piece in ipairs(skin and skin.pieces or {}) do
+                if piece.texture._exButtonColor then piece.texture._exButtonColor.group:Stop() end
+            end
+            local label = self:GetFontString()
+            if label and label._exButtonColor then label._exButtonColor.group:Stop() end
         end)
     end
     HideControlSkin(frame)
-    frame:SetPushedTextOffset(0, -1)
-    MODERN.ApplyTextRole(frame.GetFontString and frame:GetFontString() or frame.label,
-        frame._gridType == "GridColorButton" and "title" or "control")
+    if frame._gridType == "GridColorButton" then
+        frame:SetPushedTextOffset(0, -1)
+        MODERN.ApplyTextRole(frame.GetFontString and frame:GetFontString() or frame.label, "title")
+    else
+        frame:SetPushedTextOffset(0, 0)
+        frame:SetNormalFontObject(MODERN.buttonFont)
+        frame:SetHighlightFontObject(MODERN.buttonFont)
+        frame:SetDisabledFontObject(MODERN.buttonFont)
+        -- FontObject assignment can restore its default text color on a reused button.
+        frame._exButtonPainted = nil
+    end
     PaintModernButton(frame)
 end
 
@@ -592,9 +784,13 @@ local function PaintModernInput(surface, editBox)
     local enabled = not editBox or not editBox.IsEnabled or editBox:IsEnabled()
     local focus = enabled and editBox and editBox.HasFocus and editBox:HasFocus()
     local hover = enabled and editBox and editBox._exModernHover
+    local focusBorder = surface and surface._exModernInputFocusBorder or MC.focus
+    local idleFill = surface and surface._exModernInputIdleFill or MC.input
+    local activeFill = surface and surface._exModernInputActiveFill or MC.raised
+    local hoverBorder = surface and surface._exModernInputHoverBorder or MC.focus
     EXUI:SetControlSurface(surface, 4,
-        (focus or hover) and MC.raised or MC.input,
-        (focus or hover) and MC.focus or MC.border)
+        (focus or hover) and activeFill or idleFill,
+        focus and focusBorder or (hover and hoverBorder or MC.border))
     if editBox and editBox.SetTextColor then
         editBox:SetTextColor(unpack(enabled and MC.text or MC.disabled))
     end
@@ -624,18 +820,22 @@ local function ApplyModernInput(frame)
         frame._exModernInputVisual = visual
     end
     if editBox.SetTextInsets then editBox:SetTextInsets(9, 9, editBox == frame and 0 or 7, editBox == frame and 0 or 7) end
-    MODERN.ApplyTextRole(editBox, "control")
+    MODERN.ApplyTextRole(editBox, "fieldValue")
     MODERN.ApplyTextRole(frame.placeholder, "hint")
     PaintModernInput(frame, editBox)
 end
 
 local function PaintModernDropdown(frame)
     local enabled = frame:IsEnabled()
-    local active = enabled and (frame._exModernHover or (frame.IsMenuOpen and frame:IsMenuOpen()))
-    EXUI:SetControlSurface(frame, 4, active and MC.raised or MC.input, active and MC.focus or MC.border)
+    local menuOpen = enabled and frame.IsMenuOpen and frame:IsMenuOpen()
+    local active = enabled and (frame._exModernHover or menuOpen)
+    EXUI:SetControlSurface(frame, 4, active and MC.raised or MC.input,
+        menuOpen and MC.blue or (active and MC.focus or MC.border))
     if frame.Text then frame.Text:SetTextColor(unpack(enabled and MC.text or MC.disabled)) end
     if frame._exModernChevron then
-        frame._exModernChevron:SetVertexColor(unpack(enabled and (active and MC.lightBlue or MC.muted) or MC.disabled))
+        frame._exModernChevron:SetRotation(menuOpen and math.pi or 0)
+        frame._exModernChevron:SetVertexColor(unpack(enabled and (menuOpen and MC.blue
+            or (active and MC.lightBlue or MC.muted)) or MC.disabled))
     end
 end
 
@@ -652,7 +852,10 @@ local function ApplyModernDropdown(frame)
     frame.Text:ClearAllPoints()
     frame.Text:SetPoint("LEFT", 9, 0)
     frame.Text:SetPoint("RIGHT", -29, 0)
-    MODERN.ApplyTextRole(frame.Text, "control")
+    -- 触发框当前值与 Blizzard_Menu 选项共用同一个 15px FontObject，
+    -- 避免两条渲染路径各自取默认字体后产生大小/字面观感差异。
+    frame.Text:SetFontObject(MODERN.menuFonts.control)
+    if frame.Text.SetShadowOffset then frame.Text:SetShadowOffset(0, 0) end
     if not frame._exModernDropdownHooks then
         frame._exModernDropdownHooks = true
         frame:HookScript("OnEnter", function(self) self._exModernHover = true; PaintModernDropdown(self) end)
@@ -671,9 +874,10 @@ local function PaintModernCheckbox(container)
     local enabled, selected = box:IsEnabled(), box:GetChecked() == true
     local hover = enabled and box._exModernHover
     local fill = selected and (hover and MC.blueHover or MC.blue) or (hover and MC.hover or MC.input)
-    EXUI:SetControlSurface(box._exModernCheckSurface, 4, fill, hover and MC.focus or MC.border)
+    local edge = selected and (hover and MC.blueHover or MC.blue) or (hover and MC.focus or MC.border)
+    EXUI:SetControlSurface(box._exModernCheckSurface, 4, fill, edge)
     box._exModernCheckMark:SetShown(selected)
-    box._exModernCheckMark:SetVertexColor(unpack(enabled and MC.text or MC.disabled))
+    box._exModernCheckMark:SetVertexColor(unpack(enabled and MC.background or MC.disabled))
     box._exModernCheckSurface:SetAlpha(enabled and 1 or .55)
     if container.label then
         container.label:SetTextColor(unpack(enabled and (hover and MC.lightBlue or MC.text) or MC.disabled))
@@ -748,9 +952,9 @@ local function PaintModernSlider(frame)
     local interactive = frame.Slider or frame
     local enabled = IsModernSliderEnabled(frame)
     local hover = enabled and (interactive._exModernHover or interactive._exModernPressed or frame._exDragging)
-    frame._exModernSliderTrack:SetColorTexture(unpack(hover and MC.focus or MC.border))
+    frame._exModernSliderTrack:SetColorTexture(unpack(hover and MC.focus or MC.sliderTrack))
     local thumb = interactive.GetThumbTexture and interactive:GetThumbTexture()
-    if thumb then thumb:SetVertexColor(unpack(enabled and (hover and MC.text or MC.lightBlue) or MC.disabled)) end
+    if thumb then thumb:SetVertexColor(unpack(enabled and (hover and MC.blueHover or MC.blue) or MC.disabled)) end
     if frame.numberInput then
         if enabled and frame.numberInput.Enable then frame.numberInput:Enable()
         elseif not enabled and frame.numberInput.Disable then frame.numberInput:Disable() end
@@ -821,56 +1025,146 @@ local function ApplyModernSlider(frame)
     PaintModernSlider(frame)
 end
 
-local function PaintModernScrollButton(button)
-    local enabled = not button.IsEnabled or button:IsEnabled()
-    local hover = enabled and button._exModernHover
-    EXUI:SetControlSurface(button, 4, hover and MC.hover or MC.input, hover and MC.focus or MC.border)
-    if button._exModernScrollGlyph then
-        button._exModernScrollGlyph:SetVertexColor(unpack(enabled and (hover and MC.lightBlue or MC.muted) or MC.disabled))
+local function HideModernScrollBarNativePieces(owner)
+    if not owner then return end
+    for _, key in ipairs({ "Begin", "Middle", "End" }) do
+        local texture = owner[key]
+        if texture then
+            texture:SetAlpha(0)
+            texture:Hide()
+        end
     end
 end
 
-function EXUI:ApplyModernScrollFrame(scrollFrame)
-    local scrollBar = scrollFrame and scrollFrame.ScrollBar
-    if not scrollBar then return scrollFrame end
-
-    if not scrollBar._exModernTrack then
-        local track = scrollBar:CreateTexture(nil, "BACKGROUND")
-        track:SetPoint("TOP", 0, 0)
-        track:SetPoint("BOTTOM", 0, 0)
-        track:SetWidth(4)
-        track:SetColorTexture(unpack(MC.input))
-        scrollBar._exModernTrack = track
-    end
-
-    local thumb = scrollBar.ThumbTexture or (scrollBar.GetThumbTexture and scrollBar:GetThumbTexture())
-    if thumb then
-        thumb:SetTexture("Interface\\Buttons\\WHITE8X8")
-        thumb:SetTexCoord(0, 1, 0, 1)
-        thumb:SetSize(8, 28)
-        thumb:SetVertexColor(unpack(MC.lightBlue))
-    end
-
-    for key, rotation in pairs({ ScrollUpButton = math.pi, ScrollDownButton = 0 }) do
-        local button = scrollBar[key]
-        if button then
-            if not button._exModernScrollGlyph then
-                local glyph = button:CreateTexture(nil, "OVERLAY")
-                glyph:SetTexture(MODERN_MEDIA .. "GlyphChevron.tga", "CLAMP", "CLAMP", "LINEAR")
-                glyph:SetSize(12, 12)
-                glyph:SetPoint("CENTER")
-                glyph:SetRotation(rotation)
-                button._exModernScrollGlyph = glyph
-                button:HookScript("OnEnter", function(self) self._exModernHover = true; PaintModernScrollButton(self) end)
-                button:HookScript("OnLeave", function(self) self._exModernHover = false; PaintModernScrollButton(self) end)
-                button:HookScript("OnEnable", PaintModernScrollButton)
-                button:HookScript("OnDisable", PaintModernScrollButton)
-                button:HookScript("OnShow", PaintModernScrollButton)
-            end
-            PaintModernScrollButton(button)
+local function SuppressModernScrollBarSteppers(scrollBar)
+    for _, key in ipairs({ "Back", "Forward" }) do
+        local stepper = scrollBar and scrollBar[key]
+        if stepper then
+            stepper:Hide()
+            stepper:SetAlpha(0)
+            if stepper.EnableMouse then stepper:EnableMouse(false) end
+            if stepper.SetEnabled then stepper:SetEnabled(false) end
         end
     end
+end
+
+local function PaintModernScrollBar(scrollBar)
+    if not scrollBar or not scrollBar.GetTrack or not scrollBar.GetThumb then return end
+    local track = scrollBar:GetTrack()
+    local thumb = scrollBar:GetThumb()
+    if not (track and thumb) then return end
+
+    SuppressModernScrollBarSteppers(scrollBar)
+    HideModernScrollBarNativePieces(track)
+    HideModernScrollBarNativePieces(thumb)
+
+    local scrollEnabled = (not scrollBar.IsScrollAllowed or scrollBar:IsScrollAllowed())
+        and (not scrollBar.HasScrollableExtent or scrollBar:HasScrollableExtent())
+    local thumbEnabled = scrollEnabled and (not thumb.IsEnabled or thumb:IsEnabled())
+    local thumbActive = thumbEnabled and thumb._exModernHover
+
+    EXUI:SetControlSurface(track, 4, MC.transparent, MC.transparent)
+    EXUI:SetControlSurface(thumb, 4,
+        thumbEnabled and (thumbActive and MC.primaryFill or MC.secondaryBorder) or MC.disabled,
+        thumbEnabled and (thumbActive and MC.primaryFill or MC.secondaryBorder) or MC.disabled)
+end
+
+-- The current Blizzard ScrollFrameTemplate creates one MinimalScrollBar and
+-- binds it through ScrollUtil.InitScrollFrameWithScrollBar.  EXUI only changes
+-- that native control's geometry and appearance; wheel, page-click,
+-- proportional-thumb and drag behavior remain owned by Blizzard.
+function EXUI:ApplyModernScrollBar(scrollBar)
+    if not scrollBar or not scrollBar.GetTrack or not scrollBar.GetThumb then return scrollBar end
+    local track = scrollBar:GetTrack()
+    local thumb = scrollBar:GetThumb()
+    if not (track and thumb) then return scrollBar end
+
+    scrollBar:SetWidth(10)
+    track:ClearAllPoints()
+    track:SetPoint("TOP", scrollBar, "TOP", 0, 0)
+    track:SetPoint("BOTTOM", scrollBar, "BOTTOM", 0, 0)
+    track:SetWidth(8)
+    thumb:SetWidth(8)
+    SuppressModernScrollBarSteppers(scrollBar)
+    -- Recalculate proportional thumb extent/offset against the full-height
+    -- track immediately; later size/range changes continue through Blizzard's
+    -- existing Track OnSizeChanged and ScrollUtil callbacks.
+    if scrollBar.Update then scrollBar:Update() end
+
+    if not scrollBar._exModernScrollBarHooks then
+        scrollBar._exModernScrollBarHooks = true
+        track:HookScript("OnEnter", function(self)
+            self._exModernHover = true
+            PaintModernScrollBar(scrollBar)
+        end)
+        track:HookScript("OnLeave", function(self)
+            self._exModernHover = nil
+            PaintModernScrollBar(scrollBar)
+        end)
+        track:HookScript("OnMouseDown", function(self, button)
+            if button == "LeftButton" then self._exModernPressed = true end
+            PaintModernScrollBar(scrollBar)
+        end)
+        track:HookScript("OnMouseUp", function(self)
+            self._exModernPressed = nil
+            PaintModernScrollBar(scrollBar)
+        end)
+        thumb:HookScript("OnEnter", function(self)
+            self._exModernHover = true
+            PaintModernScrollBar(scrollBar)
+        end)
+        thumb:HookScript("OnLeave", function(self)
+            self._exModernHover = nil
+            PaintModernScrollBar(scrollBar)
+        end)
+        thumb:HookScript("OnMouseDown", function(self, button)
+            if button == "LeftButton" then self._exModernPressed = true end
+            PaintModernScrollBar(scrollBar)
+        end)
+        thumb:HookScript("OnMouseUp", function(self)
+            self._exModernPressed = nil
+            PaintModernScrollBar(scrollBar)
+        end)
+        thumb:HookScript("OnEnable", function() PaintModernScrollBar(scrollBar) end)
+        thumb:HookScript("OnDisable", function() PaintModernScrollBar(scrollBar) end)
+        thumb:HookScript("OnShow", function() PaintModernScrollBar(scrollBar) end)
+        thumb:HookScript("OnHide", function() PaintModernScrollBar(scrollBar) end)
+        scrollBar:HookScript("OnShow", function(self) PaintModernScrollBar(self) end)
+        scrollBar:HookScript("OnHide", function(self)
+            -- Blizzard stops drag/page-repeat from MouseUp.  A parent can hide
+            -- before that callback is delivered, so end the native update loop
+            -- through its own lifecycle API and let the next interaction start
+            -- from a clean state.
+            if self.UnregisterUpdate then self:UnregisterUpdate() end
+            track._exModernHover = nil
+            track._exModernPressed = nil
+            thumb._exModernHover = nil
+            thumb._exModernPressed = nil
+        end)
+    end
+
+    PaintModernScrollBar(scrollBar)
+    return scrollBar
+end
+
+function EXUI:ApplyModernScrollFrame(scrollFrame)
+    if scrollFrame and scrollFrame.ScrollBar then
+        self:ApplyModernScrollBar(scrollFrame.ScrollBar)
+    end
     return scrollFrame
+end
+
+function EXUI:CreateScrollFrame(parent, name)
+    local scrollFrame = CreateFrame("ScrollFrame", name, parent, "ScrollFrameTemplate")
+    scrollFrame:EnableMouseWheel(true)
+    self:ApplyModernScrollFrame(scrollFrame)
+    return scrollFrame
+end
+
+function EXUI:CreateScrollBar(parent, name)
+    local scrollBar = CreateFrame("EventFrame", name, parent, "MinimalScrollBar")
+    self:ApplyModernScrollBar(scrollBar)
+    return scrollBar
 end
 
 function EXUI:StyleDropdownMenuProxy(proxy)
@@ -883,7 +1177,7 @@ end
 if _G.MenuStyleMixin and _G.CreateFromMixins then
     EXUI.ModernMenuStyleMixin = CreateFromMixins(MenuStyleMixin)
     function EXUI.ModernMenuStyleMixin:Generate()
-        local radius = 10
+        local radius = 6
         local u = { 0, (6 + radius) / 256, (250 - radius) / 256, 1 }
         local v = { 0, (23 + radius) / 128, (105 - radius) / 128, 1 }
         local effectiveScale = _G.UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or 1
@@ -912,13 +1206,28 @@ if _G.MenuStyleMixin and _G.CreateFromMixins then
             elseif row == 3 and col == 2 then texture:SetPoint("BOTTOMLEFT", inside, outsideY); texture:SetPoint("BOTTOMRIGHT", -inside, outsideY); texture:SetHeight(pieceHeight)
             else texture:SetPoint("BOTTOMRIGHT", -outsideX, outsideY); texture:SetSize(pieceWidth, pieceHeight) end
         end
+        -- WoW 没有 CSS blur。三层向下扩散的低透明黑底近似
+        -- 0 10px 28px rgba(0,0,0,.55)，只在菜单生成时创建，没有 OnUpdate。
+        for shadowIndex, shadow in ipairs({
+            { x = 14, top = 4, bottom = 20, alpha = 0.10 },
+            { x = 9, top = 2, bottom = 14, alpha = 0.16 },
+            { x = 5, top = 1, bottom = 9, alpha = 0.22 },
+        }) do
+            local texture = self:AttachTexture()
+            texture:SetTexture("Interface\\Buttons\\WHITE8X8")
+            texture:SetPoint("TOPLEFT", -shadow.x, shadow.top)
+            texture:SetPoint("BOTTOMRIGHT", shadow.x, -shadow.bottom)
+            texture:SetVertexColor(0, 0, 0, shadow.alpha)
+            texture:SetDrawLayer("BACKGROUND", -8 + shadowIndex)
+        end
+
         for layer = 1, 2 do
             for row = 1, 3 do
                 for col = 1, 3 do
                     local texture = self:AttachTexture()
                     texture:SetTexture(MODERN_MEDIA .. "FillR10.tga", "CLAMP", "CLAMP", "LINEAR")
                     texture:SetTexCoord(u[col], u[col + 1], v[row], v[row + 1])
-                    texture:SetVertexColor(unpack(layer == 1 and MC.border or MC.raised))
+                    texture:SetVertexColor(unpack(layer == 1 and MC.popupBorder or MC.popup))
                     Anchor(texture, row, col, layer == 2 and physicalPixel or 0)
                 end
             end
@@ -968,7 +1277,7 @@ function EXUI:ApplyControlAppearance(frame)
         }) do
             if frame[key] then frame[key]:Hide() end
         end
-        StyleModernTitle(frame.Title, MC.lightBlue)
+        MODERN.ApplyTextRole(frame.Title, "cardTitle", MC.lightBlue)
         MODERN.ApplyTextRole(frame.Desc, "body", MC.muted)
         if frame.Accent then
             frame.Accent:ClearAllPoints()
@@ -1119,8 +1428,8 @@ local function ResetDropdownMenuScroll(dropdown)
 end
 
 local EnsureDropdownFloatingSearchFrame
-local EXTERNAL_DROPDOWN_SEARCH_HEIGHT = 25
-local EXTERNAL_DROPDOWN_SEARCH_MASK_HEIGHT = 4
+local EXTERNAL_DROPDOWN_SEARCH_HEIGHT = 42
+local MODERN_MENU_ROW_HEIGHT = 28
 
 local function AttachModernMenuSelectionMark(frame, enabled, selected)
     local anchor = frame.leftTexture1
@@ -1130,16 +1439,126 @@ local function AttachModernMenuSelectionMark(frame, enabled, selected)
     -- 单选与多选统一使用青岚菜单原型的独立白色勾号；它不是 Checkbox 控件，
     -- 因此没有方框、底色或圆点，未选中时该预留列保持为空。
     anchor:SetAlpha(0)
-    if frame.leftTexture2 then frame.leftTexture2:SetAlpha(0) end
+    anchor:Hide()
+    if frame.leftTexture2 then
+        frame.leftTexture2:SetAlpha(0)
+        frame.leftTexture2:Hide()
+    end
 
     if selected then
         local check = frame:AttachTexture()
         check:SetTexture(MODERN_MEDIA .. "GlyphCheck.tga", "CLAMP", "CLAMP", "LINEAR")
-        check:SetPoint("CENTER", anchor, "CENTER", 0, 0)
+        check:SetPoint("LEFT", frame, "LEFT", 10, 0)
         check:SetSize(16, 16)
-        check:SetDrawLayer("ARTWORK", 2)
-        check:SetVertexColor(unpack(enabled and MC.text or MC.disabled))
+        check:SetDrawLayer("ARTWORK", 7)
+        check:SetVertexColor(unpack(enabled and MC.blue or MC.disabled))
     end
+end
+
+-- 菜单行不能调用 SetControlSurface：它会清除 Blizzard_Menu 自己的状态贴图，
+-- 并可能让单选圆点重新接管选中标记。这里直接在 compositor 行上附加一层
+-- R4 九宫格，只负责 hover / selected 背景，不碰原生按钮状态与勾号。
+local function AttachModernMenuRowHighlight(frame)
+    if not frame.AttachTexture then return nil end
+
+    local radius, insetX, insetY = 4, 4, 0
+    -- FillR4 的源图左右各有 6px、上下各有 23px 透明 padding。
+    -- 菜单会把 attachment 的实体矩形纳入行尺寸测量，因此这里直接裁掉
+    -- padding，只把实际可见的圆角 4px 区域锚在行框内部。
+    local u = { 6 / 256, (6 + radius) / 256, (250 - radius) / 256, 250 / 256 }
+    local v = { 23 / 128, (23 + radius) / 128, (105 - radius) / 128, 105 / 128 }
+    local insideX, insideY = insetX + radius, insetY + radius
+    local pieces = {}
+
+    for row = 1, 3 do
+        for col = 1, 3 do
+            local texture = frame:AttachTexture()
+            texture:SetTexture(MODERN_MEDIA .. "FillR4.tga", "CLAMP", "CLAMP", "LINEAR")
+            texture:SetTexCoord(u[col], u[col + 1], v[row], v[row + 1])
+            texture:SetDrawLayer("BACKGROUND", 1)
+            if row == 1 and col == 1 then
+                texture:SetPoint("TOPLEFT", frame, "TOPLEFT", insetX, -insetY)
+                texture:SetSize(radius, radius)
+            elseif row == 1 and col == 2 then
+                texture:SetPoint("TOPLEFT", frame, "TOPLEFT", insideX, -insetY)
+                texture:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -insideX, -insetY)
+                texture:SetHeight(radius)
+            elseif row == 1 and col == 3 then
+                texture:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -insetX, -insetY)
+                texture:SetSize(radius, radius)
+            elseif row == 2 and col == 1 then
+                texture:SetPoint("TOPLEFT", frame, "TOPLEFT", insetX, -insideY)
+                texture:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", insetX, insideY)
+                texture:SetWidth(radius)
+            elseif row == 2 and col == 2 then
+                texture:SetPoint("TOPLEFT", frame, "TOPLEFT", insideX, -insideY)
+                texture:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -insideX, insideY)
+            elseif row == 2 and col == 3 then
+                texture:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -insetX, -insideY)
+                texture:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -insetX, insideY)
+                texture:SetWidth(radius)
+            elseif row == 3 and col == 1 then
+                texture:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", insetX, insetY)
+                texture:SetSize(radius, radius)
+            elseif row == 3 and col == 2 then
+                texture:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", insideX, insetY)
+                texture:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -insideX, insetY)
+                texture:SetHeight(radius)
+            else
+                texture:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -insetX, insetY)
+                texture:SetSize(radius, radius)
+            end
+            texture:Hide()
+            pieces[#pieces + 1] = texture
+        end
+    end
+    return pieces
+end
+
+local function RemoveNativeMenuHighlight(frame)
+    local nativeHighlight = frame.highlight or (frame.GetHighlightTexture and frame:GetHighlightTexture())
+    if nativeHighlight then
+        -- 直接清掉黄色 UI-QuestTitleHighlight 的纹理来源；即使外部代码误调用
+        -- Show()，这里也没有任何黄色像素可显示。区域几何仍保留给菜单测量。
+        nativeHighlight:SetTexture(nil)
+        nativeHighlight:SetAlpha(0)
+        nativeHighlight:Hide()
+    end
+end
+
+local function PaintModernMenuRow(frame)
+    RemoveNativeMenuHighlight(frame)
+
+    local pieces = frame._exModernMenuHighlightPieces
+    if not pieces then return end
+    -- hover 与 selected 使用同一浅蓝色相；hover 只提高透明度作区分。
+    local color = frame._exModernMenuHover and MC.menuHover
+        or (frame._exModernMenuSelected and MC.menuSelected or nil)
+    for _, texture in ipairs(pieces) do
+        if color and frame._exModernMenuEnabled then
+            texture:SetVertexColor(unpack(color))
+            texture:Show()
+        else
+            texture:Hide()
+        end
+    end
+    local fontString = frame.fontString or frame.Text
+    if fontString then
+        local textColor = not frame._exModernMenuEnabled and MC.disabled
+            or ((frame._exModernMenuHover or frame._exModernMenuSelected) and MC.lightBlue)
+            or MC.text
+        fontString:SetTextColor(unpack(textColor))
+    end
+end
+
+local function ModernMenuRowOnEnter(frame)
+    frame._exModernMenuHover = true
+    PaintModernMenuRow(frame)
+end
+
+local function ModernMenuRowOnLeave(frame)
+    frame._exModernMenuHover = false
+    PaintModernMenuRow(frame)
 end
 
 local function AttachModernMenuSubmenuArrow(frame, enabled, selected)
@@ -1168,6 +1587,13 @@ local function StyleModernMenuDescription(description, role)
 
         local enabled = not elementDescription.IsEnabled or elementDescription:IsEnabled()
         local selected = elementDescription.IsSelected and elementDescription:IsSelected() == true
+        -- compositor:Clear() 已经把上一轮 AttachTexture 归还资源池；这里只丢弃
+        -- 旧 Lua 引用，绝不能再 Hide() 它们，否则可能误伤本轮刚租出的勾号或图标。
+        frame._exModernMenuHighlightPieces = nil
+        frame._exModernMenuHover = frame.IsMouseMotionFocus and frame:IsMouseMotionFocus() or false
+        if role == "button" and frame.SetHeight and frame.GetHeight then
+            frame:SetHeight(math.max(MODERN_MENU_ROW_HEIGHT, frame:GetHeight() or 0))
+        end
         local fontString = frame.fontString or frame.Text
         if fontString then
             local color = not enabled and MC.disabled
@@ -1177,13 +1603,29 @@ local function StyleModernMenuDescription(description, role)
             fontString:SetFontObject(role == "title" and MODERN.menuFonts.title or MODERN.menuFonts.control)
             fontString:SetTextColor(unpack(color))
             if fontString.SetShadowOffset then fontString:SetShadowOffset(0, 0) end
+            if role == "button" and fontString.ClearAllPoints and fontString.SetPoint then
+                -- 勾号占用 x=10..26；文字固定从 x=34 起，保留 8px 间距。
+                -- 没有 selection 列的普通按钮则使用标准 10px 左内距。
+                fontString:ClearAllPoints()
+                fontString:SetPoint("LEFT", frame, "LEFT", frame.leftTexture1 and 34 or 10, 0)
+                fontString:SetHeight(20)
+            end
         end
 
-        local highlight = frame.highlight or (frame.GetHighlightTexture and frame:GetHighlightTexture())
-        if highlight then
-            highlight:SetTexture("Interface\\Buttons\\WHITE8X8")
-            highlight:SetVertexColor(unpack(MC.hover))
-            highlight:SetAlpha(enabled and 1 or 0)
+        if role == "button" then
+            frame._exModernMenuSelected = selected
+            frame._exModernMenuEnabled = enabled
+            frame._exModernMenuHighlightPieces = AttachModernMenuRowHighlight(frame)
+            -- Blizzard ButtonInitializer 每轮都会把这两个方法重设为显示/隐藏
+            -- UI-QuestTitleHighlight。此 initializer 排在其后，直接替换为唯一的
+            -- 浅蓝 R4 painter；description 自己的 OnEnter/OnLeave、submenu 与 tooltip
+            -- 由 HandleOnEnter/HandleOnLeave 的后续独立步骤执行，不会被跳过。
+            frame.OnEnter = ModernMenuRowOnEnter
+            frame.OnLeave = ModernMenuRowOnLeave
+            PaintModernMenuRow(frame)
+        else
+            frame._exModernMenuSelected = false
+            frame._exModernMenuEnabled = false
         end
 
         AttachModernMenuSelectionMark(frame, enabled, selected)
@@ -1320,7 +1762,7 @@ end
 
 local function SetDropdownDefaultMenuAnchor(dropdown)
     if dropdown and dropdown.SetMenuAnchor and AnchorUtil and AnchorUtil.CreateAnchor then
-        dropdown:SetMenuAnchor(AnchorUtil.CreateAnchor("TOPLEFT", dropdown, "BOTTOMLEFT", 0, 0))
+        dropdown:SetMenuAnchor(AnchorUtil.CreateAnchor("TOPLEFT", dropdown, "BOTTOMLEFT", 0, -4))
     end
 end
 
@@ -1380,35 +1822,11 @@ EnsureDropdownFloatingSearchFrame = function()
     frame:EnableMouse(true)
     frame:SetSize(220, EXTERNAL_DROPDOWN_SEARCH_HEIGHT)
     frame:Hide()
-    EXUI:ApplyModernPanel(frame, true)
-
-    local background = EXUI:CreateVisualTexture(frame, EXBASEFRAME)
-    background:SetAllPoints()
-    background:SetTexture("Interface\\Buttons\\WHITE8X8")
-    background:SetColorTexture(unpack(MC.raised))
-    background:SetAlpha(0)
-    frame.Background = background
-
-    local bottomMask = EXUI:CreateVisualTexture(frame, EXBASEFRAME)
-    bottomMask:SetTexture("Interface\\Buttons\\WHITE8X8")
-    bottomMask:SetColorTexture(unpack(MC.raised))
-    bottomMask:SetPoint("TOPLEFT", frame, "BOTTOMLEFT", 0, 0)
-    bottomMask:SetPoint("TOPRIGHT", frame, "BOTTOMRIGHT", 0, 0)
-    bottomMask:SetHeight(EXTERNAL_DROPDOWN_SEARCH_MASK_HEIGHT)
-    frame.BottomMask = bottomMask
-
-    local topMask = EXUI:CreateVisualTexture(frame, EXBASEFRAME)
-    topMask:SetTexture("Interface\\Buttons\\WHITE8X8")
-    topMask:SetColorTexture(unpack(MC.raised))
-    topMask:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", 0, 0)
-    topMask:SetPoint("BOTTOMRIGHT", frame, "TOPRIGHT", 0, 0)
-    topMask:SetHeight(EXTERNAL_DROPDOWN_SEARCH_MASK_HEIGHT)
-    topMask:Hide()
-    frame.TopMask = topMask
-
+    -- 这个 frame 只承载输入框并覆盖菜单首行占位，本身完全透明。
+    -- 唯一外壳是 Blizzard_Menu 的 popup；搜索区不再另画第二层 panel。
     local searchBox = CreateFrame("EditBox", nil, frame, "BackdropTemplate")
-    searchBox:SetPoint("TOPLEFT", 0, 0)
-    searchBox:SetPoint("BOTTOMRIGHT", 0, 0)
+    searchBox:SetPoint("TOPLEFT", 8, -6)
+    searchBox:SetPoint("BOTTOMRIGHT", -8, 6)
     searchBox:SetAutoFocus(false)
     searchBox:SetMaxLetters(64)
     local searchIcon = EXUI:CreateVisualTexture(searchBox, EXBASEFRAME)
@@ -1417,9 +1835,9 @@ EnsureDropdownFloatingSearchFrame = function()
     searchIcon:SetTexture("Interface\\Common\\UI-Searchbox-Icon")
     searchIcon:SetVertexColor(unpack(MC.muted))
     local instructions = EXUI:CreateVisualFontString(searchBox, EXFONTFRAME)
-    MODERN.ApplyTextRole(instructions, "hint")
+    MODERN.ApplyTextRole(instructions, "fieldValue", MC.muted)
     instructions:SetPoint("LEFT", 26, 0)
-    instructions:SetText(SEARCH)
+    instructions:SetText(L["搜索..."])
     searchBox.Instructions = instructions
     searchBox:SetTextInsets(26, 6, 0, 0)
     local clearBtn = CreateFrame("Button", nil, searchBox)
@@ -1436,7 +1854,18 @@ EnsureDropdownFloatingSearchFrame = function()
     end)
     searchBox.ClearButton = clearBtn
     frame.SearchBox = searchBox
+    searchBox._exModernInputFocusBorder = MC.blue
+    searchBox._exModernInputIdleFill = MC.input
+    searchBox._exModernInputActiveFill = MC.input
+    searchBox._exModernInputHoverBorder = MC.border
     ApplyModernInput(searchBox)
+
+    local divider = EXUI:CreateVisualTexture(frame, EXBORDERFRAME)
+    divider:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 0)
+    divider:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -8, 0)
+    divider:SetHeight(1)
+    divider:SetColorTexture(unpack(MC.border))
+    frame.Divider = divider
 
     function frame:AnchorToDropdown(dropdown)
         self:ClearAllPoints()
@@ -1452,15 +1881,17 @@ EnsureDropdownFloatingSearchFrame = function()
 
         self:SetParent(UIParent)
         if menu and menu.GetTop then
-            self:SetPoint("TOP", menu, "TOP", 0, -4)
+            -- 搜索承载层直接跟随 popup 的左右边界；不要再给它独立最小宽度，
+            -- 否则窄菜单会被搜索框从两侧撑出去。
+            self:SetPoint("TOPLEFT", menu, "TOPLEFT", 0, 0)
+            self:SetPoint("TOPRIGHT", menu, "TOPRIGHT", 0, 0)
         elseif opensUpward then
-            self:SetPoint("BOTTOMLEFT", dropdown, "TOPLEFT", 0, 0)
+            self:SetPoint("BOTTOMLEFT", dropdown, "TOPLEFT", 0, 4)
+            self:SetWidth(math.max(dropdown:GetWidth() or 0, 1))
         else
-            self:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", 0, 0)
+            self:SetPoint("TOPLEFT", dropdown, "BOTTOMLEFT", 0, -4)
+            self:SetWidth(math.max(dropdown:GetWidth() or 0, 1))
         end
-        self:SetWidth(math.max(menu and menu:GetWidth() or 0, dropdown:GetWidth() or 0, 180) * 0.95)
-        self.BottomMask:SetShown(false)
-        self.TopMask:SetShown(opensUpward)
         if menu and menu.GetFrameStrata and menu.GetFrameLevel then
             self:SetFrameStrata(menu:GetFrameStrata())
             self:SetFrameLevel(menu:GetFrameLevel() + 50)
@@ -1477,18 +1908,19 @@ EnsureDropdownFloatingSearchFrame = function()
 
         self.ownerDropdown = dropdown
         self:SetHeight(EXTERNAL_DROPDOWN_SEARCH_HEIGHT)
-        self.SearchBox:SetHeight(EXTERNAL_DROPDOWN_SEARCH_HEIGHT)
+        self.SearchBox:SetHeight(EXTERNAL_DROPDOWN_SEARCH_HEIGHT - 12)
         local menu = dropdown and dropdown.menu
+        self.SearchBox:ClearFocus()
         PaintModernInput(self.SearchBox, self.SearchBox)
         self:AnchorToDropdown(dropdown)
         self:Show()
+        self._suppressSearchChange = true
         self.SearchBox:SetText(dropdown._searchText or "")
+        self._suppressSearchChange = nil
         self.SearchBox:SetCursorPosition(string.len(self.SearchBox:GetText() or ""))
         C_Timer.After(0, function()
             if self:IsShown() and self.ownerDropdown == dropdown then
                 self:AnchorToDropdown(dropdown)
-                self.SearchBox:SetFocus()
-                self.SearchBox:SetCursorPosition(string.len(self.SearchBox:GetText() or ""))
             end
         end)
     end
@@ -1509,6 +1941,7 @@ EnsureDropdownFloatingSearchFrame = function()
         local text = self:GetText() or ""
         if self.Instructions then self.Instructions:SetShown(text == "") end
         if self.ClearButton then self.ClearButton:SetShown(text ~= "") end
+        if frame._suppressSearchChange then return end
         local dropdown = frame.ownerDropdown
         if dropdown then
             RefreshDropdownSearch(dropdown, self:GetText())
@@ -1553,7 +1986,7 @@ local function ConfigureDropdownExternalSearch(dropdown)
     EnsureDropdownSearchHooks(dropdown)
 
     if dropdown.SetMenuAnchor and AnchorUtil and AnchorUtil.CreateAnchor then
-        dropdown:SetMenuAnchor(AnchorUtil.CreateAnchor("TOPLEFT", dropdown, "BOTTOMLEFT", 0, 0))
+        dropdown:SetMenuAnchor(AnchorUtil.CreateAnchor("TOPLEFT", dropdown, "BOTTOMLEFT", 0, -4))
     end
 end
 
@@ -2141,8 +2574,20 @@ function EXUI:CreateButton(parent, width, height, text, onClick, options)
         btn._gridType = "GridButton"
     end
 
-    btn:SetSize(width or 120, height or 32)
-    btn._exButtonVariant = type(options) == "table" and options.variant or "neutral"
+    -- Existing compact utility buttons keep their explicit small footprint.
+    -- Standard text buttons share the minimum and padding; no per-page colors.
+    btn._exButtonCompact = type(options) == "table" and options.compact == true
+    btn._exButtonPainted = nil
+    btn._exButtonKeyboardFocused = nil
+    btn:SetSize(btn._exButtonCompact and width or math.max(BUTTON_STYLE.minWidth, width or 120),
+        btn._exButtonCompact and (height or 32) or math.max(MODERN.metrics.button + BUTTON_STYLE.paddingY * 2, height or 32))
+    local requestedVariant = type(options) == "table" and options.variant or nil
+    -- 旧 soft / neutral 调用继续有效，但统一落到新的“次要按钮”语义。
+    if requestedVariant == "primary" or requestedVariant == "danger" then
+        btn._exButtonVariant = requestedVariant
+    else
+        btn._exButtonVariant = "secondary"
+    end
     if btn.EnableMouse then
         btn:EnableMouse(true)
     end
@@ -2153,8 +2598,20 @@ function EXUI:CreateButton(parent, width, height, text, onClick, options)
         btn:RegisterForClicks("LeftButtonUp")
     end
 
-    self:ApplyControlAppearance(btn)
     btn:SetText(text)
+    self:ApplyControlAppearance(btn)
+    local label = btn:GetFontString()
+    if label then
+        label:ClearAllPoints()
+        if btn._exButtonCompact then
+            label:SetPoint("CENTER", btn, "CENTER")
+        else
+            label:SetPoint("TOPLEFT", btn, "TOPLEFT", BUTTON_STYLE.paddingX, -BUTTON_STYLE.paddingY)
+            label:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -BUTTON_STYLE.paddingX, BUTTON_STYLE.paddingY)
+        end
+        label:SetJustifyH("CENTER")
+        label:SetJustifyV("MIDDLE")
+    end
 
     if onClick then
         btn:SetScript("OnClick", onClick)
@@ -3246,6 +3703,9 @@ local function BindCompositeGroup(host, db, onUpdate, opts)
     if host._exCompositeTitle and host._exCompositeLabel then
         host._exCompositeTitle:SetText(host._exCompositeLabel)
     end
+    if type(host._exCompositeHeaderRefresh) == "function" then
+        host:_exCompositeHeaderRefresh()
+    end
     if type(host._exCompositeConfigure) == "function" then
         host:_exCompositeConfigure()
     end
@@ -3303,6 +3763,228 @@ local function CompositeEmitUpdate(host)
     if host._exCompositeOnUpdate then host._exCompositeOnUpdate(host._exCompositeDb) end
 end
 
+local COMPOSITE_HEADER_FILL = MC.panel -- #1b1e23
+local SETTINGS_CARD_HEADER_HEIGHT = 48
+local SETTINGS_CARD_BODY_PADDING = 12
+
+local function CreateHeaderIconSlot(parent, size)
+    local slot = CreateFrame("Frame", nil, parent)
+    slot:SetSize(size, size)
+    slot:EnableMouse(false)
+    EXUI:SetControlSurface(slot, 4, MC.blue, MC.blue)
+    local icon = EXUI:CreateVisualTexture(slot, EXBASEFRAME)
+    icon:SetPoint("TOPLEFT", 4, -4)
+    icon:SetPoint("BOTTOMRIGHT", -4, 4)
+    icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    icon:Hide()
+    slot._exHeaderIcon = icon
+    return slot
+end
+
+local function SetHeaderIcon(slot, iconPath)
+    local icon = slot and slot._exHeaderIcon
+    if not icon then return end
+    if (type(iconPath) == "string" and iconPath ~= "") or type(iconPath) == "number" then
+        icon:SetTexture(iconPath)
+        icon:Show()
+    else
+        icon:SetTexture(nil)
+        icon:Hide()
+    end
+end
+
+-- Font/Icon 复合组继续保留自身标题时，也与真正的 SettingsCard 共用同一标题语言。
+-- 不声明 headerIcon 时保留纯蓝占位块；这里没有 subtitle，避免页面各自拼小字。
+local function CreateCompositeGroupHeader(host, width)
+    local header = CreateFrame("Frame", nil, host)
+    header:SetPoint("TOPLEFT", host, "TOPLEFT", 1, -1)
+    header:SetSize(math.max(1, width - 2), 39)
+    EXUI:SetControlSurface(header, 10, COMPOSITE_HEADER_FILL, COMPOSITE_HEADER_FILL)
+
+    local squareBottom = EXUI:CreateVisualTexture(header, EXBASEFRAME)
+    squareBottom:SetPoint("BOTTOMLEFT", 0, 0)
+    squareBottom:SetPoint("BOTTOMRIGHT", 0, 0)
+    squareBottom:SetHeight(10)
+    squareBottom:SetColorTexture(unpack(COMPOSITE_HEADER_FILL))
+
+    local divider = EXUI:CreateVisualTexture(header, EXBORDERFRAME)
+    divider:SetPoint("BOTTOMLEFT", 0, 0)
+    divider:SetPoint("BOTTOMRIGHT", 0, 0)
+    divider:SetHeight(1)
+    divider:SetColorTexture(unpack(MC.border))
+
+    local iconSlot = CreateHeaderIconSlot(header, 24)
+    iconSlot:SetPoint("LEFT", 9, 0)
+
+    local title = EXUI:CreateVisualFontString(header, EXFONTFRAME, "GameFontNormalHuge")
+    title:SetPoint("LEFT", iconSlot, "RIGHT", 10, 0)
+    title:SetPoint("RIGHT", header, "RIGHT", -12, 0)
+    title:SetJustifyH("LEFT")
+    MODERN.ApplyTextRole(title, "cardTitle")
+
+    host.labelText = title
+    host._exCompositeTitle = title
+    host._exCompositeHeader = header
+    host._exCompositeHeaderIcon = iconSlot
+    host._exCompositeHeaderRefresh = function(self)
+        title:SetText(self._exCompositeLabel or "")
+        local activeOpts = self._exCompositeOpts or {}
+        SetHeaderIcon(iconSlot, activeOpts.headerIcon)
+    end
+    host:_exCompositeHeaderRefresh()
+    return header, title
+end
+
+-- 真正供 Grid:MountCards 使用的共享卡片。标题、图标占位、折叠状态和高度
+-- 都由这一层拥有；Card body 内的 composite 以 bodyOnly 模式仅渲染内容。
+function EXUI:CreateSettingsCard(parent, options)
+    options = type(options) == "table" and options or {}
+    local card, isNew = AcquireCompositeGroup("CompositeSettingsCard", parent)
+
+    if isNew then
+        local initialWidth = parent and parent.GetWidth and tonumber(parent:GetWidth()) or nil
+        card:SetSize(math.max(64, initialWidth or 320), SETTINGS_CARD_HEADER_HEIGHT)
+        EXUI:SetControlSurface(card, 10, MC.panel, MC.border)
+
+        local header = CreateFrame("Frame", nil, card)
+        header:SetPoint("TOPLEFT", card, "TOPLEFT", 1, -1)
+        header:SetPoint("TOPRIGHT", card, "TOPRIGHT", -1, -1)
+        header:SetHeight(SETTINGS_CARD_HEADER_HEIGHT - 1)
+        EXUI:SetControlSurface(header, 10, COMPOSITE_HEADER_FILL, COMPOSITE_HEADER_FILL)
+
+        local squareBottom = EXUI:CreateVisualTexture(header, EXBASEFRAME)
+        squareBottom:SetPoint("BOTTOMLEFT", 0, 0)
+        squareBottom:SetPoint("BOTTOMRIGHT", 0, 0)
+        squareBottom:SetHeight(10)
+        squareBottom:SetColorTexture(unpack(COMPOSITE_HEADER_FILL))
+
+        local divider = EXUI:CreateVisualTexture(header, EXBORDERFRAME)
+        divider:SetPoint("BOTTOMLEFT", 0, 0)
+        divider:SetPoint("BOTTOMRIGHT", 0, 0)
+        divider:SetHeight(1)
+        divider:SetColorTexture(unpack(MC.border))
+
+        local iconSlot = CreateHeaderIconSlot(header, 30)
+        iconSlot:SetPoint("LEFT", 12, 0)
+
+        local title = EXUI:CreateVisualFontString(header, EXFONTFRAME, "GameFontNormalHuge")
+        title:SetPoint("LEFT", iconSlot, "RIGHT", 12, 0)
+        title:SetPoint("RIGHT", header, "RIGHT", -48, 0)
+        title:SetJustifyH("LEFT")
+        MODERN.ApplyTextRole(title, "cardTitle")
+
+        local toggle = CreateFrame("Button", nil, header)
+        toggle:SetSize(32, 30)
+        toggle:SetPoint("RIGHT", -8, 0)
+        toggle:RegisterForClicks("LeftButtonUp")
+        local glyph = EXUI:CreateVisualFontString(toggle, EXFONTFRAME, "GameFontHighlight")
+        glyph:SetPoint("CENTER", 0, 1)
+        MODERN.ApplyTextRole(glyph, "title", MC.lightBlue)
+        toggle._exGlyph = glyph
+        toggle:SetScript("OnEnter", function(self)
+            self._exGlyph:SetTextColor(unpack(MC.blueHover))
+        end)
+        toggle:SetScript("OnLeave", function(self)
+            self._exGlyph:SetTextColor(unpack(MC.lightBlue))
+        end)
+        toggle:SetScript("OnClick", function()
+            card:SetCollapsed(not card._exSettingsCardCollapsed)
+        end)
+
+        local body = CreateFrame("Frame", nil, card)
+        body:SetPoint("TOPLEFT", card, "TOPLEFT", SETTINGS_CARD_BODY_PADDING,
+            -(SETTINGS_CARD_HEADER_HEIGHT + SETTINGS_CARD_BODY_PADDING))
+        body:SetPoint("TOPRIGHT", card, "TOPRIGHT", -SETTINGS_CARD_BODY_PADDING,
+            -(SETTINGS_CARD_HEADER_HEIGHT + SETTINGS_CARD_BODY_PADDING))
+        body:SetHeight(1)
+
+        card._exSettingsCardHeader = header
+        card._exSettingsCardIcon = iconSlot
+        card._exSettingsCardTitle = title
+        card._exSettingsCardToggle = toggle
+        card._exSettingsCardBody = body
+
+        function card:GetBody()
+            return self._exSettingsCardBody
+        end
+
+        function card:SetLayoutInvalidationHandler(handler)
+            if handler ~= nil and type(handler) ~= "function" then
+                error("SettingsCard layout invalidation handler must be a function or nil", 2)
+            end
+            self._exSettingsCardInvalidation = handler
+        end
+
+        function card:SetContentHeight(height)
+            height = math.max(0, tonumber(height) or 0)
+            local minimum = math.max(0, tonumber(self._exSettingsCardMinBodyHeight) or 0)
+            local maximum = tonumber(self._exSettingsCardMaxBodyHeight)
+            if maximum then height = math.min(height, math.max(minimum, maximum)) end
+            height = math.max(minimum, height)
+            self._exSettingsCardContentHeight = height
+            self._exSettingsCardBody:SetHeight(math.max(1, height))
+            self:SetHeight(self:GetPreferredHeight())
+        end
+
+        function card:GetPreferredHeight()
+            if self._exSettingsCardCollapsed then return SETTINGS_CARD_HEADER_HEIGHT end
+            return SETTINGS_CARD_HEADER_HEIGHT + SETTINGS_CARD_BODY_PADDING
+                + (tonumber(self._exSettingsCardContentHeight) or 0) + SETTINGS_CARD_BODY_PADDING
+        end
+
+        function card:SetCollapsed(collapsed, silent)
+            collapsed = collapsed == true and self._exSettingsCardCollapsible == true
+            local changed = self._exSettingsCardCollapsed ~= collapsed
+            self._exSettingsCardCollapsed = collapsed
+            self._exSettingsCardBody:SetShown(not collapsed)
+            self._exSettingsCardToggle._exGlyph:SetText(collapsed and "v" or "^")
+            self:SetHeight(self:GetPreferredHeight())
+            if changed and silent ~= true and self._exSettingsCardInvalidation then
+                self._exSettingsCardInvalidation(self)
+            end
+            return changed
+        end
+
+        function card:Release()
+            self._exSettingsCardInvalidation = nil
+            self._exSettingsCardBody:Hide()
+            local factory = _G.ExwindFactory
+            if factory and factory.ReleaseCompositeHost then
+                return factory:ReleaseCompositeHost(self)
+            end
+            self:Hide()
+            self:ClearAllPoints()
+            self:SetParent(nil)
+            return true
+        end
+    end
+
+    card._exSettingsCardId = options.id
+    card._exSettingsCardCollapsible = options.collapsible == true
+    card._exSettingsCardMinBodyHeight = math.max(0, tonumber(options.minBodyHeight) or 0)
+    local maximum = tonumber(options.maxBodyHeight)
+    card._exSettingsCardMaxBodyHeight = maximum and math.max(0, maximum) or nil
+    card._exSettingsCardOwnsScroll = options.ownsScroll == true
+    card._exSettingsCardContentHeight = card._exSettingsCardMinBodyHeight
+    card._exSettingsCardInvalidation = nil
+    card._exSettingsCardTitle:SetText(tostring(options.title or ""))
+    SetHeaderIcon(card._exSettingsCardIcon, options.headerIcon or options.icon)
+    card._exSettingsCardToggle:SetShown(card._exSettingsCardCollapsible)
+    card._exSettingsCardBody:Show()
+    card._exSettingsCardBody:SetHeight(math.max(1, card._exSettingsCardContentHeight))
+    -- 有高度上限（或内容自己持有滚动区）时，卡片必须成为真正的裁切边界；
+    -- 否则超高子控件仍会绘制并命中到下一张 Grid 卡片上。
+    if card._exSettingsCardBody.SetClipsChildren then
+        card._exSettingsCardBody:SetClipsChildren(
+            card._exSettingsCardMaxBodyHeight ~= nil or card._exSettingsCardOwnsScroll
+        )
+    end
+    EXUI:SetControlSurface(card, 10, MC.panel, MC.border)
+    EXUI:SetControlSurface(card._exSettingsCardHeader, 10, COMPOSITE_HEADER_FILL, COMPOSITE_HEADER_FILL)
+    card:SetCollapsed(options.collapsed == true, true)
+    return card
+end
+
 function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     db = type(db) == "table" and db or {}
     opts = type(opts) == "table" and opts or {}
@@ -3336,17 +4018,22 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     for field, value in pairs(defaults) do
         if db[field] == nil then db[field] = value end
     end
-    local groupWidth, groupHeight = width or 750, 220
+    local groupWidth = width or 750
+    local narrowLayout = groupWidth < 720
+    -- 窄卡把右侧功能区移到字段下方，避免半宽 SettingsCard 产生负 Slider 宽度。
+    local groupHeight = opts.bodyOnly == true
+        and (narrowLayout and 420 or 204)
+        or (narrowLayout and 460 or 220)
     -- 与 IconGroup 共用同一组层级；两种复合控件只保留内容差异。
     local palette = {
         panel = MC.panel,
         card = MC.raised,
-        utility = MC.input,
+        utility = MC.raised,
         border = MC.border,
         borderSoft = MC.border,
         text = { 0.96, 0.96, 0.97, 1 },
         value = { 0.663, 0.792, 1.000, 1 },
-        accent = { 0.216, 0.416, 0.816, 1 },
+        accent = MC.blue,
     }
     local group, isNew = AcquireCompositeGroup("CompositeFontGroup", parent)
     group._exCompositeLabel = label or L["文字设置"]
@@ -3355,12 +4042,16 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         if group._exSetUnboundedWidthControls then group:_exSetUnboundedWidthControls(opts) end
         AttachCompositeRelease(group)
         ReflowCompositeGroup(group, groupWidth, groupHeight)
-        EXUI:SetControlSurface(group, 10, palette.panel, palette.borderSoft)
+        if opts.bodyOnly == true then
+            EXUI:ClearControlSurface(group)
+        else
+            EXUI:SetControlSurface(group, 10, palette.panel, palette.borderSoft)
+        end
         for _, card in ipairs(group._exFontGroupMetricCards or {}) do
             EXUI:SetControlSurface(card, 10, palette.card, palette.border)
         end
         if group._exFontGroupActionCard then
-            EXUI:SetControlSurface(group._exFontGroupActionCard, 10, palette.utility, { 1, 1, 1, 0.16 })
+            EXUI:SetControlSurface(group._exFontGroupActionCard, 10, palette.utility, palette.border)
         end
         for _, popup in ipairs(group._exCompositePopups or {}) do
             EXUI:SetControlSurface(popup, 10, palette.panel, palette.border)
@@ -3520,38 +4211,31 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         return slider
     end
     group:SetSize(groupWidth, groupHeight)
-    EXUI:SetControlSurface(group, 10, palette.panel, palette.borderSoft)
+    if opts.bodyOnly == true then EXUI:ClearControlSurface(group)
+    else EXUI:SetControlSurface(group, 10, palette.panel, palette.borderSoft) end
 
-    local header = CreateFrame("Frame", nil, group)
-    header:SetSize(groupWidth, 40)
-    header:SetPoint("TOPLEFT")
-    local title = EXUI:CreateVisualFontString(header, EXFONTFRAME, "GameFontNormalHuge")
-    title:SetPoint("LEFT", 15, 0)
-    title:SetText(group._exCompositeLabel)
-    StyleModernTitle(title)
-    group.labelText = title
-    group._exCompositeTitle = title
-    local titleAccent = EXUI:CreateVisualTexture(header, EXBASEFRAME)
-    titleAccent:SetPoint("LEFT", 6, 0)
-    titleAccent:SetSize(3, 21)
-    titleAccent:SetColorTexture(unpack(palette.accent))
+    local header = CreateCompositeGroupHeader(group, groupWidth)
+    header:SetShown(opts.bodyOnly ~= true)
 
     local content = CreateFrame("Frame", nil, group)
-    content:SetSize(groupWidth, groupHeight - 40)
-    content:SetPoint("TOPLEFT", 0, -40)
+    content:SetSize(groupWidth, groupHeight - (opts.bodyOnly == true and 0 or 40))
+    content:SetPoint("TOPLEFT", 0, opts.bodyOnly == true and 0 or -40)
 
     local padding, gap, controlsGap = 15, 12, 18
-    local controlWidth = math.min(416, math.max(364, math.floor(groupWidth * 0.40)))
-    local metricsWidth = groupWidth - padding * 2 - controlsGap - controlWidth
+    local controlWidth = narrowLayout and (groupWidth - padding * 2)
+        or math.min(416, math.max(364, math.floor(groupWidth * 0.40)))
+    local metricsWidth = narrowLayout and (groupWidth - padding * 2)
+        or (groupWidth - padding * 2 - controlsGap - controlWidth)
     local itemWidth = math.floor((metricsWidth - gap) / 2)
     local col1, col2 = padding, padding + itemWidth + gap
     -- 下拉框包含“标题 + 选择框”两层内容；卡片统一加高，
     -- 让三列卡片与右侧功能区的上下边界完整对齐。
     local row1, row2, row3 = -8, -76, -144
     local metricCardHeight = 60
-    local controlX = padding + metricsWidth + controlsGap
+    local controlX = narrowLayout and padding or (padding + metricsWidth + controlsGap)
 
     local sectionHeight = math.abs(row3 - row1) + metricCardHeight
+    local controlY = narrowLayout and (row3 - metricCardHeight - gap) or row1
 
     local function CreateMetricCard(x, y)
         local card = CreateFrame("Frame", nil, content)
@@ -3599,9 +4283,9 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
 
     -- 右侧功能区沿用 IconGroup 的 utility 卡片。
     local controlCard = CreateFrame("Frame", nil, content)
-    controlCard:SetPoint("TOPLEFT", controlX, row1)
+    controlCard:SetPoint("TOPLEFT", controlX, controlY)
     controlCard:SetSize(controlWidth, sectionHeight)
-    EXUI:SetControlSurface(controlCard, 10, palette.utility, { 1, 1, 1, 0.16 })
+    EXUI:SetControlSurface(controlCard, 10, palette.utility, palette.border)
     group._exFontGroupActionCard = controlCard
 
     local showText = self:CreateCheckbox(controlCard, L["显示文字"], db.enabled, function(v)
@@ -3645,7 +4329,7 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         popupTitle:SetPoint("TOPLEFT", 13, -9)
         popupTitle:SetText(titleText)
         StyleModernTitle(popupTitle)
-        local close = self:CreateButton(popup, 28, 24, "×", function() popup:Hide() end)
+        local close = self:CreateButton(popup, 28, 24, "×", function() popup:Hide() end, { compact = true })
         close:SetPoint("TOPRIGHT", -7, -4)
         return popup
     end
@@ -3761,15 +4445,25 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
 
     group._fontGroupDb = proxy
     group._exCompositeReflow = function(self, nextWidth, nextHeight)
-        local nextControlWidth = math.min(416, math.max(364, math.floor(nextWidth * 0.40)))
-        local nextMetricsWidth = nextWidth - padding * 2 - controlsGap - nextControlWidth
+        local nextNarrow = nextWidth < 720
+        local nextControlWidth = nextNarrow and (nextWidth - padding * 2)
+            or math.min(416, math.max(364, math.floor(nextWidth * 0.40)))
+        local nextMetricsWidth = nextNarrow and (nextWidth - padding * 2)
+            or (nextWidth - padding * 2 - controlsGap - nextControlWidth)
         local nextItemWidth = math.floor((nextMetricsWidth - gap) / 2)
         local nextCol2 = padding + nextItemWidth + gap
-        local nextControlX = padding + nextMetricsWidth + controlsGap
+        local nextControlX = nextNarrow and padding or (padding + nextMetricsWidth + controlsGap)
+        local nextControlY = nextNarrow and (row3 - metricCardHeight - gap) or row1
         local nextSliderWidth = nextItemWidth - 20
 
-        header:SetSize(nextWidth, 40)
-        content:SetSize(nextWidth, nextHeight - 40)
+        local bodyOnly = self._exCompositeOpts and self._exCompositeOpts.bodyOnly == true
+        header:SetShown(not bodyOnly)
+        header:SetSize(math.max(1, nextWidth - 2), 39)
+        content:ClearAllPoints()
+        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, bodyOnly and 0 or -40)
+        content:SetSize(nextWidth, nextHeight - (bodyOnly and 0 or 40))
+        if bodyOnly then EXUI:ClearControlSurface(self)
+        else EXUI:SetControlSurface(self, 10, palette.panel, palette.borderSoft) end
         for _, card in ipairs({ colorCard, fontCard, outlineCard }) do card:SetSize(nextItemWidth, metricCardHeight) end
         for _, card in ipairs({ sizeCard, xCard, yCard }) do card:SetSize(nextItemWidth, metricCardHeight) end
         colorCard:ClearAllPoints(); colorCard:SetPoint("TOPLEFT", content, "TOPLEFT", col1, row1)
@@ -3781,7 +4475,7 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         for _, slider in ipairs({ sizeSlider, xSlider, ySlider }) do slider:SetWidth(nextSliderWidth) end
         fontDrop:SetWidth(nextSliderWidth); outlineDrop:SetWidth(nextSliderWidth)
         colorBtn:SetWidth(nextSliderWidth)
-        controlCard:ClearAllPoints(); controlCard:SetPoint("TOPLEFT", content, "TOPLEFT", nextControlX, row1)
+        controlCard:ClearAllPoints(); controlCard:SetPoint("TOPLEFT", content, "TOPLEFT", nextControlX, nextControlY)
         controlCard:SetSize(nextControlWidth, math.abs(row3 - row1) + metricCardHeight)
         local nextButtonWidth = math.min(187, math.floor(nextControlWidth * 0.45))
         local nextAlignmentWidth = math.min(156, math.floor(nextControlWidth * 0.45))
@@ -4618,7 +5312,7 @@ function EXUI:CreateEditBox(parent, text, w, h, labelText, options)
     eb:HookScript("OnMouseWheel", ForwardWheelToPage)
 
     eb:SetAutoFocus(false)
-    MODERN.ApplyTextRole(eb, "control")
+    MODERN.ApplyTextRole(eb, "fieldValue")
     eb:SetText(text or "")
     eb:SetTextInsets(8, 8, 8, 8) -- 增加边距，更有呼吸感
 
@@ -4873,7 +5567,7 @@ function EXUI:CreateItemConfig(parent, width, height, itemID, db, onChange, onDe
                 ExwindTools:UpdateState(moduleKey .. ".ItemConfigDelete", { key = elementKey })
             end
             if type(container._itemOnDelete) == "function" then container._itemOnDelete() end
-        end, { variant = "soft" })
+        end, { variant = "danger", compact = true })
         deleteButton:SetPoint("RIGHT", -5, 0)
         container.delBtn = deleteButton
 
@@ -5122,7 +5816,11 @@ end
 function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
     opts = type(opts) == "table" and opts or {}
     local groupWidth = width or 750
-    local groupHeight = 220
+    local narrowLayout = groupWidth < 720
+    -- 窄卡把功能区移到 2x2 字段下方；宽卡继续保持原来的左右结构。
+    local groupHeight = opts.bodyOnly == true
+        and (narrowLayout and 296 or 150)
+        or (narrowLayout and 336 or 220)
 
     -- [关键修复] 获取嵌套子表，如果不存在则初始化
     db = type(db) == "table" and db or {}
@@ -5147,12 +5845,12 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
     local palette = {
         panel = MC.panel,
         card = MC.raised,
-        utility = MC.input,
+        utility = MC.raised,
         border = MC.border,
         borderSoft = MC.border,
         text = { 0.96, 0.96, 0.97, 1 },
         value = { 0.663, 0.792, 1.000, 1 },
-        accent = { 0.216, 0.416, 0.816, 1 },
+        accent = MC.blue,
     }
 
     local container, isNew = AcquireCompositeGroup("CompositeIconGroup", parent)
@@ -5161,12 +5859,16 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
     if not isNew then
         AttachCompositeRelease(container)
         ReflowCompositeGroup(container, groupWidth, groupHeight)
-        EXUI:SetControlSurface(container, 10, palette.panel, palette.borderSoft)
+        if opts.bodyOnly == true then
+            EXUI:ClearControlSurface(container)
+        else
+            EXUI:SetControlSurface(container, 10, palette.panel, palette.borderSoft)
+        end
         for _, card in ipairs(container._exIconMetricCards or {}) do
             EXUI:SetControlSurface(card, 10, palette.card, palette.border)
         end
         if container._exIconActionCard then
-            EXUI:SetControlSurface(container._exIconActionCard, 10, palette.utility, { 1, 1, 1, 0.16 })
+            EXUI:SetControlSurface(container._exIconActionCard, 10, palette.utility, palette.border)
         end
         for _, popup in ipairs(container._exCompositePopups or {}) do
             EXUI:SetControlSurface(popup, 10, palette.panel, palette.border)
@@ -5346,39 +6048,30 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
     end
 
     container:SetSize(groupWidth, groupHeight)
-    EXUI:SetControlSurface(container, 10, palette.panel, palette.borderSoft)
+    if opts.bodyOnly == true then EXUI:ClearControlSurface(container)
+    else EXUI:SetControlSurface(container, 10, palette.panel, palette.borderSoft) end
 
-    local header = CreateFrame("Frame", nil, container)
-    header:SetSize(groupWidth, 40)
-    header:SetPoint("TOPLEFT")
-
-    local title = EXUI:CreateVisualFontString(header, EXFONTFRAME, "GameFontNormalHuge")
-    title:SetPoint("LEFT", 15, 0)
-    title:SetText(container._exCompositeLabel)
-    StyleModernTitle(title)
-    container.labelText = title
-    container._exCompositeTitle = title
-
-    local titleAccent = EXUI:CreateVisualTexture(header, EXBASEFRAME)
-    titleAccent:SetPoint("LEFT", 6, 0)
-    titleAccent:SetSize(3, 21)
-    titleAccent:SetColorTexture(unpack(palette.accent))
+    local header = CreateCompositeGroupHeader(container, groupWidth)
+    header:SetShown(opts.bodyOnly ~= true)
 
     local content = CreateFrame("Frame", nil, container)
-    content:SetSize(groupWidth, groupHeight - 40)
-    content:SetPoint("TOPLEFT", 0, -40)
+    content:SetSize(groupWidth, groupHeight - (opts.bodyOnly == true and 0 or 40))
+    content:SetPoint("TOPLEFT", 0, opts.bodyOnly == true and 0 or -40)
 
     -- 左侧默认是 2x2 几何滑条；不需要模块局部图标偏移时可显式隐藏
     -- Position 控件，根锚点仍是该模块唯一的位置来源。
     local padding, gap = 15, 12
     local controlsGap = 18
-    local controlWidth = math.min(416, math.max(364, math.floor(groupWidth * 0.40)))
-    local metricsWidth = groupWidth - padding * 2 - controlsGap - controlWidth
+    local controlWidth = narrowLayout and (groupWidth - padding * 2)
+        or math.min(416, math.max(364, math.floor(groupWidth * 0.40)))
+    local metricsWidth = narrowLayout and (groupWidth - padding * 2)
+        or (groupWidth - padding * 2 - controlsGap - controlWidth)
     local itemWidth = math.floor((metricsWidth - gap) / 2)
     local col1 = padding
     local col2 = col1 + itemWidth + gap
     local row1, row2 = -8, -78
-    local controlX = padding + metricsWidth + controlsGap
+    local controlX = narrowLayout and padding or (padding + metricsWidth + controlsGap)
+    local controlY = narrowLayout and (row2 - 64 - gap) or row1
 
     -- 每个几何参数保留独立深色卡片，避免滑条直接裸排在内容区。
     local function CreateMetricCard(x, y)
@@ -5419,9 +6112,9 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
 
     -- 四项功能控制区：每一行左侧开关、右侧对应设置按钮。
     local actionCard = CreateFrame("Frame", nil, content)
-    actionCard:SetPoint("TOPLEFT", controlX, row1)
+    actionCard:SetPoint("TOPLEFT", controlX, controlY)
     actionCard:SetSize(controlWidth, math.abs(row2 - row1) + 64)
-    EXUI:SetControlSurface(actionCard, 10, palette.utility, { 1, 1, 1, 0.16 })
+    EXUI:SetControlSurface(actionCard, 10, palette.utility, palette.border)
     container._exIconActionCard = actionCard
 
     local cbShow = EXUI:CreateCheckbox(actionCard, L["显示图标"], iconDb.showIcon, function(v)
@@ -5456,7 +6149,7 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
 
         local close = EXUI:CreateButton(popup, 28, 24, "×", function()
             popup:Hide()
-        end)
+        end, { compact = true })
         close:SetPoint("TOPRIGHT", -7, -4)
         return popup
     end
@@ -5671,15 +6364,25 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
     container._exCompositePopups = { appearancePopup, cropPopup, borderPopup, countdownPopup }
     container._iconGroupDb = iconDb
     container._exCompositeReflow = function(self, nextWidth, nextHeight)
-        local nextControlWidth = math.min(416, math.max(364, math.floor(nextWidth * 0.40)))
-        local nextMetricsWidth = nextWidth - padding * 2 - controlsGap - nextControlWidth
+        local nextNarrow = nextWidth < 720
+        local nextControlWidth = nextNarrow and (nextWidth - padding * 2)
+            or math.min(416, math.max(364, math.floor(nextWidth * 0.40)))
+        local nextMetricsWidth = nextNarrow and (nextWidth - padding * 2)
+            or (nextWidth - padding * 2 - controlsGap - nextControlWidth)
         local nextItemWidth = math.floor((nextMetricsWidth - gap) / 2)
         local nextCol2 = padding + nextItemWidth + gap
-        local nextControlX = padding + nextMetricsWidth + controlsGap
+        local nextControlX = nextNarrow and padding or (padding + nextMetricsWidth + controlsGap)
+        local nextControlY = nextNarrow and (row2 - 64 - gap) or row1
         local nextSliderWidth = nextItemWidth - 20
 
-        header:SetSize(nextWidth, 40)
-        content:SetSize(nextWidth, nextHeight - 40)
+        local bodyOnly = self._exCompositeOpts and self._exCompositeOpts.bodyOnly == true
+        header:SetShown(not bodyOnly)
+        header:SetSize(math.max(1, nextWidth - 2), 39)
+        content:ClearAllPoints()
+        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, bodyOnly and 0 or -40)
+        content:SetSize(nextWidth, nextHeight - (bodyOnly and 0 or 40))
+        if bodyOnly then EXUI:ClearControlSurface(self)
+        else EXUI:SetControlSurface(self, 10, palette.panel, palette.borderSoft) end
         local metricCards = { widthCard, heightCard }
         if xCard then metricCards[#metricCards + 1] = xCard end
         if yCard then metricCards[#metricCards + 1] = yCard end
@@ -5692,7 +6395,7 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
         if sPosX then metricSliders[#metricSliders + 1] = sPosX end
         if sPosY then metricSliders[#metricSliders + 1] = sPosY end
         for _, slider in ipairs(metricSliders) do slider:SetWidth(nextSliderWidth) end
-        actionCard:ClearAllPoints(); actionCard:SetPoint("TOPLEFT", content, "TOPLEFT", nextControlX, row1)
+        actionCard:ClearAllPoints(); actionCard:SetPoint("TOPLEFT", content, "TOPLEFT", nextControlX, nextControlY)
         actionCard:SetSize(nextControlWidth, math.abs(row2 - row1) + 64)
         local nextButtonWidth = math.min(187, math.floor(nextControlWidth * 0.45))
         appearanceButton:SetWidth(nextButtonWidth); borderButton:SetWidth(nextButtonWidth)
@@ -5994,7 +6697,7 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
         local popupTitle = EXUI:CreateVisualFontString(popup, EXFONTFRAME, "GameFontHighlight")
         popupTitle:SetPoint("TOPLEFT", 13, -9); popupTitle:SetText(titleText)
         StyleModernTitle(popupTitle)
-        local close = EXUI:CreateButton(popup, 28, 24, "×", function() popup:Hide() end)
+        local close = EXUI:CreateButton(popup, 28, 24, "×", function() popup:Hide() end, { compact = true })
         close:SetPoint("TOPRIGHT", -7, -4)
         popupList[#popupList + 1] = popup
         return popup
@@ -6908,7 +7611,7 @@ function EXUI:CreateModuleCommonSettingsGroup(parent, width, label, db, key, onU
                     if type(self._exCompositeOpts.onStructureChanged) == "function" then
                         self._exCompositeOpts.onStructureChanged(structureResult)
                     end
-                end)
+                end, { variant = field.variant })
                 control:SetPoint("TOPLEFT", 10, -16)
                 kind = "button"
             elseif field.type == "checkbox" then
@@ -7427,7 +8130,7 @@ function EXUI:CreateAuraChildElementsGroup(parent, width, label, db, key, onUpda
     for index, child in ipairs(target.children) do
         local prefix = "children." .. tostring(index)
         fields[#fields + 1] = { path = prefix .. ".enabled", type = "checkbox", label = (child.type == "glow" and L["发光"] or L["文本"]) .. L[" 子元素 "] .. tostring(index) .. L[" · 启用"] }
-        fields[#fields + 1] = { type = "button", label = L["删除 子元素 "] .. tostring(index), onClick = function(activeTarget)
+        fields[#fields + 1] = { type = "button", variant = "danger", label = L["删除 子元素 "] .. tostring(index), onClick = function(activeTarget)
             if type(activeTarget.children) == "table" then table.remove(activeTarget.children, index) end
         end }
         if child.type == "glow" then
@@ -7464,15 +8167,29 @@ end
 -- 标准组合控件的无副作用 Grid 测量。数值与各 Create*Group 的实际 SetSize
 -- 完全一致；将来修改控件高度时，必须同时改这里或改成共享常量，不能让 schema
 -- 猜测内部控件树的高度。
-local function FixedGridMeasure(height)
-    return function()
-        return { minHeight = height, preferredHeight = height }
+local function FixedGridMeasure(height, bodyOnlyHeight)
+    return function(_, opts)
+        local measured = height
+        if bodyOnlyHeight and type(opts) == "table" and opts.bodyOnly == true then
+            measured = bodyOnlyHeight
+        end
+        return { minHeight = measured, preferredHeight = measured }
     end
 end
 
 EXUI:RegisterGridComponentMeasure("slider", FixedGridMeasure(EXUI.GridSliderHeight))
-EXUI:RegisterGridComponentMeasure("fontgroup", FixedGridMeasure(220))
-EXUI:RegisterGridComponentMeasure("icongroup", FixedGridMeasure(220))
+EXUI:RegisterGridComponentMeasure("fontgroup", function(width, opts)
+    local bodyOnly = type(opts) == "table" and opts.bodyOnly == true
+    local narrow = (tonumber(width) or 750) < 720
+    local height = narrow and (bodyOnly and 420 or 460) or (bodyOnly and 204 or 220)
+    return { minHeight = height, preferredHeight = height }
+end)
+EXUI:RegisterGridComponentMeasure("icongroup", function(width, opts)
+    local bodyOnly = type(opts) == "table" and opts.bodyOnly == true
+    local narrow = (tonumber(width) or 750) < 720
+    local height = narrow and (bodyOnly and 296 or 336) or (bodyOnly and 150 or 220)
+    return { minHeight = height, preferredHeight = height }
+end)
 EXUI:RegisterGridComponentMeasure("timerbargroup", FixedGridMeasure(282))
 EXUI:RegisterGridComponentMeasure("texturegroup", FixedGridMeasure(250))
 EXUI:RegisterGridComponentMeasure("anchorgroup", FixedGridMeasure(92))
@@ -7836,9 +8553,7 @@ function EXUI:CreateStandardModulePage(options)
         self.contentFrame = contentFrame
         if self.scrollFrame then return end
 
-        local scrollFrame = CreateFrame("ScrollFrame", nil, contentFrame, "ScrollFrameTemplate")
-        scrollFrame:EnableMouseWheel(true)
-        EXUI:ApplyModernScrollFrame(scrollFrame)
+        local scrollFrame = EXUI:CreateScrollFrame(contentFrame)
         if self.applyScrollSkin then self.applyScrollSkin(scrollFrame) end
         local scrollChild = CreateFrame("Frame", nil, scrollFrame)
         scrollChild:SetHeight(1)
@@ -8044,21 +8759,19 @@ function EXUI:CreateShowcaseWindow(options)
     MODERN.ApplyTextRole(subtitle, "hint")
     frame.subtitle = subtitle
 
-    local close = self:CreateButton(frame, 32, 30, "×", function() frame:Hide() end, { variant = "soft" })
+    local close = self:CreateButton(frame, 32, 30, "×", function() frame:Hide() end, { variant = "soft", compact = true })
     close:SetPoint("TOPRIGHT", -16, -15)
 
     local divider = self:CreateSeparator(frame, 1076)
     divider:SetPoint("TOPLEFT", 22, -63)
 
-    local scroll = CreateFrame("ScrollFrame", nil, frame, "UIPanelScrollFrameTemplate")
+    local scroll = self:CreateScrollFrame(frame)
     scroll:SetPoint("TOPLEFT", 20, -78)
     scroll:SetPoint("BOTTOMRIGHT", -38, 20)
-    scroll:EnableMouseWheel(true)
     scroll:SetScript("OnMouseWheel", function(self, delta)
         local range = self:GetVerticalScrollRange() or 0
         self:SetVerticalScroll(math.max(0, math.min(range, self:GetVerticalScroll() - delta * 44)))
     end)
-    self:ApplyModernScrollFrame(scroll)
     local child = CreateFrame("Frame", nil, scroll)
     child:SetSize(1038, 1)
     child:SetPoint("TOPLEFT")

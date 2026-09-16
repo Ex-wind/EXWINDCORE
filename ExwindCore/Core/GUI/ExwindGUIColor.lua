@@ -1,10 +1,10 @@
 -- =========================================================
 -- ExwindGUIColor.lua
--- EXWIND 自有 GUI 固定颜色的唯一来源。
+-- EXWIND 设置 GUI / 插件配置面板固定颜色的唯一来源。
 --
 -- 其它文件只能引用本文件公开的语义 token；不得复制 RGB/RGBA、
 -- 十六进制颜色、文字颜色转义、模块 palette 或 fallback 主题常量。
--- 游戏返回的职业/品质色、用户自选色和运行时计算色不属于固定主题色。
+-- 游戏返回的职业/品质色、用户自选色、业务显示和运行时计算色不属于本文件范围。
 -- =========================================================
 
 local ExwindTools = _G.ExwindTools
@@ -25,7 +25,6 @@ end
 local Color = {}
 
 Color.Transparent = RGBA("000000", 0)
-Color.TransparentWhite = RGBA("ffffff", 0)
 Color.White = RGBA("ffffff")
 
 Color.Surface = {
@@ -37,22 +36,28 @@ Color.Surface = {
     Card = RGBA("22262c"),
     Input = RGBA("17191d"),
     ControlHover = RGBA("2a3038"),
-    Menu = RGBA("2a2f36"),
+    Menu = RGBA("1c2026"),
 }
 
 Color.Border = {
     Default = RGBA("343a42"),
+    CardHover = RGBA("3d444d"),
     Interactive = RGBA("4a525c"),
     Hover = RGBA("6f7680"),
     Strong = RGBA("5f6873"),
+    Popup = RGBA("525a65"),
+    PopupSearch = RGBA("2e343c"),
+    PopupDivider = RGBA("2a2f36"),
 }
 Color.Border.Transparent = Color.Transparent
 
 Color.Text = {
     Primary = RGBA("eceef1"),
     Secondary = RGBA("a7adb5"),
+    Placeholder = RGBA("6f7680"),
     ButtonSecondary = RGBA("d5d9de"),
     ButtonPressed = RGBA("b8bec5"),
+    MenuSelected = RGBA("cbe7ff"),
     Inverse = RGBA("0f1a24"),
     Disabled = RGBA("5f666f"),
     Danger = RGBA("f6a5a5"),
@@ -81,12 +86,20 @@ Color.Disabled = {
 }
 
 Color.Control = {
+    Card = {
+        Fill = Color.Surface.Card,
+        Border = Color.Border.Default,
+        HoverBorder = Color.Border.CardHover,
+    },
     Input = {
         Fill = Color.Surface.Input,
         Border = Color.Border.Default,
         HoverBorder = Color.Border.Interactive,
         FocusBorder = Color.Accent.Primary,
         Text = Color.Text.Primary,
+        Placeholder = Color.Text.Placeholder,
+        DisabledFill = RGBA("1a1c20"),
+        DisabledBorder = Color.Surface.PanelDivider,
         DisabledText = Color.Text.Disabled,
     },
     Checkbox = {
@@ -109,7 +122,10 @@ Color.Control = {
     },
     Slider = {
         Track = RGBA("363c44"),
+        HoverTrack = Color.Border.CardHover,
         Thumb = Color.Accent.Primary,
+        HoverThumb = Color.Accent.PrimaryHover,
+        PressedThumb = Color.Accent.PrimaryPressed,
         Disabled = Color.Text.Disabled,
     },
     ScrollBar = {
@@ -127,8 +143,12 @@ Color.Control = {
         OpenBorder = Color.Accent.Primary,
         Text = Color.Text.Primary,
         Icon = Color.Text.Secondary,
-        IconHover = Color.Accent.Primary,
-        Disabled = Color.Text.Disabled,
+        IconHover = Color.Text.Primary,
+        IconOpen = Color.Accent.Primary,
+        DisabledFill = RGBA("1a1c20"),
+        DisabledBorder = Color.Surface.PanelDivider,
+        DisabledText = Color.Text.Disabled,
+        DisabledIcon = Color.Text.Disabled,
     },
     Button = {
         Primary = {
@@ -170,10 +190,17 @@ Color.Control = {
     },
     Menu = {
         Fill = Color.Surface.Menu,
-        Border = Color.Border.Interactive,
-        Selected = RGBA("a8d8ff", 0.18),
-        Hover = RGBA("a8d8ff", 0.26),
-        Check = Color.White,
+        Border = Color.Border.Popup,
+        SearchFill = RGBA("16191e"),
+        SearchBorder = Color.Border.PopupSearch,
+        SearchFocusBorder = Color.Accent.Primary,
+        Divider = Color.Border.PopupDivider,
+        ItemText = Color.Text.Primary,
+        Hover = White05,
+        Selected = RGBA("a8d8ff", 0.14),
+        SelectedHover = RGBA("a8d8ff", 0.20),
+        SelectedText = Color.Text.MenuSelected,
+        Check = Color.Accent.Primary,
     },
     PanelHeader = {
         Fill = Color.Surface.PanelHeader,
@@ -182,6 +209,8 @@ Color.Control = {
         Text = Color.Text.PanelTitle,
         HoverText = Color.Text.PanelTitleHover,
         Icon = Color.Accent.Primary,
+        Chevron = Color.Text.Secondary,
+        ChevronHover = Color.Text.Primary,
     },
 }
 
@@ -195,8 +224,6 @@ Color.Status = {
     Info = Color.Accent.Primary,
     Gold = RGBA("ffd100"),
     Brand = RGBA("a330c9"),
-    Debug = RGBA("ff9900"),
-    Diagnostic = RGBA("88ff00"),
 }
 Color.Status.Pending = Color.Status.Warning
 Color.Status.Inactive = Color.Text.Disabled
@@ -205,26 +232,15 @@ Color.Status.Muted = Color.Text.Secondary
 -- Fixed alpha variants are also centralized. Callers must not combine a
 -- central RGB token with their own literal alpha for a fixed UI state.
 Color.Overlay = {
-    Page35 = RGBA("14161a", 0.35),
     Page80 = RGBA("14161a", 0.80),
-    Page95 = RGBA("14161a", 0.95),
-    Page98 = RGBA("14161a", 0.98),
     Panel90 = RGBA("1b1e23", 0.90),
     Panel94 = RGBA("1b1e23", 0.94),
     Panel96 = RGBA("1b1e23", 0.96),
-    Card95 = RGBA("22262c", 0.95),
     White05 = White05,
-    White08 = RGBA("ffffff", 0.08),
-    White10 = RGBA("ffffff", 0.10),
     White16 = RGBA("ffffff", 0.16),
     White20 = RGBA("ffffff", 0.20),
     Black60 = RGBA("000000", 0.60),
     Black80 = RGBA("000000", 0.80),
-    Accent12 = RGBA("a8d8ff", 0.12),
-    Accent18 = RGBA("a8d8ff", 0.18),
-    Accent20 = RGBA("a8d8ff", 0.20),
-    Accent40 = RGBA("a8d8ff", 0.40),
-    Success18 = RGBA("21c45e", 0.18),
 }
 
 Color.Shadow = {
@@ -234,8 +250,6 @@ Color.Shadow = {
 }
 
 Color.Icon = {
-    Opaque = Color.White,
-    Hidden = Color.TransparentWhite,
     Header = Color.Accent.Primary,
     Sound = {
         Default = Color.Text.ButtonPressed,
@@ -265,10 +279,6 @@ Color.Preview = {
     Grid = Color.Overlay.White05,
     Axis = Color.Overlay.White20,
 }
-
-Color.Preview.NameplateHealth = { 0.78, 0.08, 0.08, 1 }
-Color.Preview.NameplateBackground = { 0.08, 0.08, 0.08, 1 }
-Color.Preview.NameplateBorder = RGBA("000000")
 
 Color.Editor = {
     SelectionFill = RGBA("a8d8ff", 0.10),
@@ -328,59 +338,13 @@ Color.Changelog = {
     Tab = Color.Surface.PanelHeader,
     TabHover = Color.Surface.PanelHeaderHover,
     TabSelected = Color.Surface.Card,
+    Link = Color.Accent.Primary,
 }
 
 Color.DynamicFallback = {
     Text = Color.Text.Primary,
-    Class = Color.Text.Primary,
     Border = Color.Border.Default,
     Fill = Color.Surface.Input,
-}
-
-Color.Chat = {
-    Brand = Color.Status.Brand,
-    Debug = Color.Status.Debug,
-    Diagnostic = Color.Status.Diagnostic,
-    Success = Color.Status.Success,
-    Warning = Color.Status.Warning,
-    Error = Color.Status.Error,
-}
-
-Color.Gameplay = {
-    SpellLink = Color.Accent.Primary,
-    FiveSecondMarker = RGBA("ffe659", 0.85),
-    HealthDanger = RGBA("ff0000"),
-    HealthWarning = RGBA("ffff00"),
-    HealthHealthy = RGBA("00ff00"),
-    ComparisonMarker = { 1, 0.85, 0, 1 },
-}
-
-Color.VoiceScheme = {
-    Tank = RGBA("c69b6c"),
-    Heal = RGBA("5fff9d"),
-    Target = RGBA("ff3b30"),
-    Cooldown = Color.White,
-    Mechanic = RGBA("da5bff"),
-    CustomDefault = { 1.00, 0.82, 0.25, 1 },
-    Extra = {
-        { 0.35, 0.72, 1.00, 1 },
-        { 1.00, 0.58, 0.25, 1 },
-        { 0.78, 0.64, 1.00, 1 },
-    },
-    LegacyCooldown = RGBA("a5afa2"),
-}
-
-Color.Creature = {
-    Normal = Color.Text.Primary,
-    Elite = Color.Status.Warning,
-    Boss = Color.Status.Danger,
-}
-
-Color.Stat = {
-    Crit = Color.Status.Danger,
-    Haste = Color.Status.Success,
-    Mastery = Color.Status.Brand,
-    Versatility = Color.Accent.Primary,
 }
 
 Color.Composite = {
@@ -389,29 +353,6 @@ Color.Composite = {
     Utility = Color.Surface.Card,
     Text = Color.Text.Primary,
     Value = Color.Accent.Primary,
-}
-
-Color.GlassDemo = {
-    LabelShadow = RGBA("000000", 0.70),
-    MessageShadow = RGBA("000000", 0.18),
-    Greeting = RGBA("e6e6e3"),
-    Message = RGBA("f7f7f5"),
-    Dismiss = RGBA("f2f2f0"),
-    ControlTop = RGBA("1f1f1f", 0.93),
-    ControlBottom = RGBA("121212", 0.93),
-    BodyTop = RGBA("4a4a47"),
-    BodyBottom = RGBA("30302e"),
-    CapsuleTop = RGBA("52524d"),
-    CapsuleBottom = RGBA("474742"),
-    RimTop = RGBA("f0f0e8"),
-    RimBottom = RGBA("d1d1c9"),
-    CapsuleRimTop = RGBA("fafaf0"),
-    CapsuleRimBottom = RGBA("e6e6de"),
-    Light = RGBA("edede3"),
-    DismissHover = RGBA("fffffa"),
-    CapsuleHoverTop = RGBA("70706b"),
-    CapsuleHoverBottom = RGBA("5c5c57"),
-    Hint = RGBA("c2c2bd"),
 }
 
 -- Compatibility views are declared here, never reconstructed by consumers.
@@ -450,6 +391,7 @@ Color.EXUI = {
     text = Color.Text.Primary,
     muted = Color.Text.Secondary,
     disabled = Color.Text.Disabled,
+    placeholder = Color.Text.Placeholder,
     blue = Color.Accent.Primary,
     blueHover = Color.Accent.PrimaryHover,
     primaryHover = Color.Accent.PrimaryHover,
@@ -461,8 +403,15 @@ Color.EXUI = {
     sliderTrack = Color.Control.Slider.Track,
     popup = Color.Control.Menu.Fill,
     popupBorder = Color.Control.Menu.Border,
+    popupSearch = Color.Control.Menu.SearchFill,
+    popupSearchBorder = Color.Control.Menu.SearchBorder,
+    popupSearchFocus = Color.Control.Menu.SearchFocusBorder,
+    popupDivider = Color.Control.Menu.Divider,
     menuSelected = Color.Control.Menu.Selected,
+    menuSelectedHover = Color.Control.Menu.SelectedHover,
+    menuSelectedText = Color.Control.Menu.SelectedText,
     menuHover = Color.Control.Menu.Hover,
+    menuCheck = Color.Control.Menu.Check,
     primaryFill = Color.Control.Button.Primary.Fill,
     primaryText = Color.Control.Button.Primary.Text,
     secondaryBorder = Color.Control.Button.Secondary.Border,
@@ -503,14 +452,6 @@ end
 function Color.WrapDynamicRGB(r, g, b, text)
     return string.format("|cff%02x%02x%02x%s|r",
         ClampByte(r), ClampByte(g), ClampByte(b), tostring(text or ""))
-end
-
-function Color.WrapDynamicHex(hex, text)
-    local value = tostring(hex or ""):gsub("^#", ""):gsub("^|c", "")
-    if string.len(value) == 6 then value = "ff" .. value end
-    assert(string.len(value) == 8 and not string.find(value, "[^%x]"),
-        "WrapDynamicHex requires a six- or eight-digit dynamic color")
-    return "|c" .. value .. tostring(text or "") .. "|r"
 end
 
 function Color.StripTextColor(text)

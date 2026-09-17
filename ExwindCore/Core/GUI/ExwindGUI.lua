@@ -246,6 +246,7 @@ local MODERN = {
         exclude = { 0.933, 0.443, 0.502, 1 },
     },
     metrics = {
+        pageTitle = 24,
         title = 15,
         cardTitle = 18,
         section = 15,
@@ -260,6 +261,19 @@ local MODERN = {
 EXUI.ModernTheme = MODERN
 EXUI.ControlAppearance = MODERN
 local MC = MODERN.colors
+
+local function CompositeThemeColor(base, overlay, alphaOverride)
+    local alpha = alphaOverride or overlay[4] or 1
+    return {
+        overlay[1] * alpha + base[1] * (1 - alpha),
+        overlay[2] * alpha + base[2] * (1 - alpha),
+        overlay[3] * alpha + base[3] * (1 - alpha),
+        1,
+    }
+end
+
+local SETTINGS_PILL_SELECTED_FILL = CompositeThemeColor(MC.input, MC.menuSelected)
+local SETTINGS_PILL_SELECTED_HOVER_FILL = CompositeThemeColor(MC.input, MC.menuSelectedHover)
 
 -- Blizzard_Menu compositor proxies deliberately disallow FontString:SetFont.
 -- Build the two menu typography roles while this file is loading, then menu
@@ -377,6 +391,7 @@ function MODERN.Font(region, size, color, flags, template)
 end
 
 MODERN.typography = {
+    pageTitle = { size = MODERN.metrics.pageTitle, color = MC.text, template = "GameFontHighlight" },
     title = { size = MODERN.metrics.title, color = MC.text, template = "GameFontHighlight" },
     cardTitle = { size = MODERN.metrics.cardTitle, color = MC.text, template = "GameFontHighlight" },
     body = { size = MODERN.metrics.text, color = MC.text, template = "GameFontHighlight" },
@@ -891,7 +906,34 @@ local function ApplyModernDropdown(frame)
     PaintModernDropdown(frame)
 end
 
-local function PaintModernCheckbox(container)
+local function IsCursorInsideFrame(frame)
+    if not frame or not frame.IsVisible or not frame:IsVisible() then return false end
+    local left, right, top, bottom = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
+    if not left or not right or not top or not bottom or not _G.GetCursorPosition then
+        return frame.IsMouseOver and frame:IsMouseOver() or false
+    end
+    local scale = frame.GetEffectiveScale and frame:GetEffectiveScale() or 1
+    if type(scale) ~= "number" or scale <= 0 then scale = 1 end
+    local cursorX, cursorY = _G.GetCursorPosition()
+    cursorX, cursorY = cursorX / scale, cursorY / scale
+    if cursorX < left or cursorX > right or cursorY < bottom or cursorY > top then return false end
+    -- The coordinate test immediately rejects a pill which moved away during
+    -- this layout pass. Mouse foci then preserve native clipping/occlusion and
+    -- child hit semantics instead of treating the raw rectangle as sufficient.
+    if _G.GetMouseFoci then
+        for _, focus in ipairs(_G.GetMouseFoci()) do
+            local region = focus
+            while region do
+                if region == frame then return true end
+                region = region.GetParent and region:GetParent() or nil
+            end
+        end
+        return false
+    end
+    return frame.IsMouseOver and frame:IsMouseOver() or false
+end
+
+local function PaintModernCheckbox(container, skipPillMeasure)
     local box = container.checkbox
     if not box then return end
     HideControlSkin(box)
@@ -899,6 +941,111 @@ local function PaintModernCheckbox(container)
     local hover = enabled and box._exModernHover
     local pressed = enabled and box._exModernPressed
     local fill, edge
+    if container._exSettingsPresentation == "pill" then
+        if box._exModernSwitchKnob then box._exModernSwitchKnob:Hide() end
+        local surface = box._exModernCheckSurface
+        local visualLabel = box._exSettingsPillLabel
+        if visualLabel and not skipPillMeasure then
+            visualLabel:SetText(container.label and container.label:GetText() or "")
+            local labelWidth = visualLabel.GetUnboundedStringWidth
+                and math.ceil(visualLabel:GetUnboundedStringWidth() or 0) or 0
+            local naturalWidth = math.max(40, labelWidth + (selected and 44 or 24))
+            local previousWidth = container._exSettingsPillNaturalWidth
+            container._exSettingsPillNaturalWidth = naturalWidth
+            if previousWidth ~= nil and previousWidth ~= naturalWidth then
+                -- Keep the old complete visual until Grid can commit the new
+                -- width and right-aligned point together in its layout pass.
+                -- Painting the checked state at the old point would expose a
+                -- one-frame intermediate state during the click.
+                container._exSettingsPillVisualPending = true
+                local grid = _G.ExwindGrid
+                local parent = container:GetParent()
+                local willRelayout = grid and grid.RequestReflow and grid:RequestReflow(parent) or false
+                if not willRelayout and grid and grid.GetSettingsListSession then
+                    local list = grid:GetSettingsListSession(parent)
+                    if list then
+                        willRelayout = true
+                        list:Relayout(nil, true)
+                    end
+                end
+                if willRelayout then return end
+                container._exSettingsPillVisualPending = nil
+            elseif container._exSettingsPillVisualPending then
+                return
+            end
+        end
+        surface:ClearAllPoints()
+        surface:SetAllPoints(box)
+        if not enabled then
+            fill, edge = MC.disabledFill, MC.disabledBorder
+        elseif selected then
+            fill = hover and SETTINGS_PILL_SELECTED_HOVER_FILL or SETTINGS_PILL_SELECTED_FILL
+            edge = hover and MC.primaryHover or MC.focus
+        else
+            fill = hover and MC.hover or MC.input
+            edge = hover and MC.inputHoverBorder or MC.border
+        end
+        EXUI:SetControlSurface(surface, 10, fill, edge)
+        box._exModernCheckMark:ClearAllPoints()
+        box._exModernCheckMark:SetPoint("LEFT", surface, "LEFT", 12, 0)
+        box._exModernCheckMark:SetSize(14, 14)
+        box._exModernCheckMark:SetShown(selected)
+        box._exModernCheckMark:SetVertexColor(unpack(enabled and MC.lightBlue or MC.disabledText))
+        surface:SetAlpha(1)
+        if container.label then
+            container.label:SetTextColor(unpack(enabled and (selected and MC.lightBlue or MC.text)
+                or MC.disabledText))
+        end
+        if visualLabel then
+            visualLabel:SetTextColor(unpack(enabled and (selected and MC.lightBlue or MC.text)
+                or MC.disabledText))
+            visualLabel:ClearAllPoints()
+            visualLabel:SetPoint("LEFT", surface, "LEFT", selected and 32 or 12, 0)
+            visualLabel:SetPoint("RIGHT", surface, "RIGHT", -12, 0)
+        end
+        return
+    elseif container._exSettingsPresentation == "switch" then
+        if not box._exModernSwitchKnob then
+            local knob = CreateFrame("Frame", nil, box._exModernCheckSurface)
+            knob:SetSize(16, 16)
+            knob:EnableMouse(false)
+            box._exModernSwitchKnob = knob
+        end
+        if not enabled then
+            fill, edge = MC.disabledFill, MC.disabledBorder
+        elseif selected then
+            fill = pressed and MC.checkboxCheckedActive or (hover and MC.checkboxCheckedHover or MC.checkboxChecked)
+            edge = fill
+        else
+            fill = MC.input
+            edge = hover and MC.checkboxHoverBorder or MC.checkboxBorder
+        end
+        local surface = box._exModernCheckSurface
+        surface:ClearAllPoints()
+        surface:SetPoint("CENTER", box, "CENTER", 0, 0)
+        surface:SetSize(40, 22)
+        EXUI:SetControlSurface(surface, 10, fill, edge)
+        box._exModernCheckMark:Hide()
+        local knob = box._exModernSwitchKnob
+        knob:ClearAllPoints()
+        knob:SetPoint(selected and "RIGHT" or "LEFT", surface,
+            selected and "RIGHT" or "LEFT", selected and -3 or 3, 0)
+        EXUI:SetControlSurface(knob, 10,
+            enabled and (selected and MC.white or MC.muted) or MC.disabledText,
+            enabled and (selected and MC.white or MC.muted) or MC.disabledText)
+        knob:Show()
+        surface:SetAlpha(1)
+        if container.label then
+            container.label:SetTextColor(unpack(enabled and MC.text or MC.disabledText))
+        end
+        return
+    end
+    if box._exModernSwitchKnob then box._exModernSwitchKnob:Hide() end
+    box._exModernCheckSurface:ClearAllPoints()
+    box._exModernCheckSurface:SetPoint("LEFT", box, "LEFT", 0, 0)
+    box._exModernCheckSurface:SetSize(20, 20)
+    box._exModernCheckMark:ClearAllPoints()
+    box._exModernCheckMark:SetAllPoints(box._exModernCheckSurface)
     if not enabled then
         fill, edge = MC.disabledFill, MC.disabledBorder
     elseif selected then
@@ -937,7 +1084,14 @@ local function ApplyModernCheckbox(container)
         visual:EnableMouse(false)
         visual:SetScript("OnUpdate", function(self)
             local enabled = box:IsEnabled()
-            local hover = enabled and box:IsMouseOver() or false
+            local hover = false
+            if enabled then
+                if container._exSettingsPresentation == "pill" then
+                    hover = IsCursorInsideFrame(box)
+                else
+                    hover = box:IsMouseOver()
+                end
+            end
             local checked = box:GetChecked() == true
             if self.enabled ~= enabled or self.hover ~= hover or self.checked ~= checked then
                 self.enabled, self.hover, self.checked = enabled, hover, checked
@@ -976,6 +1130,47 @@ local function ApplyModernCheckbox(container)
         MODERN.ApplyTextRole(container.label, "title")
     end
     PaintModernCheckbox(container)
+end
+
+-- Settings-list pill widths can change the final right-aligned geometry after
+-- the native checked state has already painted. Re-read only visual state once
+-- the layout owner has finished moving every row/card; no click or value
+-- callback is invoked here.
+function EXUI:RefreshSettingsListPillVisual(container)
+    local box = container and container.checkbox
+    if not box or container._exSettingsPresentation ~= "pill" then return false end
+    local enabled = box:IsEnabled()
+    local hover = enabled and IsCursorInsideFrame(box) or false
+    local checked = box:GetChecked() == true
+    local needsDeferredHoverRefresh = container._exSettingsPillVisualPending == true
+    local visual = box._exModernCheckVisual
+    if visual then
+        visual.enabled, visual.hover, visual.checked = enabled, hover, checked
+    end
+    container._exSettingsPillVisualPending = nil
+    box._exModernHover = hover
+    if not enabled then box._exModernPressed = nil end
+    PaintModernCheckbox(container)
+    return true, needsDeferredHoverRefresh
+end
+
+-- One-shot post-layout hover sync. Geometry and checked-state caches stay
+-- owned by the completed layout/normal visual watcher; this path neither
+-- remeasures the pill nor requests another reflow.
+function EXUI:RefreshSettingsListPillHoverVisual(container)
+    local box = container and container.checkbox
+    if not box or container._exSettingsPresentation ~= "pill"
+        or container._exSettingsPillVisualPending then return false end
+    local enabled = box:IsEnabled()
+    local hover = enabled and IsCursorInsideFrame(box) or false
+    local visual = box._exModernCheckVisual
+    -- A newer click can occur before this one-shot callback. Do not paint that
+    -- unchecked/checked transition at geometry committed for the older state.
+    if not visual or visual.checked ~= (box:GetChecked() == true) then return false end
+    visual.enabled, visual.hover = enabled, hover
+    box._exModernHover = hover
+    PaintModernCheckbox(container, true)
+    return true
 end
 
 local function IsModernSliderEnabled(frame)
@@ -1654,6 +1849,7 @@ end
 -- initializer only restyles compositor-owned regions after the stock
 -- initializer has built them; no global MenuVariants mutation and no
 -- persistent proxy-frame textures are involved.
+local AttachModernMenuCheckboxMark
 local function StyleModernMenuDescription(description, role)
     if not description or not description.AddInitializer then return description end
     description:AddInitializer(function(frame, elementDescription)
@@ -1665,19 +1861,20 @@ local function StyleModernMenuDescription(description, role)
         -- 旧 Lua 引用，绝不能再 Hide() 它们，否则可能误伤本轮刚租出的勾号或图标。
         frame._exModernMenuHighlightPieces = nil
         frame._exModernMenuHover = frame.IsMouseMotionFocus and frame:IsMouseMotionFocus() or false
-        if role == "button" and frame.SetHeight and frame.GetHeight then
+        local checkboxRole = role == "multiCheckbox"
+        if (role == "button" or checkboxRole) and frame.SetHeight and frame.GetHeight then
             frame:SetHeight(math.max(MODERN_MENU_ROW_HEIGHT, frame:GetHeight() or 0))
         end
         local fontString = frame.fontString or frame.Text
         if fontString then
             local color = not enabled and MC.disabledText
                 or (role == "title" and MC.muted)
-                or (selected and MC.lightBlue)
+                or (selected and not checkboxRole and MC.lightBlue)
                 or MC.text
             fontString:SetFontObject(role == "title" and MODERN.menuFonts.title or MODERN.menuFonts.control)
             fontString:SetTextColor(unpack(color))
             if fontString.SetShadowOffset then fontString:SetShadowOffset(0, 0) end
-            if role == "button" and fontString.ClearAllPoints and fontString.SetPoint then
+            if (role == "button" or checkboxRole) and fontString.ClearAllPoints and fontString.SetPoint then
                 -- 勾号占用 x=10..26；文字固定从 x=34 起，保留 8px 间距。
                 -- 没有 selection 列的普通按钮则使用标准 10px 左内距。
                 fontString:ClearAllPoints()
@@ -1686,8 +1883,8 @@ local function StyleModernMenuDescription(description, role)
             end
         end
 
-        if role == "button" then
-            frame._exModernMenuSelected = selected
+        if role == "button" or checkboxRole then
+            frame._exModernMenuSelected = not checkboxRole and selected
             frame._exModernMenuEnabled = enabled
             frame._exModernMenuHighlightPieces = AttachModernMenuRowHighlight(frame)
             -- Blizzard ButtonInitializer 每轮都会把这两个方法重设为显示/隐藏
@@ -1702,7 +1899,11 @@ local function StyleModernMenuDescription(description, role)
             frame._exModernMenuEnabled = false
         end
 
-        AttachModernMenuSelectionMark(frame, enabled, selected)
+        if checkboxRole then
+            AttachModernMenuCheckboxMark(frame, enabled, selected)
+        else
+            AttachModernMenuSelectionMark(frame, enabled, selected)
+        end
         AttachModernMenuSubmenuArrow(frame, enabled, selected)
         if frame.divider then frame.divider:SetVertexColor(unpack(MC.border)) end
     end)
@@ -1713,12 +1914,39 @@ local function ModernMenuButton(description)
     return StyleModernMenuDescription(description, "button")
 end
 
+local function ModernMenuMultiselectCheckbox(description)
+    return StyleModernMenuDescription(description, "multiCheckbox")
+end
+
 local function ModernMenuTitle(description)
     return StyleModernMenuDescription(description, "title")
 end
 
 local function ModernMenuDivider(description)
     return StyleModernMenuDescription(description, "divider")
+end
+
+local function ModernMenuThinDivider(description)
+    if not description or not description.AddInitializer then return description end
+    description:AddInitializer(function(frame)
+        if not frame then return end
+        if frame.divider then frame.divider:SetAlpha(0); frame.divider:Hide() end
+        if not frame.AttachTexture then return end
+        local line = frame:AttachTexture()
+        line:SetTexture(MODERN_MEDIA .. "FillR4.tga", "CLAMP", "CLAMP", "LINEAR")
+        line:SetTexCoord(.49, .51, .49, .51)
+        line:SetPoint("LEFT", frame, "LEFT", 8, 0)
+        line:SetPoint("RIGHT", frame, "RIGHT", -8, 0)
+        local scale = frame.GetEffectiveScale and frame:GetEffectiveScale() or 1
+        scale = type(scale) == "number" and scale > 0 and scale or 1
+        local factor = PixelUtil and PixelUtil.GetPixelToUIUnitFactor
+            and PixelUtil.GetPixelToUIUnitFactor() or 1
+        factor = type(factor) == "number" and factor > 0 and factor or 1
+        line:SetHeight(factor / scale)
+        line:SetDrawLayer("ARTWORK", 1)
+        line:SetVertexColor(unpack(MC.headerDivider))
+    end)
+    return description
 end
 
 local function IsModernMenuSoundPreviewPlaying(handle)
@@ -2546,7 +2774,13 @@ function EXUI:CreateMultiSelectDropdown(parent, width, label, options, selection
     dropdown._options = options
     dropdown._selections = selections
     dropdown._onUpdate = onUpdate
-    SetDropdownSearchEnabled(dropdown, searchConfig)
+    local effectiveSearchConfig = searchConfig
+    if effectiveSearchConfig == nil then
+        -- Short menus open directly; long specialization lists retain search.
+        -- This threshold affects presentation only, never option data.
+        effectiveSearchConfig = { searchable = #(options or {}) > 8 }
+    end
+    SetDropdownSearchEnabled(dropdown, effectiveSearchConfig)
 
     local function GetOptionLabel(option)
         if type(option) == "table" then
@@ -2562,6 +2796,15 @@ function EXUI:CreateMultiSelectDropdown(parent, width, label, options, selection
         return option
     end
 
+    local function CountSelected(owner)
+        local selected, total = 0, 0
+        for _, option in ipairs(owner._options or {}) do
+            total = total + 1
+            if owner._selections[GetOptionValue(option)] then selected = selected + 1 end
+        end
+        return selected, total
+    end
+
     -- [Fix] 重命名为 RefreshSelectionDisplay 避免与 Blizzard 内部方法冲突导致栈溢出
     function dropdown:RefreshSelectionDisplay()
         local selectedLabels = {}
@@ -2572,7 +2815,9 @@ function EXUI:CreateMultiSelectDropdown(parent, width, label, options, selection
             end
         end
         local display = L["未选择"]
-        if #selectedLabels > 0 then
+        if #selectedLabels > 0 and #selectedLabels == #(self._options or {}) then
+            display = L["全部"]
+        elseif #selectedLabels > 0 then
             if #selectedLabels <= 2 then
                 display = table.concat(selectedLabels, ", ")
             else
@@ -2598,26 +2843,43 @@ function EXUI:CreateMultiSelectDropdown(parent, width, label, options, selection
             local optionValue = GetOptionValue(option)
             if searchNeedle == "" or NormalizeDropdownSearchText(optionLabel):find(searchNeedle, 1, true) then
                 hasMatch = true
-                ModernMenuButton(rootDescription:CreateCheckbox(optionLabel,
+                local optionDescription = rootDescription:CreateCheckbox(optionLabel,
                     function() return self._selections[optionValue] == true end,
                     function()
                         self._selections[optionValue] = not self._selections[optionValue]
                         self:RefreshSelectionDisplay()
                         return MenuResponse.Refresh
                     end
-                ))
+                )
+                ModernMenuMultiselectCheckbox(optionDescription)
             end
         end
 
         if not hasMatch then
             ModernMenuTitle(rootDescription:CreateTitle(L["无匹配结果"]))
         end
-        ModernMenuDivider(rootDescription:CreateDivider())
-        ModernMenuButton(rootDescription:CreateButton(L["清空全部"], function()
-            for k in pairs(self._selections) do self._selections[k] = nil end
+        ModernMenuThinDivider(rootDescription:CreateDivider())
+        local selectedCount, totalCount = CountSelected(self)
+        local footer = ModernMenuButton(rootDescription:CreateButton(L["清空"], function()
+            for key in pairs(self._selections) do self._selections[key] = nil end
             self:RefreshSelectionDisplay()
             return MenuResponse.Refresh
         end))
+        footer:AddInitializer(function(frame)
+            if not frame or not frame.AttachFontString then return end
+            frame:SetHeight(math.max(MODERN_MENU_ROW_HEIGHT, frame:GetHeight() or 0))
+            local clearText = frame.fontString or frame.Text
+            if clearText then
+                clearText:ClearAllPoints()
+                clearText:SetPoint("RIGHT", frame, "RIGHT", -10, 0)
+                clearText:SetTextColor(unpack(MC.lightBlue))
+            end
+            local countText = frame:AttachFontString()
+            countText:SetPoint("LEFT", frame, "LEFT", 10, 0)
+            countText:SetFontObject(MODERN.menuFonts.control)
+            countText:SetText(string.format(L["已选 %d/%d"], selectedCount, totalCount))
+            countText:SetTextColor(unpack(MC.muted))
+        end)
     end)
 
     -- 兼容旧接口
@@ -3754,6 +4016,7 @@ local function AttachCompositeRelease(host)
     -- 每次 Acquire/重绑都必须重新登记本轮清理，不能用永久 attached 标记跳过。
     if not factory or not factory.AttachPoolRelease then return end
     factory:AttachPoolRelease(host, function(frame)
+        if frame._exCancelItemIdentityLoad then frame:_exCancelItemIdentityLoad() end
         for _, popup in ipairs(frame._exCompositePopups or {}) do popup:Hide() end
         -- modulecommonsettings 的字段由模块动态声明；宿主归池时必须先归还
         -- 本轮借用的标准子控件，不能把上一模块的字段树带进下一模块。
@@ -3770,6 +4033,8 @@ local function AttachCompositeRelease(host)
         frame._itemOnChange = nil
         frame._itemOnDelete = nil
         frame._itemID = nil
+        frame._itemIdentityID = nil
+        frame._itemIdentityCompletedID = nil
         frame._previewCallbacks = nil
         frame._previewData = nil
     end)
@@ -3859,6 +4124,15 @@ function EXUI:CreateSettingsCard(parent, options)
         MODERN.ApplyTextRole(glyph, "title", MC.muted)
         toggle._exGlyph = glyph
         local function PaintHeader()
+            local listHeader = card._exSettingsListGroupMember or card._exSettingsListExternalHeader
+            if listHeader then
+                EXUI:ClearControlSurface(header)
+                squareBottom:Hide()
+                divider:Hide()
+                title:SetTextColor(unpack(listHeader.titleColor))
+                glyph:SetTextColor(unpack(listHeader.glyphColor))
+                return
+            end
             local hovered = header._exModernHover == true
             local fill = hovered and MC.headerHover or MC.header
             EXUI:SetControlSurface(header, 10, fill, fill)
@@ -3930,6 +4204,24 @@ function EXUI:CreateSettingsCard(parent, options)
         end
 
         function card:GetPreferredHeight()
+            if self._exSettingsListCardMode == "flat" then
+                return math.max(1, tonumber(self._exSettingsCardContentHeight) or 0)
+            elseif self._exSettingsListCardMode == "external" then
+                local headerHeight = self._exSettingsListExternalHeader
+                    and self._exSettingsListExternalHeader.height or SETTINGS_CARD_HEADER_HEIGHT
+                if self._exSettingsCardCollapsed then return headerHeight end
+                return headerHeight
+                    + math.max(1, tonumber(self._exSettingsCardContentHeight) or 0)
+            elseif self._exSettingsListCardMode == "group" then
+                local headerHeight = self._exSettingsListGroupMember
+                    and self._exSettingsListGroupMember.headerHeight or SETTINGS_CARD_HEADER_HEIGHT
+                if self._exSettingsCardCollapsed then return headerHeight end
+                return headerHeight + math.max(1, tonumber(self._exSettingsCardContentHeight) or 0) + 12
+            elseif self._exSettingsListCardMode == "header" then
+                if self._exSettingsCardCollapsed then return SETTINGS_CARD_HEADER_HEIGHT end
+                return SETTINGS_CARD_HEADER_HEIGHT
+                    + math.max(1, tonumber(self._exSettingsCardContentHeight) or 0)
+            end
             if self._exSettingsCardCollapsed then return SETTINGS_CARD_HEADER_HEIGHT end
             return SETTINGS_CARD_HEADER_HEIGHT + SETTINGS_CARD_BODY_PADDING
                 + (tonumber(self._exSettingsCardContentHeight) or 0) + SETTINGS_CARD_BODY_PADDING
@@ -3940,8 +4232,12 @@ function EXUI:CreateSettingsCard(parent, options)
             local changed = self._exSettingsCardCollapsed ~= collapsed
             self._exSettingsCardCollapsed = collapsed
             self._exSettingsCardBody:SetShown(not collapsed)
-            self._exSettingsCardDivider:SetShown(not collapsed)
-            self._exSettingsCardSquareBottom:SetShown(not collapsed)
+            self._exSettingsCardDivider:SetShown(not collapsed
+                and self._exSettingsListExternalHeader == nil
+                and self._exSettingsListGroupMember == nil)
+            self._exSettingsCardSquareBottom:SetShown(not collapsed
+                and self._exSettingsListExternalHeader == nil
+                and self._exSettingsListGroupMember == nil)
             self._exSettingsCardToggle._exGlyph:SetText(collapsed and "v" or "^")
             self:SetHeight(self:GetPreferredHeight())
             if changed and silent ~= true and self._exSettingsCardInvalidation then
@@ -3989,6 +4285,1271 @@ function EXUI:CreateSettingsCard(parent, options)
     card._exSettingsCardPaintHeader()
     card:SetCollapsed(options.collapsed == true, true)
     return card
+end
+
+AttachModernMenuCheckboxMark = function(frame, enabled, selected)
+    local anchor = frame.leftTexture1
+    if anchor then anchor:SetAlpha(0); anchor:Hide() end
+    if frame.leftTexture2 then frame.leftTexture2:SetAlpha(0); frame.leftTexture2:Hide() end
+    if not frame.AttachTexture then return end
+
+    local border = frame:AttachTexture()
+    border:SetTexture("Interface\\Buttons\\WHITE8X8")
+    border:SetPoint("LEFT", frame, "LEFT", 10, 0)
+    border:SetSize(16, 16)
+    border:SetDrawLayer("ARTWORK", 5)
+    border:SetVertexColor(unpack(not enabled and MC.disabledBorder
+        or (selected and MC.blue or MC.checkboxBorder)))
+
+    local fill = frame:AttachTexture()
+    fill:SetTexture("Interface\\Buttons\\WHITE8X8")
+    fill:SetPoint("CENTER", border, "CENTER", 0, 0)
+    fill:SetSize(14, 14)
+    fill:SetDrawLayer("ARTWORK", 6)
+    fill:SetVertexColor(unpack(not enabled and MC.disabledFill
+        or (selected and MC.blue or MC.input)))
+
+    if selected then
+        local check = frame:AttachTexture()
+        check:SetTexture(MODERN_MEDIA .. "GlyphCheck.tga", "CLAMP", "CLAMP", "LINEAR")
+        check:SetPoint("CENTER", border, "CENTER", 0, 0)
+        check:SetSize(13, 13)
+        check:SetDrawLayer("ARTWORK", 7)
+        check:SetVertexColor(unpack(enabled and MC.white or MC.disabledText))
+    end
+end
+
+-- =========================================================
+-- Settings list presentation
+--
+-- These hosts own geometry and decoration only. They never receive a config,
+-- binding, getter, setter or notification callback. Grid keeps ownership of
+-- the original controls and only anchors them beside these visual siblings.
+-- =========================================================
+local SETTINGS_LIST_ROW_PADDING_X = 20
+local SETTINGS_LIST_ROW_PADDING_Y = 8
+local SETTINGS_LIST_COLUMN_GAP = 20
+local SETTINGS_LIST_MIN_TEXT_WIDTH = 160
+local SETTINGS_LIST_STANDARD_ROW_HEIGHT = 56
+local SETTINGS_LIST_ORDINARY_CONTROL_HEIGHT = 28
+local SETTINGS_LIST_DESCRIPTION_MIN_HEIGHT = 64
+local SETTINGS_LIST_DESCRIPTION_GAP = 6
+local SETTINGS_LIST_EXTERNAL_HEADER_HEIGHT = 56
+-- The screenshots define structure and rhythm, not a replacement palette.
+-- Settings lists stay on the project's existing shared visual theme.
+local SETTINGS_LIST_CARD_FILL = MC.panel
+local SETTINGS_LIST_CARD_BORDER = MC.border
+local SETTINGS_LIST_TITLE = MC.text
+local SETTINGS_LIST_DESCRIPTION = MC.muted
+
+local function ResolveSettingsRowColumns(innerWidth, explicitWidth, controlKind, inputWidthPercent)
+    local legacyDefault = math.min(260, innerWidth * 0.42)
+    -- Ordinary right-side controls use one shared visual width. This is based
+    -- on the original row-column budget, not on another settings-page scale.
+    local ordinaryDefault = legacyDefault * 0.75
+    local requested = tonumber(explicitWidth)
+    if not requested or requested <= 0 then requested = nil end
+    if not requested and (controlKind == "ordinary" or controlKind == "input") then
+        local percent = tonumber(inputWidthPercent)
+        percent = percent and percent > 0 and percent or 100
+        requested = ordinaryDefault * percent / 100
+    end
+    requested = requested or legacyDefault
+    local maximum = math.max(1, innerWidth - SETTINGS_LIST_COLUMN_GAP - SETTINGS_LIST_MIN_TEXT_WIDTH)
+    local controlWidth = math.max(1, math.min(requested, maximum))
+    return controlWidth, math.max(1, innerWidth - SETTINGS_LIST_COLUMN_GAP - controlWidth)
+end
+
+local settingsListMeasureHost = CreateFrame("Frame", nil, UIParent)
+settingsListMeasureHost:SetSize(1, 1)
+settingsListMeasureHost:Hide()
+settingsListMeasureHost.title = EXUI:CreateVisualFontString(settingsListMeasureHost, EXFONTFRAME, "GameFontHighlight")
+settingsListMeasureHost.title:SetWordWrap(true)
+settingsListMeasureHost.description = EXUI:CreateVisualFontString(settingsListMeasureHost, EXFONTFRAME, "GameFontHighlightSmall")
+settingsListMeasureHost.description:SetWordWrap(true)
+
+local function MeasureSettingsListText(text, width, role)
+    text = tostring(text or "")
+    if text == "" then return 0 end
+    local region = role == "description" and settingsListMeasureHost.description or settingsListMeasureHost.title
+    if role == "description" then
+        MODERN.Font(region, 13, MC.muted, "", "GameFontHighlightSmall")
+    else
+        MODERN.ApplyTextRole(region, "title")
+    end
+    region:SetWidth(math.max(1, tonumber(width) or 1))
+    region:SetText(text)
+    return math.max(1, math.ceil(region:GetStringHeight() or 0))
+end
+
+local function ReleaseSettingsListDecoration(frame)
+    local factory = _G.ExwindFactory
+    if factory and factory.ReleaseCompositeHost then
+        return factory:ReleaseCompositeHost(frame)
+    end
+    frame:Hide()
+    frame:ClearAllPoints()
+    frame:SetParent(nil)
+    return true
+end
+
+local function SettingsTextHeight(region, width)
+    if not region or not region:IsShown() then return 0 end
+    region:SetWidth(math.max(1, width))
+    return math.max(1, math.ceil(region:GetStringHeight() or 0))
+end
+
+-- Reuse the exact self-drawn FillR4 surface path used by the stable modern
+-- input and dropdown controls. Settings-list dividers are not native lines.
+local settingsDividerFrames = setmetatable({}, { __mode = "k" })
+local settingsDividerScaleWatcher
+local function ApplySettingsDividerPhysicalHeight(divider)
+    local effectiveScale = divider.GetEffectiveScale and divider:GetEffectiveScale() or 1
+    effectiveScale = type(effectiveScale) == "number" and effectiveScale > 0 and effectiveScale or 1
+    local pixelUtil = _G.PixelUtil
+    local factor = pixelUtil and pixelUtil.GetPixelToUIUnitFactor
+        and pixelUtil.GetPixelToUIUnitFactor() or 1
+    factor = type(factor) == "number" and factor > 0 and factor or 1
+    local pixel = factor / effectiveScale
+    divider:SetHeight(type(pixel) == "number" and pixel > 0 and pixel or (1 / effectiveScale))
+end
+local function CreateSettingsDivider(parent)
+    local divider = CreateFrame("Frame", nil, parent)
+    divider:EnableMouse(false)
+    settingsDividerFrames[divider] = true
+    if not settingsDividerScaleWatcher then
+        settingsDividerScaleWatcher = CreateFrame("Frame")
+        settingsDividerScaleWatcher:RegisterEvent("UI_SCALE_CHANGED")
+        settingsDividerScaleWatcher:RegisterEvent("DISPLAY_SIZE_CHANGED")
+        settingsDividerScaleWatcher:SetScript("OnEvent", function()
+            for frame in pairs(settingsDividerFrames) do ApplySettingsDividerPhysicalHeight(frame) end
+        end)
+    end
+    ApplySettingsDividerPhysicalHeight(divider)
+    EXUI:SetControlSurface(divider, 4, MC.headerDivider, MC.headerDivider)
+    local skin = divider._exModernSurfaces and divider._exModernSurfaces[4]
+    for _, piece in ipairs(skin and skin.pieces or {}) do
+        piece.texture:SetAlpha(piece.layer == 1 and 1 or 0)
+    end
+    return divider
+end
+
+local function ResolveSettingsListRoleRegion(widget)
+    if not widget then return nil end
+    if widget.text then return widget.text end
+    if widget.labelText then return widget.labelText end
+    if widget.IsObjectType and widget:IsObjectType("FontString") then return widget end
+    return nil
+end
+
+function EXUI:CreateSettingsSection(parent, options)
+    options = type(options) == "table" and options or {}
+    local section, isNew = AcquireCompositeGroup("CompositeSettingsListSection", parent)
+    if isNew then
+        section:EnableMouse(false)
+        local title = EXUI:CreateVisualFontString(section, EXFONTFRAME, "GameFontHighlight")
+        title:SetJustifyH("LEFT")
+        title:SetJustifyV("TOP")
+        title:SetWordWrap(true)
+        local description = EXUI:CreateVisualFontString(section, EXFONTFRAME, "GameFontHighlightSmall")
+        description:SetJustifyH("LEFT")
+        description:SetJustifyV("TOP")
+        description:SetWordWrap(true)
+        local divider = CreateSettingsDivider(section)
+        section._exSettingsSectionTitle = title
+        section._exSettingsSectionDescription = description
+        section._exSettingsSectionDivider = divider
+        section.Release = ReleaseSettingsListDecoration
+    end
+    section:EnableMouse(false)
+    section._exSettingsSectionKind = options.kind == "page" and "page"
+        or (options.kind == "subsection" and "subsection"
+        or (options.kind == "information" and "information" or "section"))
+    section._exSettingsSectionTitle:SetText(tostring(options.title or ""))
+    section._exSettingsSectionTitle:SetShown(options.title ~= nil and tostring(options.title) ~= "")
+    section._exSettingsSectionDescription:SetText(tostring(options.description or ""))
+    section._exSettingsSectionDescription:SetShown(options.description ~= nil and tostring(options.description) ~= "")
+    section._exSettingsSectionDescriptionWidgets = type(options.descriptionWidgets) == "table"
+        and options.descriptionWidgets or {}
+    -- Category headings sit outside the continuous card. The card's own border
+    -- supplies the visual boundary; an extra full-width rule is not part of the
+    -- reference hierarchy.
+    section._exSettingsSectionDivider:Hide()
+    if section._exSettingsSectionKind == "page" then
+        MODERN.ApplyTextRole(section._exSettingsSectionTitle, "pageTitle", SETTINGS_LIST_TITLE)
+    else
+        MODERN.ApplyTextRole(section._exSettingsSectionTitle, "title", SETTINGS_LIST_TITLE)
+    end
+    MODERN.Font(section._exSettingsSectionDescription, 13, SETTINGS_LIST_DESCRIPTION,
+        "", "GameFontHighlightSmall")
+    return section
+end
+
+function EXUI:UpdateSettingsSectionLayout(section, width)
+    if not section then return 0 end
+    width = math.max(1, tonumber(width) or 1)
+    section:SetWidth(width)
+    local title = section._exSettingsSectionTitle
+    local description = section._exSettingsSectionDescription
+    local divider = section._exSettingsSectionDivider
+    local page = section._exSettingsSectionKind == "page"
+    local information = section._exSettingsSectionKind == "information"
+    local top = page and 0 or 8
+    local insetX = information and SETTINGS_LIST_ROW_PADDING_X or 0
+    local contentTop = information and SETTINGS_LIST_ROW_PADDING_Y or 0
+    local textWidth = math.max(1, width - insetX * 2)
+    title:ClearAllPoints()
+    local height = 0
+    if title:IsShown() then
+        local titleTop = information and contentTop or top
+        title:SetPoint("TOPLEFT", section, "TOPLEFT", insetX, -titleTop)
+        title:SetPoint("TOPRIGHT", section, "TOPRIGHT", -insetX, -titleTop)
+        height = titleTop + SettingsTextHeight(title, textWidth)
+    end
+    if description:IsShown() then
+        local descriptionTop = height > 0 and (height + SETTINGS_LIST_DESCRIPTION_GAP) or contentTop
+        description:ClearAllPoints()
+        description:SetPoint("TOPLEFT", section, "TOPLEFT", insetX, -descriptionTop)
+        description:SetPoint("TOPRIGHT", section, "TOPRIGHT", -insetX, -descriptionTop)
+        height = descriptionTop + SettingsTextHeight(description, textWidth)
+    end
+    for _, widget in ipairs(section._exSettingsSectionDescriptionWidgets or {}) do
+        if widget and widget.IsShown and widget:IsShown() then
+            local region = ResolveSettingsListRoleRegion(widget)
+            if region then
+                local widgetTop = height > 0 and (height + SETTINGS_LIST_DESCRIPTION_GAP) or contentTop
+                widget:SetWidth(textWidth)
+                local widgetHeight = SettingsTextHeight(region, textWidth)
+                widget:ClearAllPoints()
+                widget:SetPoint("TOPLEFT", section, "TOPLEFT", insetX, -widgetTop)
+                widget:SetSize(textWidth, widgetHeight)
+                height = widgetTop + widgetHeight
+            end
+        end
+    end
+    if height > 0 then
+        height = height + (information and SETTINGS_LIST_ROW_PADDING_Y or 18)
+    end
+    divider:ClearAllPoints()
+    divider:SetPoint("BOTTOMLEFT", section, "BOTTOMLEFT", 0, 0)
+    divider:SetPoint("BOTTOMRIGHT", section, "BOTTOMRIGHT", 0, 0)
+    ApplySettingsDividerPhysicalHeight(divider)
+    section:SetSize(width, math.max(1, height))
+    return height
+end
+
+function EXUI:CreateSettingsRow(parent, options)
+    options = type(options) == "table" and options or {}
+    local row, isNew = AcquireCompositeGroup("CompositeSettingsListRow", parent)
+    if isNew then
+        row:EnableMouse(false)
+        local title = EXUI:CreateVisualFontString(row, EXFONTFRAME, "GameFontHighlight")
+        title:SetJustifyH("LEFT")
+        title:SetJustifyV("TOP")
+        title:SetWordWrap(true)
+        local description = EXUI:CreateVisualFontString(row, EXFONTFRAME, "GameFontHighlightSmall")
+        description:SetJustifyH("LEFT")
+        description:SetJustifyV("TOP")
+        description:SetWordWrap(true)
+        local divider = CreateSettingsDivider(row)
+        row._exSettingsRowTitle = title
+        row._exSettingsRowDescription = description
+        row._exSettingsRowDivider = divider
+        row.Release = ReleaseSettingsListDecoration
+    end
+    row:EnableMouse(false)
+    if parent and row.SetFrameLevel and parent.GetFrameLevel then
+        row:SetFrameLevel(parent:GetFrameLevel())
+    end
+    row._exSettingsRowFullWidth = options.fullWidth == true
+    local controlWidth = tonumber(options.controlWidth)
+    row._exSettingsRowControlWidth = controlWidth and controlWidth > 0 and controlWidth or nil
+    row._exSettingsRowControlKind = options.controlKind
+    row._exSettingsRowInputWidthPercent = tonumber(options.inputWidthPercent)
+    -- Settings-list modules declare content only.  A legacy Grid h/minHeight
+    -- must not make otherwise identical ordinary rows use different heights.
+    row._exSettingsRowMinHeight = SETTINGS_LIST_STANDARD_ROW_HEIGHT
+    row._exSettingsRowIsLast = options.isLast == true
+    row._exSettingsRowTitle:SetText(tostring(options.label or ""))
+    row._exSettingsRowTitle:SetShown(options.label ~= nil and tostring(options.label) ~= "")
+    row._exSettingsRowDescription:SetText(tostring(options.description or ""))
+    row._exSettingsRowDescription:SetShown(options.description ~= nil and tostring(options.description) ~= "")
+    MODERN.ApplyTextRole(row._exSettingsRowTitle, "title", SETTINGS_LIST_TITLE)
+    MODERN.Font(row._exSettingsRowDescription, 13, SETTINGS_LIST_DESCRIPTION,
+        "", "GameFontHighlightSmall")
+    row._exSettingsRowDivider:SetShown(not row._exSettingsRowIsLast)
+    EXUI:ClearControlSurface(row)
+    return row
+end
+
+function EXUI:UpdateSettingsRowLayout(row, width, controlHeight, descriptionWidget)
+    if not row then return 0, 0, 0, 0 end
+    width = math.max(1, tonumber(width) or 1)
+    controlHeight = math.max(1, tonumber(controlHeight) or MODERN.metrics.height)
+    local innerWidth = math.max(1, width - SETTINGS_LIST_ROW_PADDING_X * 2)
+    local title = row._exSettingsRowTitle
+    local description = descriptionWidget
+        and (descriptionWidget.text or descriptionWidget.labelText)
+        or row._exSettingsRowDescription
+    local descriptionShown = descriptionWidget and descriptionWidget:IsShown()
+        or (not descriptionWidget and description:IsShown())
+    local textWidth, textHeight, controlX, controlY, controlWidth, height
+    if row._exSettingsRowFullWidth then
+        textWidth = innerWidth
+        local titleHeight = SettingsTextHeight(title, textWidth)
+        textHeight = titleHeight
+        if descriptionShown then
+            if descriptionWidget then descriptionWidget:SetWidth(textWidth) end
+            textHeight = textHeight + (textHeight > 0 and SETTINGS_LIST_DESCRIPTION_GAP or 0)
+                + SettingsTextHeight(description, textWidth)
+        end
+        controlX = 0
+        controlY = textHeight > 0 and (SETTINGS_LIST_ROW_PADDING_Y + textHeight + 10) or 0
+        controlWidth = width
+        local bottomPadding = textHeight > 0 and SETTINGS_LIST_ROW_PADDING_Y or 0
+        height = math.max(textHeight > 0 and row._exSettingsRowMinHeight or 0,
+            controlY + controlHeight + bottomPadding)
+    else
+        controlWidth, textWidth = ResolveSettingsRowColumns(innerWidth,
+            row._exSettingsRowControlWidth, row._exSettingsRowControlKind,
+            row._exSettingsRowInputWidthPercent)
+        local titleHeight = SettingsTextHeight(title, textWidth)
+        textHeight = titleHeight
+        if descriptionShown then
+            if descriptionWidget then descriptionWidget:SetWidth(textWidth) end
+            textHeight = textHeight + (textHeight > 0 and SETTINGS_LIST_DESCRIPTION_GAP or 0)
+                + SettingsTextHeight(description, textWidth)
+        end
+        height = math.max(row._exSettingsRowMinHeight,
+            SETTINGS_LIST_ROW_PADDING_Y * 2 + math.max(textHeight, controlHeight))
+        if descriptionShown then
+            height = math.max(height, SETTINGS_LIST_DESCRIPTION_MIN_HEIGHT)
+        end
+        controlX = width - SETTINGS_LIST_ROW_PADDING_X - controlWidth
+        controlY = math.floor((height - controlHeight) * 0.5 + 0.5)
+    end
+    local textTop = SETTINGS_LIST_ROW_PADDING_Y
+    if not row._exSettingsRowFullWidth and textHeight > 0 then
+        textTop = math.floor((height - textHeight) * 0.5 + 0.5)
+    end
+    title:ClearAllPoints()
+    if title:IsShown() then
+        title:SetPoint("TOPLEFT", row, "TOPLEFT", SETTINGS_LIST_ROW_PADDING_X, -textTop)
+        title:SetWidth(textWidth)
+    end
+    if descriptionShown then
+        local descriptionHeight = SettingsTextHeight(description, textWidth)
+        if descriptionWidget then
+            descriptionWidget:ClearAllPoints()
+            if title:IsShown() then
+                descriptionWidget:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -SETTINGS_LIST_DESCRIPTION_GAP)
+            else
+                descriptionWidget:SetPoint("TOPLEFT", row, "TOPLEFT", SETTINGS_LIST_ROW_PADDING_X, -textTop)
+            end
+            descriptionWidget:SetSize(textWidth, descriptionHeight)
+        else
+            description:ClearAllPoints()
+            if title:IsShown() then
+                description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -SETTINGS_LIST_DESCRIPTION_GAP)
+            else
+                description:SetPoint("TOPLEFT", row, "TOPLEFT", SETTINGS_LIST_ROW_PADDING_X, -textTop)
+            end
+            description:SetWidth(textWidth)
+        end
+    end
+    row:SetSize(width, height)
+    local divider = row._exSettingsRowDivider
+    divider:ClearAllPoints()
+    divider:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", SETTINGS_LIST_ROW_PADDING_X, 0)
+    divider:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -SETTINGS_LIST_ROW_PADDING_X, 0)
+    divider:SetShown(not row._exSettingsRowIsLast)
+    EXUI:ClearControlSurface(row)
+    return height, controlX, controlY, controlWidth
+end
+
+function EXUI:UpdateSettingsRowControlsLayout(row, width, metrics)
+    if not row then return 0, {} end
+    metrics = type(metrics) == "table" and metrics or {}
+    width = math.max(1, tonumber(width) or 1)
+    local gap = 8
+    local innerWidth = math.max(1, width - SETTINGS_LIST_ROW_PADDING_X * 2)
+    local title = row._exSettingsRowTitle
+    local description = row._exSettingsRowDescription
+    local hasText = title:IsShown() or description:IsShown()
+    local labelIndex, rightAlign
+    for index, metric in ipairs(metrics) do
+        local visible = metric.visible ~= false
+        if visible and (metric.presentation == "pill" or metric.align == "right") then rightAlign = true end
+        if metric.role ~= nil and metric.role ~= "label" then
+            error("unknown settings row control role: " .. tostring(metric.role), 2)
+        elseif visible and metric.role == "label" then
+            if labelIndex then error("settings row controls only support one label role", 2) end
+            labelIndex = index
+        end
+    end
+    local hasLeft = hasText or labelIndex ~= nil
+    local textWidth = hasLeft and math.max(80,
+        math.min(280, innerWidth * 0.38)) or 0
+    local controlsX = SETTINGS_LIST_ROW_PADDING_X
+    local controlsWidth = innerWidth
+    if hasLeft then
+        controlsX = controlsX + textWidth + SETTINGS_LIST_COLUMN_GAP
+        controlsWidth = math.max(1, innerWidth - textWidth - SETTINGS_LIST_COLUMN_GAP)
+    end
+    local controlIndexes, fixedWidth, flexible = {}, 0, 0
+    for index, metric in ipairs(metrics) do
+        if metric.visible ~= false and index ~= labelIndex then
+            controlIndexes[#controlIndexes + 1] = index
+            local metricWidth = tonumber(metric.width)
+            if metricWidth and metricWidth > 0 then fixedWidth = fixedWidth + metricWidth
+            else flexible = flexible + 1 end
+        end
+    end
+    local available = math.max(1,
+        controlsWidth - math.max(0, #controlIndexes - 1) * gap)
+    local flexibleWidth = flexible > 0
+        and math.max(80, (available - fixedWidth) / flexible) or 0
+    local rawRects, lines, lineHeights, lineIndexes, x, y, lineHeight, line = {}, {}, {}, {}, 0, 0, 0, 1
+    for _, index in ipairs(controlIndexes) do
+        local metric = metrics[index]
+        local controlWidth = tonumber(metric.width)
+        if not controlWidth or controlWidth <= 0 then controlWidth = flexibleWidth end
+        controlWidth = math.min(controlsWidth, math.max(1, controlWidth))
+        local controlHeight = math.max(1, tonumber(metric.height) or 28)
+        if x > 0 and x + controlWidth > controlsWidth + 0.5 then
+            lines[line] = math.max(0, x - gap)
+            lineHeights[line] = lineHeight
+            y = y + lineHeight + gap
+            x, lineHeight, line = 0, 0, line + 1
+        end
+        rawRects[index] = { x = x, y = y, width = controlWidth, height = controlHeight }
+        lineIndexes[index] = line
+        x = x + controlWidth + gap
+        lineHeight = math.max(lineHeight, controlHeight)
+    end
+    if #controlIndexes > 0 then
+        lines[line] = math.max(0, x - gap)
+        lineHeights[line] = lineHeight
+    end
+    local controlsHeight = #controlIndexes > 0 and (y + lineHeight) or 0
+    local labelHeight = labelIndex and math.max(1, tonumber(metrics[labelIndex].height) or 28) or 0
+    local textHeight = SettingsTextHeight(title, math.max(1, textWidth))
+    if description:IsShown() then
+        textHeight = textHeight + (textHeight > 0 and SETTINGS_LIST_DESCRIPTION_GAP or 0)
+            + SettingsTextHeight(description, math.max(1, textWidth))
+    end
+    local height = math.max(row._exSettingsRowMinHeight,
+        SETTINGS_LIST_ROW_PADDING_Y * 2 + math.max(textHeight, labelHeight, controlsHeight))
+    if description:IsShown() then height = math.max(height, SETTINGS_LIST_DESCRIPTION_MIN_HEIGHT) end
+    local rects = {}
+    local controlsTop = math.floor((height - controlsHeight) * 0.5 + 0.5)
+    for _, index in ipairs(controlIndexes) do
+        local rect = rawRects[index]
+        rects[index] = {
+            x = controlsX + (rightAlign
+                and math.max(0, controlsWidth - (lines[lineIndexes[index]] or controlsWidth)) or 0) + rect.x,
+            y = controlsTop + rect.y
+                + math.max(0, ((lineHeights[lineIndexes[index]] or rect.height) - rect.height) * 0.5),
+            width = rect.width,
+            height = rect.height,
+        }
+    end
+    if labelIndex then
+        rects[labelIndex] = {
+            x = SETTINGS_LIST_ROW_PADDING_X,
+            y = math.floor((height - labelHeight) * 0.5 + 0.5),
+            width = textWidth,
+            height = labelHeight,
+        }
+    end
+    for index, metric in ipairs(metrics) do
+        if metric.visible == false then
+            rects[index] = {
+                x = controlsX + controlsWidth,
+                y = math.floor(height * 0.5 + 0.5),
+                width = 1,
+                height = math.max(1, tonumber(metric.height) or 1),
+            }
+        end
+    end
+    if hasText then
+        local textTop = math.floor((height - textHeight) * 0.5 + 0.5)
+        title:ClearAllPoints()
+        if title:IsShown() then
+            title:SetPoint("TOPLEFT", row, "TOPLEFT", SETTINGS_LIST_ROW_PADDING_X, -textTop)
+            title:SetWidth(textWidth)
+        end
+        description:ClearAllPoints()
+        if description:IsShown() then
+            if title:IsShown() then
+                description:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -SETTINGS_LIST_DESCRIPTION_GAP)
+            else description:SetPoint("TOPLEFT", row, "TOPLEFT", SETTINGS_LIST_ROW_PADDING_X, -textTop) end
+            description:SetWidth(textWidth)
+        end
+    end
+    row:SetSize(width, height)
+    local divider = row._exSettingsRowDivider
+    divider:ClearAllPoints()
+    divider:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", SETTINGS_LIST_ROW_PADDING_X, 0)
+    divider:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -SETTINGS_LIST_ROW_PADDING_X, 0)
+    divider:SetShown(not row._exSettingsRowIsLast)
+    EXUI:ClearControlSurface(row)
+    return height, rects
+end
+
+-- Settings-list owners may recompute the last visible row after dynamic layout.
+-- This changes only the shared decorative divider, never widget visibility.
+function EXUI:SetSettingsRowLast(row, isLast)
+    if not row then return false end
+    if row._exSettingsRowDivider then
+        row._exSettingsRowIsLast = isLast == true
+        row._exSettingsRowDivider:SetShown(not row._exSettingsRowIsLast)
+        return true
+    end
+    if row._exSettingsTableDivider then
+        row._exSettingsTableIsLast = isLast == true
+        row._exSettingsTableDivider:SetShown(not row._exSettingsTableIsLast)
+        return true
+    end
+    return false
+end
+
+function EXUI:SetSettingsCardGroupMemberLast(card, isLast)
+    if not card or not card._exSettingsGroupDivider then return false end
+    card._exSettingsGroupDivider:SetShown(isLast ~= true)
+    return true
+end
+
+local function ResolveSettingsTableColumns(width, columns)
+    width = math.max(1, tonumber(width) or 1)
+    columns = type(columns) == "table" and columns or {}
+    local gap = 12
+    local available = math.max(1,
+        width - SETTINGS_LIST_ROW_PADDING_X * 2 - math.max(0, #columns - 1) * gap)
+    local fixed, totalWeight = 0, 0
+    for _, column in ipairs(columns) do
+        local columnWidth = tonumber(column.width)
+        if columnWidth and columnWidth > 0 then fixed = fixed + columnWidth
+        else totalWeight = totalWeight + math.max(0.01, tonumber(column.weight) or 1) end
+    end
+    local weighted = math.max(1, available - fixed)
+    local rects, x = {}, SETTINGS_LIST_ROW_PADDING_X
+    for index, column in ipairs(columns) do
+        local columnWidth = tonumber(column.width)
+        if not columnWidth or columnWidth <= 0 then
+            columnWidth = weighted * math.max(0.01, tonumber(column.weight) or 1) / totalWeight
+        end
+        rects[index] = { x = x, width = math.max(1, columnWidth) }
+        x = x + columnWidth + gap
+    end
+    return rects
+end
+
+-- Pure shared column geometry for settings-form groups whose original controls
+-- remain mounted in separate card bodies. No frames, bindings or values are
+-- created or changed here.
+function EXUI:ResolveSettingsTableColumns(width, columns)
+    return ResolveSettingsTableColumns(width, columns)
+end
+
+function EXUI:CreateSettingsTableHeader(parent, options)
+    options = type(options) == "table" and options or {}
+    local header, isNew = AcquireCompositeGroup("CompositeSettingsTableHeader", parent)
+    if isNew then
+        header:EnableMouse(false)
+        header._exSettingsTableLabels = {}
+        header.Release = ReleaseSettingsListDecoration
+    end
+    header._exSettingsTableColumns = {}
+    for index, column in ipairs(options.columns or {}) do
+        header._exSettingsTableColumns[index] = {
+            title = tostring(column.title or ""),
+            width = tonumber(column.width),
+            weight = tonumber(column.weight),
+        }
+        local label = header._exSettingsTableLabels[index]
+        if not label then
+            label = EXUI:CreateVisualFontString(header, EXFONTFRAME, "GameFontHighlightSmall")
+            header._exSettingsTableLabels[index] = label
+        end
+        label:SetJustifyH("CENTER")
+        label:SetText(header._exSettingsTableColumns[index].title)
+        label:Show()
+        MODERN.Font(label, 14, SETTINGS_LIST_TITLE, "", "GameFontHighlightSmall")
+    end
+    for index = #(options.columns or {}) + 1, #header._exSettingsTableLabels do
+        header._exSettingsTableLabels[index]:Hide()
+    end
+    return header
+end
+
+function EXUI:UpdateSettingsTableHeaderLayout(header, width)
+    if not header then return 0, {} end
+    local rects = ResolveSettingsTableColumns(width, header._exSettingsTableColumns)
+    local height = 38
+    header:SetSize(math.max(1, tonumber(width) or 1), height)
+    for index, rect in ipairs(rects) do
+        local label = header._exSettingsTableLabels[index]
+        label:ClearAllPoints()
+        label:SetPoint("LEFT", header, "LEFT", rect.x, 0)
+        label:SetWidth(rect.width)
+    end
+    return height, rects
+end
+
+function EXUI:CreateSettingsTableRow(parent, options)
+    options = type(options) == "table" and options or {}
+    local row, isNew = AcquireCompositeGroup("CompositeSettingsTableRow", parent)
+    if isNew then
+        row:EnableMouse(false)
+        row._exSettingsTableStaticLabels = {}
+        local divider = CreateSettingsDivider(row)
+        row._exSettingsTableDivider = divider
+        row.Release = ReleaseSettingsListDecoration
+    end
+    row._exSettingsTableIsLast = options.isLast == true
+    local shown = {}
+    for column, value in pairs(options.staticCells or {}) do
+        if type(column) == "number" and value ~= nil then
+            local label = row._exSettingsTableStaticLabels[column]
+            if not label then
+                label = EXUI:CreateVisualFontString(row, EXFONTFRAME, "GameFontHighlight")
+                label:SetJustifyH("LEFT")
+                row._exSettingsTableStaticLabels[column] = label
+            end
+            label:SetText(tostring(value))
+            label:Show()
+            MODERN.ApplyTextRole(label, "title", SETTINGS_LIST_TITLE)
+            shown[column] = true
+        end
+    end
+    for column, label in pairs(row._exSettingsTableStaticLabels) do
+        if not shown[column] then label:Hide() end
+    end
+    row._exSettingsTableDivider:SetShown(not row._exSettingsTableIsLast)
+    EXUI:ClearControlSurface(row)
+    return row
+end
+
+function EXUI:UpdateSettingsTableRowLayout(row, width, columns, metrics)
+    if not row then return 0, {} end
+    columns = type(columns) == "table" and columns or {}
+    metrics = type(metrics) == "table" and metrics or {}
+    local height = 48
+    for _, metric in ipairs(metrics) do
+        if not metric or metric.visible ~= false then
+            height = math.max(height, math.max(1, tonumber(metric and metric.height) or 1) + 16)
+        end
+    end
+    row:SetSize(math.max(1, tonumber(width) or 1), height)
+    local rects = {}
+    for index, column in ipairs(columns) do
+        local metric = metrics[index] or {}
+        local cellHeight = math.max(1, tonumber(metric.height) or 28)
+        rects[index] = {
+            x = column.x + 4,
+            y = math.floor((height - cellHeight) * 0.5 + 0.5),
+            width = math.max(1, column.width - 8),
+            height = cellHeight,
+        }
+        local label = row._exSettingsTableStaticLabels[index]
+        if label and label:IsShown() then
+            label:ClearAllPoints()
+            label:SetPoint("LEFT", row, "LEFT", column.x + 4, 0)
+            label:SetWidth(math.max(1, column.width - 8))
+        end
+    end
+    local divider = row._exSettingsTableDivider
+    divider:ClearAllPoints()
+    divider:SetPoint("BOTTOMLEFT", row, "BOTTOMLEFT", SETTINGS_LIST_ROW_PADDING_X, 0)
+    divider:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -SETTINGS_LIST_ROW_PADDING_X, 0)
+    divider:SetShown(not row._exSettingsTableIsLast)
+    return height, rects
+end
+
+local function CaptureRegionPoints(region)
+    local points = {}
+    if not region or not region.GetNumPoints then return points end
+    for index = 1, region:GetNumPoints() do
+        points[index] = { region:GetPoint(index) }
+    end
+    return points
+end
+
+local function RestoreRegionPoints(region, points)
+    if not region or not region.ClearAllPoints then return end
+    region:ClearAllPoints()
+    for _, point in ipairs(points or {}) do region:SetPoint(unpack(point)) end
+end
+
+local function CaptureControlSurfaceState(frame)
+    local state = {}
+    for radius, skin in pairs(frame and frame._exModernSurfaces or {}) do
+        local saved = { pieces = {} }
+        for index, piece in ipairs(skin.pieces or {}) do
+            local r, g, b, a = piece.texture:GetVertexColor()
+            saved.pieces[index] = {
+                shown = piece.texture:IsShown(), alpha = piece.texture:GetAlpha(),
+                color = { r, g, b, a },
+            }
+        end
+        state[radius] = saved
+    end
+    return state
+end
+
+local function RestoreControlSurfaceState(frame, state)
+    for radius, skin in pairs(frame and frame._exModernSurfaces or {}) do
+        local saved = state and state[radius]
+        if skin.Layout then skin.Layout() end
+        for index, piece in ipairs(skin.pieces or {}) do
+            local pieceState = saved and saved.pieces[index]
+            if pieceState then
+                piece.texture:SetVertexColor(unpack(pieceState.color))
+                piece.texture:SetAlpha(pieceState.alpha)
+                piece.texture:SetShown(pieceState.shown)
+            else
+                piece.texture:SetAlpha(0)
+                piece.texture:Hide()
+            end
+        end
+    end
+end
+
+local function SetControlSurfaceAlpha(frame, alpha)
+    for _, skin in pairs(frame and frame._exModernSurfaces or {}) do
+        for _, piece in ipairs(skin.pieces or {}) do piece.texture:SetAlpha(alpha) end
+    end
+end
+
+function EXUI:PrepareSettingsListCard(card, options)
+    if not card or not card._exSettingsCardBody then return false, "not-settings-card" end
+    if card._exSettingsListCardState then return true end
+    options = type(options) == "table" and options or {}
+    local groupMember = options.groupMember == true
+    local descriptionOnly = options.descriptionOnly == true and not groupMember
+    local groupCollapsible = not groupMember or options.groupCollapsible ~= false
+    local preserveHeader = options.preserveHeader == true or groupMember
+    if not preserveHeader and not descriptionOnly and card._exSettingsCardCollapsible == true then
+        return false, "collapsible-card"
+    end
+    if not preserveHeader and not descriptionOnly and card._exSettingsCardCollapsed == true then
+        return false, "collapsed-card"
+    end
+    local body = card._exSettingsCardBody
+    card._exSettingsListCardState = {
+        mode = groupMember and (groupCollapsible and "group" or "flat")
+            or (preserveHeader and "external" or "flat"),
+        headerShown = card._exSettingsCardHeader:IsShown(),
+        headerHeight = card._exSettingsCardHeader:GetHeight(),
+        headerMouseEnabled = card._exSettingsCardHeader:IsMouseEnabled(),
+        bodyShown = body:IsShown(),
+        bodyPoints = CaptureRegionPoints(body),
+        bodyWidth = body:GetWidth(),
+        bodyHeight = body:GetHeight(),
+        cardWidth = card:GetWidth(),
+        cardHeight = card:GetHeight(),
+        surfaces = CaptureControlSurfaceState(card),
+        bodySurfaces = CaptureControlSurfaceState(body),
+        headerSurfaces = CaptureControlSurfaceState(card._exSettingsCardHeader),
+        titleShown = card._exSettingsCardTitle:IsShown(),
+        titlePoints = CaptureRegionPoints(card._exSettingsCardTitle),
+        iconShown = card._exSettingsCardIcon:IsShown(),
+        toggleShown = card._exSettingsCardToggle:IsShown(),
+        togglePoints = CaptureRegionPoints(card._exSettingsCardToggle),
+        dividerShown = card._exSettingsCardDivider:IsShown(),
+        squareBottomShown = card._exSettingsCardSquareBottom:IsShown(),
+        collapsible = card._exSettingsCardCollapsible,
+        collapsed = card._exSettingsCardCollapsed,
+    }
+    card._exSettingsListCardMode = card._exSettingsListCardState.mode
+    if groupMember and groupCollapsible then
+        local headerHeight = 52
+        card._exSettingsListGroupMember = {
+            titleColor = MC.text,
+            glyphColor = MC.muted,
+            headerHeight = headerHeight,
+        }
+        card._exSettingsCardCollapsible = true
+        local header = card._exSettingsCardHeader
+        header:SetHeight(headerHeight)
+        header:Show()
+        header:EnableMouse(true)
+        card._exSettingsCardIcon:Hide()
+        card._exSettingsCardTitle:ClearAllPoints()
+        card._exSettingsCardTitle:SetPoint("LEFT", header, "LEFT", 20, 0)
+        card._exSettingsCardTitle:SetPoint("RIGHT", card._exSettingsCardToggle, "LEFT", -8, 0)
+        card._exSettingsCardTitle:Show()
+        card._exSettingsCardToggle:ClearAllPoints()
+        card._exSettingsCardToggle:SetPoint("RIGHT", header, "RIGHT", -16, 0)
+        card._exSettingsCardToggle:Show()
+        card._exSettingsCardDivider:Hide()
+        card._exSettingsCardSquareBottom:Hide()
+        if not card._exSettingsGroupDivider then
+            card._exSettingsGroupDivider = CreateSettingsDivider(card)
+        end
+        local groupDivider = card._exSettingsGroupDivider
+        groupDivider:ClearAllPoints()
+        groupDivider:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 20, 0)
+        groupDivider:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -20, 0)
+        groupDivider:SetShown(options.isLast ~= true)
+        SetControlSurfaceAlpha(header, 0)
+        card._exSettingsCardPaintHeader()
+    elseif groupMember then
+        -- An explicitly non-collapsible settings group contributes only its
+        -- existing body to the shared outer group surface.  Header interaction,
+        -- configuration ownership and child controls remain untouched.
+        local header = card._exSettingsCardHeader
+        header:Hide()
+        header:EnableMouse(false)
+        card._exSettingsCardIcon:Hide()
+        card._exSettingsCardTitle:Hide()
+        card._exSettingsCardToggle:Hide()
+        card._exSettingsCardDivider:Hide()
+        card._exSettingsCardSquareBottom:Hide()
+        card._exSettingsCardCollapsible = false
+        card._exSettingsCardCollapsed = false
+        body:Show()
+        if not card._exSettingsGroupDivider then
+            card._exSettingsGroupDivider = CreateSettingsDivider(card)
+        end
+        local groupDivider = card._exSettingsGroupDivider
+        groupDivider:ClearAllPoints()
+        groupDivider:SetPoint("BOTTOMLEFT", card, "BOTTOMLEFT", 20, 0)
+        groupDivider:SetPoint("BOTTOMRIGHT", card, "BOTTOMRIGHT", -20, 0)
+        groupDivider:SetShown(options.isLast ~= true)
+        SetControlSurfaceAlpha(header, 0)
+    elseif preserveHeader then
+        -- The existing toggle remains the original object with the original
+        -- click scripts. Only its geometry and the surrounding paint change.
+        card._exSettingsListExternalHeader = {
+            titleColor = SETTINGS_LIST_TITLE,
+            glyphColor = SETTINGS_LIST_DESCRIPTION,
+            height = SETTINGS_LIST_EXTERNAL_HEADER_HEIGHT,
+        }
+        local header = card._exSettingsCardHeader
+        header:SetHeight(SETTINGS_LIST_EXTERNAL_HEADER_HEIGHT)
+        header:Show()
+        header:EnableMouse(false)
+        card._exSettingsCardIcon:Hide()
+        card._exSettingsCardTitle:ClearAllPoints()
+        card._exSettingsCardTitle:SetPoint("LEFT", header, "LEFT", 0, 0)
+        card._exSettingsCardTitle:SetPoint("RIGHT", card._exSettingsCardToggle, "LEFT", -8, 0)
+        card._exSettingsCardTitle:Show()
+        card._exSettingsCardToggle:ClearAllPoints()
+        card._exSettingsCardToggle:SetPoint("RIGHT", header, "RIGHT", 0, 0)
+        -- Ordinary settings categories are always expanded. The original
+        -- header scripts remain installed but their existing guard sees this
+        -- temporary false flag, so no invisible click target can collapse it.
+        card._exSettingsCardCollapsible = false
+        card._exSettingsCardCollapsed = false
+        card._exSettingsCardToggle:Hide()
+        body:Show()
+        card._exSettingsCardDivider:Hide()
+        card._exSettingsCardSquareBottom:Hide()
+        SetControlSurfaceAlpha(header, 0)
+        card._exSettingsCardPaintHeader()
+    else
+        local header = card._exSettingsCardHeader
+        header:Hide()
+        if descriptionOnly then
+            header:EnableMouse(false)
+            card._exSettingsCardIcon:Hide()
+            card._exSettingsCardTitle:Hide()
+            card._exSettingsCardToggle:Hide()
+            card._exSettingsCardDivider:Hide()
+            card._exSettingsCardSquareBottom:Hide()
+            card._exSettingsCardCollapsible = false
+            card._exSettingsCardCollapsed = false
+            body:Show()
+            SetControlSurfaceAlpha(header, 0)
+        end
+    end
+    body:ClearAllPoints()
+    local bodyTop = groupMember and (groupCollapsible and 52 or 0)
+        or (preserveHeader and SETTINGS_LIST_EXTERNAL_HEADER_HEIGHT or 0)
+    local bodyInset = groupMember and groupCollapsible and 12 or 0
+    body:SetPoint("TOPLEFT", card, "TOPLEFT", bodyInset, -bodyTop)
+    body:SetPoint("TOPRIGHT", card, "TOPRIGHT", -bodyInset, -bodyTop)
+    body:SetShown(groupMember and groupCollapsible and card._exSettingsListCardState.bodyShown or true)
+    SetControlSurfaceAlpha(card, 0)
+    EXUI:SetControlSurface(body, 10,
+        groupMember and MC.raised or SETTINGS_LIST_CARD_FILL, SETTINGS_LIST_CARD_BORDER)
+    SetControlSurfaceAlpha(body,
+        (descriptionOnly or (groupMember and not groupCollapsible)) and 0 or 1)
+    if groupMember and groupCollapsible then card:SetCollapsed(options.collapsed == true, true) end
+    card:SetHeight(card:GetPreferredHeight())
+    return true
+end
+
+function EXUI:RestoreSettingsListCard(card)
+    local state = card and card._exSettingsListCardState
+    if not state then return false end
+    local body = card._exSettingsCardBody
+    card._exSettingsListCardMode = nil
+    card._exSettingsListExternalHeader = nil
+    card._exSettingsListGroupMember = nil
+    card._exSettingsCardCollapsible = state.collapsible == true
+    card._exSettingsCardCollapsed = state.collapsed == true
+    card:SetSize(state.cardWidth, state.cardHeight)
+    RestoreRegionPoints(body, state.bodyPoints)
+    body:SetHeight(state.bodyHeight)
+    body:SetShown(state.bodyShown)
+    RestoreControlSurfaceState(body, state.bodySurfaces)
+    card._exSettingsCardHeader:SetShown(state.headerShown)
+    card._exSettingsCardHeader:SetHeight(state.headerHeight)
+    card._exSettingsCardHeader:EnableMouse(state.headerMouseEnabled ~= false)
+    RestoreControlSurfaceState(card._exSettingsCardHeader, state.headerSurfaces)
+    RestoreRegionPoints(card._exSettingsCardTitle, state.titlePoints)
+    card._exSettingsCardTitle:SetShown(state.titleShown)
+    card._exSettingsCardIcon:SetShown(state.iconShown)
+    RestoreRegionPoints(card._exSettingsCardToggle, state.togglePoints)
+    card._exSettingsCardToggle:SetShown(state.toggleShown)
+    card._exSettingsCardDivider:SetShown(state.dividerShown)
+    card._exSettingsCardSquareBottom:SetShown(state.squareBottomShown)
+    card._exSettingsCardToggle._exGlyph:SetText(state.collapsed and "v" or "^")
+    RestoreControlSurfaceState(card, state.surfaces)
+    card._exSettingsListCardState = nil
+    if card._exSettingsGroupDivider then card._exSettingsGroupDivider:Hide() end
+    card._exSettingsCardPaintHeader()
+    return true
+end
+
+function EXUI:CreateSettingsCardGroupSurface(parent, options)
+    local surface, isNew = AcquireCompositeGroup("CompositeSettingsCardGroupSurface", parent)
+    if isNew then
+        surface:EnableMouse(false)
+        surface.Release = ReleaseSettingsListDecoration
+    end
+    if parent and surface.SetFrameLevel and parent.GetFrameLevel then
+        surface:SetFrameLevel(parent:GetFrameLevel())
+    end
+    if parent and surface.SetFrameStrata and parent.GetFrameStrata then
+        surface:SetFrameStrata(parent:GetFrameStrata())
+    end
+    EXUI:SetControlSurface(surface, 10, MC.panel, MC.border)
+    surface:Show()
+    return surface
+end
+
+function EXUI:UpdateSettingsCardGroupSurfaceLayout(surface, width, height)
+    if not surface then return 0 end
+    width = math.max(1, tonumber(width) or 1)
+    height = math.max(1, tonumber(height) or 1)
+    surface:SetSize(width, height)
+    EXUI:SetControlSurface(surface, 10, MC.panel, MC.border)
+    return height
+end
+
+function EXUI:RestoreSettingsListControl(widget)
+    local state = widget and widget._exSettingsListVisualState
+    if not state then return false end
+    if state.hasSettingsListHeight then
+        widget._exGridFixedHeight = state.settingsListFixedHeight
+        widget:SetHeight(state.settingsListHeight)
+    end
+    widget._exSettingsOrdinaryControl = state.ordinaryControl
+    for _, entry in ipairs(state.labels or {}) do
+        if entry.region and entry.region.SetShown then entry.region:SetShown(entry.shown) end
+    end
+    local role = state.roleLabel
+    if role and role.region then
+        local region = role.region
+        region:SetText(role.text)
+        RestoreRegionPoints(region, role.points)
+        if role.fontPath then region:SetFont(role.fontPath, role.fontSize, role.fontFlags) end
+        region:SetTextColor(unpack(role.color))
+        if region.SetShadowColor and role.shadowColor then region:SetShadowColor(unpack(role.shadowColor)) end
+        if region.SetShadowOffset and role.shadowX then region:SetShadowOffset(role.shadowX, role.shadowY) end
+        if region.SetJustifyH and role.justifyH then region:SetJustifyH(role.justifyH) end
+        if region.SetJustifyV and role.justifyV then region:SetJustifyV(role.justifyV) end
+        if role.widgetHeight then widget:SetHeight(role.widgetHeight) end
+    end
+    local descriptionRole = state.roleDescription
+    if descriptionRole and descriptionRole.region then
+        local region = descriptionRole.region
+        region:SetSize(descriptionRole.width, descriptionRole.height)
+        RestoreRegionPoints(region, descriptionRole.points)
+        if descriptionRole.fontPath then
+            region:SetFont(descriptionRole.fontPath, descriptionRole.fontSize, descriptionRole.fontFlags)
+        end
+        region:SetTextColor(unpack(descriptionRole.color))
+        if region.SetShadowColor and descriptionRole.shadowColor then
+            region:SetShadowColor(unpack(descriptionRole.shadowColor))
+        end
+        if region.SetShadowOffset and descriptionRole.shadowX then
+            region:SetShadowOffset(descriptionRole.shadowX, descriptionRole.shadowY)
+        end
+        region:SetJustifyH(descriptionRole.justifyH or "LEFT")
+        region:SetJustifyV(descriptionRole.justifyV or "TOP")
+        region:SetWordWrap(descriptionRole.wordWrap == true)
+        if region.SetMaxLines and descriptionRole.maxLines ~= nil then
+            region:SetMaxLines(descriptionRole.maxLines)
+        end
+    end
+    local box = widget.checkbox
+    if box and state.checkbox then
+        widget._exSettingsPresentation = state.presentation
+        widget._exSettingsPillNaturalWidth = state.pillNaturalWidth
+        widget._exSettingsPillVisualPending = nil
+        box:SetSize(state.checkbox.width, state.checkbox.height)
+        RestoreRegionPoints(box, state.checkbox.points)
+        if widget.label and state.checkbox.labelPoints then
+            RestoreRegionPoints(widget.label, state.checkbox.labelPoints)
+            widget.label:SetJustifyH(state.checkbox.labelJustify or "LEFT")
+            widget.label:SetShown(state.checkbox.labelShown ~= false)
+        end
+        if box._exSettingsPillLabel then box._exSettingsPillLabel:Hide() end
+        PaintModernCheckbox(widget)
+    end
+    if state.buttonVariant then
+        widget._exButtonVariant = state.buttonVariant
+        PaintModernButton(widget)
+    end
+    if state.sliderLayout then
+        local sliderState = state.sliderLayout
+        widget._exSettingsValuePosition = sliderState.valuePosition
+        widget._exGridFixedHeight = sliderState.fixedHeight
+        widget:SetSize(sliderState.width, sliderState.height)
+        local input = widget.numberInput
+        if input then
+            RestoreRegionPoints(input, sliderState.inputPoints)
+            input:SetSize(sliderState.inputWidth, sliderState.inputHeight)
+        end
+        local interactive = widget.Slider
+        if interactive and sliderState.interactivePoints then
+            RestoreRegionPoints(interactive, sliderState.interactivePoints)
+            interactive:SetSize(sliderState.interactiveWidth, sliderState.interactiveHeight)
+        end
+    end
+    widget._exSettingsListVisualState = nil
+    return true
+end
+
+-- Reflow only the original GridSlider and its original number EditBox.  The
+-- numeric value, formatter, interaction scripts and lifecycle callbacks remain
+-- owned by CreateSlider.
+function EXUI:UpdateSettingsListControlLayout(widget, width)
+    if not widget then return 0 end
+    width = math.max(1, tonumber(width) or widget:GetWidth() or 1)
+    if widget._gridType == "GridSlider" and widget._exSettingsValuePosition == "right"
+        and widget.numberInput then
+        local height = SETTINGS_LIST_ORDINARY_CONTROL_HEIGHT
+        local gap, inputWidth, trackWidth
+        if widget._exSettingsOrdinaryControl == true then
+            gap = math.min(12, math.max(0, width - 2))
+            inputWidth = math.min(40, math.max(1, width - gap - 1))
+            trackWidth = math.max(1, width - gap - inputWidth)
+        else
+            gap, inputWidth = 12, 48
+            trackWidth = math.max(80, width - gap - inputWidth)
+        end
+        widget:SetSize(trackWidth, height)
+        widget._exGridFixedHeight = height
+        local input = widget.numberInput
+        input:ClearAllPoints()
+        input:SetPoint("LEFT", widget, "RIGHT", gap, 0)
+        input:SetSize(inputWidth, 26)
+        local interactive = widget.Slider
+        if interactive then
+            interactive:ClearAllPoints()
+            interactive:SetPoint("LEFT", widget, "LEFT", 0, 0)
+            interactive:SetPoint("RIGHT", widget, "RIGHT", 0, 0)
+            interactive:SetHeight(20)
+        end
+        return height, width
+    end
+    if widget._exSettingsOrdinaryControl == true
+        and (widget._gridType == "GridInput" or widget._gridType == "GridDropdown"
+            or widget._gridType == "GridLSMDropdown" or widget._gridType == "GridMultiselect"
+            or widget._gridType == "GridColorButton") then
+        widget:SetSize(width, SETTINGS_LIST_ORDINARY_CONTROL_HEIGHT)
+        widget._exGridFixedHeight = SETTINGS_LIST_ORDINARY_CONTROL_HEIGHT
+        -- Repaint against the final first-pass geometry as well as later
+        -- reflows. This synchronizes the surface slices even when a pooled
+        -- dropdown happens to be assigned the same root width it held before.
+        if widget._gridType == "GridInput" then
+            PaintModernInput(widget, widget)
+        elseif widget._gridType == "GridColorButton" then
+            PaintModernButton(widget)
+        else
+            PaintModernDropdown(widget)
+        end
+        return SETTINGS_LIST_ORDINARY_CONTROL_HEIGHT, width
+    end
+    widget:SetWidth(width)
+    return math.max(1, widget:GetHeight()), width
+end
+
+function EXUI:PrepareSettingsListControl(widget, options)
+    if not widget then return false end
+    options = type(options) == "table" and options or {}
+    if widget._exSettingsListVisualState then self:RestoreSettingsListControl(widget) end
+    local state = {
+        labels = {},
+        presentation = widget._exSettingsPresentation,
+        pillNaturalWidth = widget._exSettingsPillNaturalWidth,
+        ordinaryControl = widget._exSettingsOrdinaryControl,
+    }
+    local function SetSettingsListHeight(height)
+        if not state.hasSettingsListHeight then
+            state.hasSettingsListHeight = true
+            state.settingsListHeight = widget:GetHeight()
+            state.settingsListFixedHeight = widget._exGridFixedHeight
+        end
+        widget._exGridFixedHeight = height
+        widget:SetHeight(height)
+    end
+    local isSingleLineInput = widget._gridType == "GridInput"
+        and widget.IsMultiLine and not widget:IsMultiLine()
+    local isOrdinaryRectangle = isSingleLineInput or widget._gridType == "GridDropdown"
+        or widget._gridType == "GridLSMDropdown" or widget._gridType == "GridMultiselect"
+        or widget._gridType == "GridColorButton"
+    local isOrdinarySlider = widget._gridType == "GridSlider" and options.valuePosition == "right"
+    widget._exSettingsOrdinaryControl = options.ordinaryControl == true
+        and (isOrdinaryRectangle or isOrdinarySlider) or nil
+    if widget._exSettingsOrdinaryControl and isOrdinaryRectangle then
+        SetSettingsListHeight(SETTINGS_LIST_ORDINARY_CONTROL_HEIGHT)
+    elseif isSingleLineInput or widget._gridType == "GridColorButton" then
+        SetSettingsListHeight(isSingleLineInput and 28 or 36)
+    elseif widget._gridType == "GridButton" then
+        SetSettingsListHeight(28)
+    elseif widget._gridType == "GridCheckbox" then
+        SetSettingsListHeight(options.presentation == "pill" and 32 or 28)
+    end
+    if options.presentation == "primary" and widget._gridType == "GridButton" then
+        state.buttonVariant = widget._exButtonVariant or "secondary"
+        widget._exButtonVariant = "primary"
+        PaintModernButton(widget)
+    end
+    if options.width == "content" and widget._gridType == "GridButton" then
+        local label = widget.GetFontString and widget:GetFontString() or nil
+        local textWidth = label and label.GetUnboundedStringWidth
+            and math.ceil(label:GetUnboundedStringWidth() or 0) or 0
+        widget:SetWidth(math.max(BUTTON_STYLE.minWidth, textWidth + BUTTON_STYLE.paddingX * 2))
+    end
+    if options.valuePosition == "right" and widget._gridType == "GridSlider" and widget.numberInput then
+        local input = widget.numberInput
+        local interactive = widget.Slider
+        state.sliderLayout = {
+            valuePosition = widget._exSettingsValuePosition,
+            fixedHeight = widget._exGridFixedHeight,
+            width = widget:GetWidth(), height = widget:GetHeight(),
+            inputPoints = CaptureRegionPoints(input),
+            inputWidth = input:GetWidth(), inputHeight = input:GetHeight(),
+            interactivePoints = interactive and CaptureRegionPoints(interactive) or nil,
+            interactiveWidth = interactive and interactive:GetWidth() or nil,
+            interactiveHeight = interactive and interactive:GetHeight() or nil,
+        }
+        widget._exSettingsValuePosition = "right"
+        self:UpdateSettingsListControlLayout(widget, widget:GetWidth())
+    end
+    if options.role == "label" then
+        local region = ResolveSettingsListRoleRegion(widget)
+        if region and region.GetText and region.SetText then
+            local fontPath, fontSize, fontFlags = region:GetFont()
+            local shadowR, shadowG, shadowB, shadowA = region:GetShadowColor()
+            local shadowX, shadowY = region:GetShadowOffset()
+            state.roleLabel = {
+                region = region, text = region:GetText(), points = CaptureRegionPoints(region),
+                widgetHeight = widget:GetHeight(),
+                fontPath = fontPath, fontSize = fontSize, fontFlags = fontFlags,
+                color = { region:GetTextColor() }, shadowColor = { shadowR, shadowG, shadowB, shadowA },
+                shadowX = shadowX, shadowY = shadowY,
+                justifyH = region:GetJustifyH(), justifyV = region:GetJustifyV(),
+            }
+            local plain = tostring(region:GetText() or "")
+                :gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+            region:SetText(plain)
+            if region ~= widget then
+                region:ClearAllPoints()
+                region:SetPoint("LEFT", widget, "LEFT", 0, 0)
+                region:SetPoint("RIGHT", widget, "RIGHT", 0, 0)
+            end
+            region:SetJustifyH("LEFT")
+            region:SetJustifyV("MIDDLE")
+            MODERN.ApplyTextRole(region, "title", SETTINGS_LIST_TITLE)
+            SetSettingsListHeight(28)
+        end
+    elseif options.role == "description" then
+        local region = ResolveSettingsListRoleRegion(widget)
+        if region and region.GetText then
+            local fontPath, fontSize, fontFlags = region:GetFont()
+            local shadowR, shadowG, shadowB, shadowA = region:GetShadowColor()
+            local shadowX, shadowY = region:GetShadowOffset()
+            state.roleDescription = {
+                region = region, points = CaptureRegionPoints(region),
+                width = region:GetWidth(), height = region:GetHeight(),
+                fontPath = fontPath, fontSize = fontSize, fontFlags = fontFlags,
+                color = { region:GetTextColor() },
+                shadowColor = { shadowR, shadowG, shadowB, shadowA },
+                shadowX = shadowX, shadowY = shadowY,
+                justifyH = region:GetJustifyH(), justifyV = region:GetJustifyV(),
+                wordWrap = region:CanWordWrap(),
+                maxLines = region.GetMaxLines and region:GetMaxLines() or nil,
+            }
+            if region ~= widget then
+                region:ClearAllPoints()
+                region:SetPoint("TOPLEFT", widget, "TOPLEFT", 0, 0)
+                region:SetPoint("TOPRIGHT", widget, "TOPRIGHT", 0, 0)
+            end
+            region:SetJustifyH("LEFT")
+            region:SetJustifyV("TOP")
+            region:SetWordWrap(true)
+            if region.SetMaxLines then region:SetMaxLines(0) end
+            MODERN.Font(region, 13, SETTINGS_LIST_DESCRIPTION, "", "GameFontHighlightSmall")
+        end
+    end
+    if options.hideLabel == true then
+        local seen = {}
+        for _, field in ipairs({ "labelText", "label", "Title" }) do
+            local region = widget[field]
+            if region and not seen[region] and region.IsShown and region.SetShown then
+                seen[region] = true
+                state.labels[#state.labels + 1] = { region = region, shown = region:IsShown() }
+                region:Hide()
+            end
+        end
+    end
+    local box = widget.checkbox
+    if (options.presentation == "switch" or options.presentation == "pill") and box then
+        state.checkbox = {
+            width = box:GetWidth(), height = box:GetHeight(), points = CaptureRegionPoints(box),
+            labelPoints = widget.label and CaptureRegionPoints(widget.label) or nil,
+            labelJustify = widget.label and widget.label:GetJustifyH() or nil,
+            labelShown = widget.label and widget.label:IsShown(),
+        }
+        widget._exSettingsPresentation = options.presentation
+        box:ClearAllPoints()
+        if options.presentation == "pill" then
+            widget:SetHeight(32)
+            box:SetAllPoints(widget)
+            if widget.label then
+                widget.label:ClearAllPoints()
+                widget.label:SetPoint("LEFT", widget, "LEFT", 27, 0)
+                widget.label:SetPoint("RIGHT", widget, "RIGHT", -10, 0)
+                widget.label:SetJustifyH("LEFT")
+                widget.label:Hide()
+            end
+            if not box._exSettingsPillLabel then
+                local visualLabel = EXUI:CreateVisualFontString(box._exModernCheckSurface,
+                    EXFONTFRAME, "GameFontHighlight")
+                visualLabel:SetJustifyH("LEFT")
+                visualLabel:SetJustifyV("MIDDLE")
+                box._exSettingsPillLabel = visualLabel
+            end
+            local visualLabel = box._exSettingsPillLabel
+            visualLabel:SetText(widget.label and widget.label:GetText() or "")
+            MODERN.ApplyTextRole(visualLabel, "title")
+            visualLabel:Show()
+        else
+            box:SetPoint("RIGHT", widget, "RIGHT", 0, 0)
+            box:SetSize(40, 24)
+        end
+        PaintModernCheckbox(widget)
+    end
+    widget._exSettingsListVisualState = state
+    return true
 end
 
 function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
@@ -5146,6 +6707,13 @@ function EXUI:CreateEditBox(parent, text, w, h, labelText, options)
         self:ApplyControlAppearance(container)
 
         -- 基础配置
+        -- GridInput is shared by ordinary text fields and quantity editors.
+        -- Quantity editors deliberately switch their own lease to CENTER, so
+        -- every ordinary single-line lease must restore the visual baseline.
+        -- This changes geometry only: cursor, accepted input and callbacks are
+        -- left untouched.
+        container:SetJustifyH("LEFT")
+        container:SetJustifyV("MIDDLE")
         SetPixelSize(container, w or 180, h or 28)
         if container.EnableMouse then
             container:EnableMouse(true)
@@ -5485,7 +7053,184 @@ function EXUI:CreateSegmentedControl(parent, width, items, currentValue, onChang
 end
 
 -- =========================================================
--- 16. 物品配置组件 (Item Config Widget)
+-- 16. 只读物品身份 (Item Identity)
+-- 仅显示现有 itemID 的图标、名称与 tooltip；不持有配置、不接收拖放、
+-- 不创建默认值，也不发出任何状态或数据通知。
+-- =========================================================
+local ITEM_IDENTITY_PENDING = {}
+local ItemIdentityLoader
+
+local function StopItemIdentityLoaderIfIdle()
+    if ItemIdentityLoader and next(ITEM_IDENTITY_PENDING) == nil then
+        ItemIdentityLoader:UnregisterEvent("GET_ITEM_INFO_RECEIVED")
+    end
+end
+
+local function CancelItemIdentityLoad(container)
+    local id = container._itemIdentityPendingID
+    local waiters = id and ITEM_IDENTITY_PENDING[id]
+    if waiters then
+        waiters[container] = nil
+        if next(waiters) == nil then ITEM_IDENTITY_PENDING[id] = nil end
+    end
+    container._itemIdentityPendingID = nil
+    container._itemIdentityLoadTicket = nil
+    StopItemIdentityLoaderIfIdle()
+end
+
+local function EnsureItemIdentityLoader()
+    if ItemIdentityLoader then return ItemIdentityLoader end
+    local loader = CreateFrame("Frame")
+    loader:SetScript("OnEvent", function(_, _, itemID, success)
+        itemID = tonumber(itemID)
+        local waiters = itemID and ITEM_IDENTITY_PENDING[itemID]
+        if not waiters then return end
+        ITEM_IDENTITY_PENDING[itemID] = nil
+        for container, ticket in pairs(waiters) do
+            if container._itemIdentityPendingID == itemID
+                and container._itemIdentityLoadTicket == ticket
+                and container._itemIdentityID == itemID then
+                container._itemIdentityPendingID = nil
+                container._itemIdentityLoadTicket = nil
+                if success then
+                    -- The event is the single completion opportunity for this
+                    -- lease. If the cache still has no record, show a stable
+                    -- fallback instead of opening another request loop.
+                    container:_exUpdateItemIdentity(true)
+                else
+                    container:_exSetItemIdentityUnavailable()
+                end
+            end
+        end
+        StopItemIdentityLoaderIfIdle()
+    end)
+    ItemIdentityLoader = loader
+    return loader
+end
+
+local function RequestItemIdentityLoad(container, itemID)
+    CancelItemIdentityLoad(container)
+    local waiters = ITEM_IDENTITY_PENDING[itemID]
+    local firstRequest = waiters == nil
+    if firstRequest then
+        waiters = setmetatable({}, { __mode = "k" })
+        ITEM_IDENTITY_PENDING[itemID] = waiters
+    end
+    local ticket = {}
+    container._itemIdentityPendingID = itemID
+    container._itemIdentityLoadTicket = ticket
+    waiters[container] = ticket
+    EnsureItemIdentityLoader():RegisterEvent("GET_ITEM_INFO_RECEIVED")
+    if firstRequest then C_Item.RequestLoadItemDataByID(itemID) end
+end
+
+function EXUI:CreateItemIdentity(parent, width, height, itemID)
+    local w, h = width or 320, height or 40
+    local container, isNew = AcquireCompositeGroup("CompositeItemIdentity", parent)
+    local nextItemID = tonumber(itemID) or 0
+    if container._itemIdentityID ~= nextItemID then
+        container._itemIdentityCompletedID = nil
+    end
+    container._itemIdentityID = nextItemID
+
+    if isNew then
+        local iconButton = CreateFrame("Button", nil, container)
+        iconButton:EnableMouse(true)
+        local icon = EXUI:CreateVisualTexture(iconButton, EXBASEFRAME)
+        icon:SetAllPoints()
+        icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+        container.iconButton, container.icon = iconButton, icon
+
+        local name = EXUI:CreateVisualFontString(container, EXFONTFRAME, "GameFontHighlightSmall")
+        name:SetJustifyH("LEFT")
+        name:SetWordWrap(false)
+        container.nameText = name
+
+        local function ShowTooltip(owner)
+            local id = container._itemIdentityID
+            if id and id > 0 then
+                GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+                GameTooltip:SetItemByID(id)
+                GameTooltip:Show()
+            end
+        end
+        local function HideTooltip() GameTooltip:Hide() end
+        container._exItemIdentityShowTooltip = ShowTooltip
+        container._exItemIdentityHideTooltip = HideTooltip
+        container._exCancelItemIdentityLoad = CancelItemIdentityLoad
+
+        function container:_exSetItemIdentityUnavailable()
+            self._itemIdentityCompletedID = self._itemIdentityID
+            self.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+            self.nameText:SetText(string.format("ID %d", self._itemIdentityID or 0))
+            self.nameText:SetTextColor(unpack(MC.muted))
+        end
+
+        function container:_exUpdateItemIdentity(loadCompleted)
+            local id = self._itemIdentityID
+            if self._itemIdentityPendingID and self._itemIdentityPendingID ~= id then
+                CancelItemIdentityLoad(self)
+            end
+            if not id or id == 0 then
+                CancelItemIdentityLoad(self)
+                self.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+                self.nameText:SetText("")
+                self.nameText:SetTextColor(unpack(MC.muted))
+                return
+            end
+            local itemName, _, quality, _, _, _, _, _, _, texture = C_Item.GetItemInfo(id)
+            if itemName then
+                CancelItemIdentityLoad(self)
+                self._itemIdentityCompletedID = nil
+                self.icon:SetTexture(texture)
+                self.nameText:SetText(itemName)
+                local r, g, b = C_Item.GetItemQualityColor(quality or 1)
+                self.nameText:SetTextColor(r, g, b, 1)
+            else
+                if loadCompleted or self._itemIdentityCompletedID == id then
+                    self:_exSetItemIdentityUnavailable()
+                    return
+                end
+                self.icon:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+                self.nameText:SetText(L["数据加载中..."])
+                self.nameText:SetTextColor(unpack(MC.muted))
+                -- RefreshValues may re-read this cell while the same request is
+                -- pending. Keep its lease ticket instead of restarting I/O.
+                if self._itemIdentityPendingID ~= id or not self._itemIdentityLoadTicket then
+                    RequestItemIdentityLoad(self, id)
+                end
+            end
+        end
+
+        container._exCompositeReflow = function(self, nextWidth, nextHeight)
+            local iconSize = math.max(24, math.min(32, nextHeight - 8))
+            self.iconButton:ClearAllPoints()
+            self.iconButton:SetPoint("LEFT", self, "LEFT", 0, 0)
+            self.iconButton:SetSize(iconSize, iconSize)
+            self.nameText:ClearAllPoints()
+            self.nameText:SetPoint("LEFT", self.iconButton, "RIGHT", 8, 0)
+            self.nameText:SetPoint("RIGHT", self, "RIGHT", 0, 0)
+        end
+    end
+
+    -- StandardReset clears scripts on the pooled host. Rebind the read-only
+    -- tooltip on every lease; neither region accepts clicks or drag payloads.
+    container:EnableMouse(true)
+    container:SetScript("OnEnter", container._exItemIdentityShowTooltip)
+    container:SetScript("OnLeave", container._exItemIdentityHideTooltip)
+    container:SetScript("OnReceiveDrag", nil)
+    container.iconButton:SetScript("OnEnter", container._exItemIdentityShowTooltip)
+    container.iconButton:SetScript("OnLeave", container._exItemIdentityHideTooltip)
+    container.iconButton:SetScript("OnClick", nil)
+    container:_exUpdateItemIdentity()
+    EXUI:ClearControlSurface(container)
+    ReflowCompositeGroup(container, w, h)
+    AttachCompositeRelease(container)
+    return container
+end
+
+-- =========================================================
+-- 17. 物品配置组件 (Item Config Widget)
 -- 包含：Checkbox + Icon + ItemName + Input(Count) + DeleteBtn
 -- 支持：物品拖拽（OnReceiveDrag）
 -- =========================================================
@@ -7196,6 +8941,17 @@ local function CollectModuleCommonFields(opts)
     return result
 end
 
+local function IsModuleCommonOrdinaryField(field)
+    if type(field) ~= "table" or field.fullWidth == true
+        or field.presentation == "pill" or field.presentation == "switch" then
+        return false
+    end
+    local kind = field.type
+    if kind == "slider" then return field.valuePosition ~= "top" end
+    return kind == "input" or kind == "dropdown" or kind == "color"
+        or kind == "lsm_background" or kind == "lsm_border" or kind == "lsm_texture"
+end
+
 local function GetModuleCommonFieldMinWidth(field)
     local explicit = tonumber(field.minWidth or field.preferredWidth or field.width)
     if explicit and explicit > 0 then return explicit end
@@ -7221,6 +8977,62 @@ function EXUI:BuildModuleCommonSettingsFlow(width, opts)
     opts = type(opts) == "table" and opts or {}
     local fields = CollectModuleCommonFields(opts)
     local groupWidth = math.max(1, tonumber(width) or 760)
+
+    if opts.presentation == "settings-list" then
+        local entries, cursor = {}, 0
+        local rowGap = 0
+        local innerWidth = math.max(1, groupWidth - SETTINGS_LIST_ROW_PADDING_X * 2)
+        local controlHeightByType = {
+            checkbox = 28, color = 36, button = 28,
+            slider = EXUI.GridSliderHeight, dropdown = 30, input = 28,
+            lsm_background = 30, lsm_border = 30, lsm_texture = 30,
+        }
+        for _, field in ipairs(fields) do
+            local ordinaryControl = IsModuleCommonOrdinaryField(field)
+            local controlHeight = ordinaryControl and SETTINGS_LIST_ORDINARY_CONTROL_HEIGHT
+                or controlHeightByType[field.type] or EXUI.GridSliderHeight
+            local controlWidth, textWidth = ResolveSettingsRowColumns(innerWidth,
+                field.controlWidth, ordinaryControl and "ordinary" or nil,
+                field.inputWidthPercent)
+            local titleHeight = MeasureSettingsListText(field.label or field.path or field.key, textWidth, "title")
+            local descriptionHeight = MeasureSettingsListText(field.description, textWidth, "description")
+            local textHeight = titleHeight + (descriptionHeight > 0
+                and ((titleHeight > 0 and SETTINGS_LIST_DESCRIPTION_GAP or 0) + descriptionHeight) or 0)
+            local rowHeight = math.max(SETTINGS_LIST_STANDARD_ROW_HEIGHT,
+                SETTINGS_LIST_ROW_PADDING_Y * 2 + math.max(textHeight, controlHeight))
+            if descriptionHeight > 0 then
+                rowHeight = math.max(rowHeight, SETTINGS_LIST_DESCRIPTION_MIN_HEIGHT)
+            end
+            entries[#entries + 1] = {
+                field = field,
+                row = #entries,
+                column = 0,
+                span = 1,
+                x = 0,
+                y = -cursor,
+                width = groupWidth,
+                height = rowHeight,
+                controlHeight = controlHeight,
+            }
+            cursor = cursor + rowHeight + rowGap
+        end
+        local height = #entries > 0 and (cursor - rowGap) or 1
+        return {
+            fields = fields,
+            entries = entries,
+            columns = 1,
+            rows = math.max(1, #entries),
+            width = groupWidth,
+            padding = 0,
+            contentTopInset = 0,
+            entryOriginX = 0,
+            cardInsetX = 0,
+            cardInsetY = 0,
+            cardBottomInset = 0,
+            settingsList = true,
+            height = math.max(1, height),
+        }
+    end
 
     -- 模块声明 fixedLayout 时使用固定的逻辑网格；不声明的历史调用者继续走
     -- 下方原有动态 Flow。逻辑尺寸只在这里按实际 groupWidth 转为物理像素，
@@ -7463,6 +9275,8 @@ function EXUI:CreateModuleCommonSettingsGroup(parent, width, label, db, key, onU
         local factory = _G.ExwindFactory
         for _, mounted in ipairs(self._exModuleCommonEntries or {}) do
             local control = mounted.control
+            if control then EXUI:RestoreSettingsListControl(control) end
+            if mounted.row and mounted.row.Release then mounted.row:Release() end
             if control and control._fromPool and factory then
                 factory:Release(control._fromPool, control)
             elseif control then
@@ -7503,6 +9317,17 @@ function EXUI:CreateModuleCommonSettingsGroup(parent, width, label, db, key, onU
             card:Show()
             card:SetSize(flowEntry.width, flowEntry.height)
             card:SetPoint("TOPLEFT", flowEntry.x, flowEntry.y)
+            local row
+            if nextFlow.settingsList then
+                row = EXUI:CreateSettingsRow(card, {
+                    label = field.label or field.path or field.key,
+                    description = field.description,
+                    controlWidth = field.controlWidth,
+                    controlKind = IsModuleCommonOrdinaryField(field) and "ordinary" or nil,
+                    inputWidthPercent = field.inputWidthPercent,
+                    isLast = index == #activeFields,
+                })
+            end
             if field.type == "button" then
                 control = EXUI:CreateButton(card, flowEntry.width - 20, 28, field.label or path, function()
                     local structureResult
@@ -7578,7 +9403,17 @@ function EXUI:CreateModuleCommonSettingsGroup(parent, width, label, db, key, onU
             if field.type ~= "button" then
                 RegisterCompositeControl(self, control, path, kind)
             end
-                self._exModuleCommonEntries[index] = { card = card, control = control, kind = kind, field = field }
+                if row and control then
+                    EXUI:PrepareSettingsListControl(control, {
+                        hideLabel = true,
+                        presentation = field.presentation,
+                        ordinaryControl = IsModuleCommonOrdinaryField(field),
+                        valuePosition = field.type == "slider" and (field.valuePosition or "right") or nil,
+                    })
+                end
+                self._exModuleCommonEntries[index] = {
+                    card = card, control = control, kind = kind, field = field, row = row,
+                }
             end
         end
     end
@@ -7608,6 +9443,31 @@ function EXUI:CreateModuleCommonSettingsGroup(parent, width, label, db, key, onU
         local cardHeight = tonumber(nextFlow.cardHeight)
             or math.max(1, nextFlow.height - cardInsetY - cardBottomInset)
         settingsCard:SetSize(nextFlow.width - cardInsetX * 2, cardHeight)
+        if nextFlow.settingsList then
+            settingsCard:SetSize(nextFlow.width, nextFlow.height)
+            for index, entry in ipairs(nextFlow.entries) do
+                local mounted = self._exModuleCommonEntries[index]
+                if mounted then
+                    local rowHeight, controlX, controlY, controlWidth = EXUI:UpdateSettingsRowLayout(
+                        mounted.row, entry.width, entry.controlHeight)
+                    mounted.card:ClearAllPoints()
+                    mounted.card:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", 0, entry.y)
+                    mounted.card:SetSize(entry.width, rowHeight)
+                    mounted.row:ClearAllPoints()
+                    mounted.row:SetPoint("TOPLEFT", mounted.card, "TOPLEFT", 0, 0)
+                    local control = mounted.control
+                    if control then
+                        if control.SetWidth then control:SetWidth(controlWidth) end
+                        EXUI:UpdateSettingsListControlLayout(control, controlWidth)
+                        control:ClearAllPoints()
+                        local actualHeight = control.GetHeight and control:GetHeight() or entry.controlHeight
+                        local visualInset = math.max(0, (entry.controlHeight - actualHeight) * 0.5)
+                        control:SetPoint("TOPLEFT", mounted.card, "TOPLEFT", controlX, -(controlY + visualInset))
+                    end
+                end
+            end
+            return
+        end
         for index, entry in ipairs(nextFlow.entries) do
             local mounted = self._exModuleCommonEntries[index]
             if mounted then

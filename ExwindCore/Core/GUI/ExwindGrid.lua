@@ -439,6 +439,8 @@ function Grid:ApplyPixelLayout(widget, container, element)
 end
 
 function Grid:RefreshPixelLayout(container)
+    local settingsList = self:GetSettingsListSession(container)
+    if settingsList then return settingsList:Relayout() end
     local state = self.ContainerStates[container]
     if not (container and state and state.instances) then return end
     if container._exGridPixelLayoutBusy then return end
@@ -535,6 +537,7 @@ function Grid:ReleaseWidgetInstance(widget)
     widget._customRendererKey = nil
     widget._customContext = nil
     widget._exGridCardMeasuredHeight = nil
+    widget._exGridRefreshItemRecordCell = nil
     local EXFactory = _G.ExwindFactory
     -- A few historical composite shells (the two GlowSettings definitions)
     -- are intentionally not pooled, but their standard child controls are.
@@ -578,6 +581,8 @@ end
 -- 控件查找索引（Widgets）允许同一 key 被后续控件覆盖；生命周期不能依赖它。
 -- 所有实际创建的实例均记录在 instances，按 AceGUI 的 children 模式逐个归还。
 function Grid:ReleaseContainerWidgets(container)
+    local settingsList = self:GetSettingsListSession(container)
+    if settingsList then settingsList:Release() end
     local state = GetContainerState(self, container)
     if not state then
         return false
@@ -613,7 +618,12 @@ function Grid:RefreshContainerControlsFromDB(container)
     local refreshed = false
     local ui = ExwindTools.UI
     for _, widget in ipairs(state.instances or {}) do
-        refreshed = ui:RefreshCompositeGroupFromDB(widget) or refreshed
+        if widget._exGridRefreshItemRecordCell then
+            widget:_exGridRefreshItemRecordCell()
+            refreshed = true
+        else
+            refreshed = ui:RefreshCompositeGroupFromDB(widget) or refreshed
+        end
     end
     return refreshed
 end
@@ -1103,6 +1113,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
 
     local px, py, pw, ph = self:GetPixelRect(ele.x, ele.y, ele.w, ele.h, container)
     local widget
+    local invalidItemRecord
 
     -- [v4.3.2] 获取值：setKey 最高优先，然后使用构造好的 fullPath
     local curVal
@@ -1474,6 +1485,56 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         widget = EXUI:CreateMultiSelectDropdown(container, pw, ele.label, itemsList, curVal, function()
             NotifyCompositeWrite(moduleKey, fullPath)
         end, ele)
+    elseif ele.type == "itemenabled" or ele.type == "itemidentity"
+        or ele.type == "itemquantity" or ele.type == "itemdelete" then
+        if type(curVal) ~= "table" then
+            invalidItemRecord = true
+            local text = ele.type == "itemidentity"
+                and (L["无效物品记录"] .. " (" .. tostring(ele.itemID or dataKey) .. "): " .. tostring(curVal))
+                or "—"
+            widget = EXUI:CreateDescription(container, text, pw)
+        elseif ele.type == "itemenabled" then
+            widget = EXUI:CreateCheckbox(container, ele.label or "", curVal.enabled == true, function(value)
+                curVal.enabled = value == true
+                Setter(curVal)
+            end)
+            widget._exGridRefreshItemRecordCell = function(self)
+                self:SetChecked(curVal.enabled == true)
+            end
+        elseif ele.type == "itemidentity" then
+            widget = EXUI:CreateItemIdentity(container, pw, ph, tonumber(ele.itemID) or curVal.id or 0)
+            widget._exGridRefreshItemRecordCell = function(self)
+                self:_exUpdateItemIdentity()
+            end
+        elseif ele.type == "itemquantity" then
+            widget = EXUI:CreateEditBox(container, tostring(curVal.quantity or 1), pw, 26, nil, {})
+            widget:SetJustifyH("CENTER")
+            widget:SetNumeric(true)
+            -- Preserve the original ItemConfig Enter/focus-loss write order,
+            -- including ClearFocus before the Enter handler's same-record Setter.
+            widget:SetScript("OnEnterPressed", function(self)
+                curVal.quantity = tonumber(self:GetText()) or 1
+                self:ClearFocus()
+                Setter(curVal)
+            end)
+            widget:SetScript("OnEditFocusLost", function(self)
+                curVal.quantity = tonumber(self:GetText()) or 1
+                Setter(curVal)
+            end)
+            widget._exGridRefreshItemRecordCell = function(self)
+                self:SetText(tostring(curVal.quantity or 1))
+            end
+        else
+            if ele.canDelete ~= true then
+                error("[ExwindGrid] item delete requires the original delete permission", 2)
+            end
+            widget = EXUI:CreateButton(container, pw, ph, "×", function()
+                if moduleKey then
+                    ExwindTools:UpdateState(moduleKey .. ".ItemConfigDelete", { key = dataKey })
+                end
+                if type(ele.onDelete) == "function" then ele.onDelete(curVal, config) end
+            end, { variant = "danger", compact = true })
+        end
     elseif ele.type == "itemconfig" then
         local itemID = tonumber(ele.itemID) or (curVal and curVal.id) or 0
         local widgetSize = ele.labelSize or ele.size or 18
@@ -1772,7 +1833,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
             widget:SetFrameLevel((container:GetFrameLevel() or 0) + tonumber(ele.frameLevelOffset))
         end
 
-        if ele.type == "checkbox" then
+        if ele.type == "checkbox" or ele.type == "itemenabled" then
             if widget.EnableMouse then
                 widget:EnableMouse(false)
             end
@@ -1804,6 +1865,10 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         -- [v4.3.1] 映射到池类型
         local EXFactory = _G.ExwindFactory
         local gridType = ele.type == "select" and "dropdown" or ele.type
+        if invalidItemRecord then gridType = "description"
+        elseif gridType == "itemenabled" then gridType = "checkbox"
+        elseif gridType == "itemquantity" then gridType = "input"
+        elseif gridType == "itemdelete" then gridType = "button" end
         if EXFactory and EXFactory.GridTypeMap then
             widget._gridType = EXFactory.GridTypeMap[gridType] or gridType
         else
@@ -1838,6 +1903,762 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
     end
 
     return widget
+end
+
+-- =========================================================
+-- Settings lists only arrange existing controls. Their owners, parents,
+-- configuration references and callbacks remain outside this presentation API.
+-- =========================================================
+do
+    local sessions = setmetatable({}, { __mode = "k" })
+    local SettingsListMixin = {}
+
+    local function IsSettingsDescription(widget, allowBareRegion)
+        if not widget then return false end
+        if widget.IsObjectType and widget:IsObjectType("FontString") then return allowBareRegion ~= false end
+        local text = widget.text
+        return (widget._gridType == "GridDescription" or widget._gridType == "label")
+            and widget._fromPool == "GridDescription"
+            and text and text.IsObjectType and text:IsObjectType("FontString") or false
+    end
+
+    local function IsOrdinarySettingsControl(widget)
+        if not widget then return false end
+        local kind = widget._gridType
+        if kind == "GridInput" then
+            return widget.IsObjectType and widget:IsObjectType("EditBox")
+                and widget.IsMultiLine and not widget:IsMultiLine()
+        end
+        return kind == "GridDropdown" or kind == "GridLSMDropdown" or kind == "GridMultiselect"
+            or kind == "GridColorButton" or kind == "GridSlider"
+    end
+
+    -- Input must be the current unscaled available width, never a previous result.
+    function Grid:ResolveSettingsListWidth(rawAvailableWidth)
+        local width = math.max(1, tonumber(rawAvailableWidth) or 1)
+        return math.max(1, math.floor(width * 0.75 + 0.5))
+    end
+
+    function Grid:GetSettingsListSession(parent)
+        local session = parent and sessions[parent]
+        return session and not session.released and session or nil
+    end
+
+    function SettingsListMixin:ScheduleDeferredPillHoverRefresh(widgets)
+        if self.released or not (_G.C_Timer and type(_G.C_Timer.After) == "function") then return end
+        local owner = self.grid.CardSessionOwners[self.parent]
+        local cardSession = owner and owner.session
+        local request = self.pillHoverRefreshRequest
+        if request then
+            request.widgets = widgets
+            return
+        end
+        request = {
+            widgets = widgets, parent = self.parent,
+            cardSession = cardSession, generation = cardSession and cardSession.generation,
+        }
+        self.pillHoverRefreshRequest = request
+        _G.C_Timer.After(0, function()
+            if self.released or sessions[request.parent] ~= self
+                or self.pillHoverRefreshRequest ~= request then return end
+            self.pillHoverRefreshRequest = nil
+            local currentOwner = self.grid.CardSessionOwners[request.parent]
+            local currentSession = currentOwner and currentOwner.session
+            if currentSession ~= request.cardSession or (currentSession
+                and (currentSession.released or currentSession.generation ~= request.generation)) then
+                self.pillHoverRefreshNeeded = nil
+                return
+            end
+            -- A later stable layout consumes this request if another layout
+            -- is already pending. This callback never polls or reschedules itself.
+            if self.busy or (currentSession and (currentSession.reflowBusy
+                or currentSession.reflowPending or currentSession.reflowScheduled)) then return end
+            self.pillHoverRefreshNeeded = nil
+            self:RefreshPillVisuals(false, request.widgets)
+        end)
+    end
+
+    function SettingsListMixin:RefreshPillVisuals(allowDeferred, expectedWidgets)
+        if self.released then return end
+        local widgets, needsDeferred = {}, false
+        local function Refresh(widget)
+            if not widget or widget._exSettingsPresentation ~= "pill" then return end
+            local expected = expectedWidgets and expectedWidgets[widget]
+            if expectedWidgets and (not expected or widget:GetParent() ~= expected.parent
+                or widget.checkbox ~= expected.checkbox
+                or widget._exSettingsListVisualState ~= expected.visualState) then return end
+            if allowDeferred == false then
+                EXUI:RefreshSettingsListPillHoverVisual(widget)
+                return
+            end
+            local _, wasPending = EXUI:RefreshSettingsListPillVisual(widget)
+            needsDeferred = needsDeferred or wasPending
+            widgets[widget] = {
+                parent = widget:GetParent(), checkbox = widget.checkbox,
+                visualState = widget._exSettingsListVisualState,
+            }
+        end
+        for _, entry in ipairs(self.entries) do
+            Refresh(entry.widget)
+            for _, control in ipairs(entry.controls or entry.cells or {}) do
+                Refresh(control.widget)
+            end
+        end
+        if allowDeferred ~= false then
+            self.pillHoverRefreshNeeded = self.pillHoverRefreshNeeded or needsDeferred
+            if self.pillHoverRefreshNeeded then self:ScheduleDeferredPillHoverRefresh(widgets) end
+        end
+    end
+
+    local function LayoutSettingsList(session, width)
+        width = math.max(1, tonumber(width) or session.parent:GetWidth())
+        if session.headerlessColumns then
+            session.columnRects = EXUI:ResolveSettingsTableColumns(width, session.headerlessColumns)
+        end
+        for _, saved in ipairs(session.suppressedDividers or {}) do saved.widget:Hide() end
+        for _, entry in ipairs(session.entries) do
+            if entry.widget then
+                entry.visible = entry.widget:IsShown()
+            elseif entry.controls or entry.cells then
+                local hasWidget, shown = false, false
+                for _, control in ipairs(entry.controls or entry.cells) do
+                    if control.widget then
+                        hasWidget = true
+                        shown = shown or control.widget:IsShown()
+                    end
+                end
+                entry.visible = not hasWidget or shown
+            else
+                entry.visible = true
+            end
+        end
+        local nextRow, nextSection = false, nil
+        for index = #session.entries, 1, -1 do
+            local entry = session.entries[index]
+            if entry.visible then
+                if not entry.informational and (entry.widget or entry.controls or entry.cells) then
+                    EXUI:SetSettingsRowLast(entry.host, not nextRow or nextSection ~= entry.section)
+                    nextRow, nextSection = true, entry.section
+                else
+                    nextRow, nextSection = false, nil
+                end
+            end
+        end
+        local y = 0
+        for _, entry in ipairs(session.entries) do
+            entry.host:SetShown(entry.visible)
+            if entry.visible then
+            local rowWidth = math.max(1, width - (entry.indent or 0))
+            local height
+            if entry.tableHeader then
+                height, session.columnRects = EXUI:UpdateSettingsTableHeaderLayout(entry.host, rowWidth)
+            elseif entry.cells then
+                local metrics = {}
+                for index, cell in ipairs(entry.cells) do
+                    metrics[index] = {
+                        height = cell.widget and cell.widget:GetHeight() or 0,
+                        visible = not cell.widget or cell.widget:IsShown(),
+                    }
+                end
+                local rects
+                height, rects = EXUI:UpdateSettingsTableRowLayout(
+                    entry.host, rowWidth, session.columnRects, metrics)
+                for index, cell in ipairs(entry.cells) do
+                    if cell.widget and cell.widget:IsShown() then
+                        cell.widget:SetWidth(rects[index].width)
+                        if cell.widget._gridType == "GridDescription" and cell.widget.text then
+                            local measuredHeight = math.max(cell.height, cell.widget.text:GetStringHeight())
+                            cell.widget:SetHeight(measuredHeight)
+                            metrics[index].height = measuredHeight
+                        end
+                    end
+                end
+                height, rects = EXUI:UpdateSettingsTableRowLayout(
+                    entry.host, rowWidth, session.columnRects, metrics)
+                for index, cell in ipairs(entry.cells) do
+                    if cell.widget and cell.widget:IsShown() then
+                        cell.widget:ClearAllPoints()
+                        cell.widget:SetPoint("TOPLEFT", entry.host, "TOPLEFT", rects[index].x, -rects[index].y)
+                    end
+                end
+            elseif entry.controls then
+                local metrics = {}
+                for index, control in ipairs(entry.controls) do
+                    local naturalWidth = control.presentation == "pill"
+                        and control.widget._exSettingsPillNaturalWidth or control.preparedWidth
+                    metrics[index] = {
+                        height = control.widget:GetHeight(),
+                        role = control.role,
+                        presentation = control.presentation,
+                        align = control.align,
+                        visible = control.widget:IsShown(),
+                        width = (control.requestedWidth == "content" and naturalWidth
+                            or control.requestedWidth)
+                            or (control.presentation == "pill" and naturalWidth or nil),
+                    }
+                end
+                local rects
+                height, rects = EXUI:UpdateSettingsRowControlsLayout(entry.host, rowWidth, metrics)
+                for index, control in ipairs(entry.controls) do
+                    local widget = control.widget
+                    if widget:IsShown() then
+                    widget:SetWidth(rects[index].width)
+                    local measuredHeight = metrics[index].height
+                    if widget._gridType == "GridDescription" and widget.text then
+                        measuredHeight = math.max(control.height, widget.text:GetStringHeight())
+                        widget:SetHeight(measuredHeight)
+                    elseif control.role == "label" and widget.IsObjectType
+                        and widget:IsObjectType("FontString") then
+                        measuredHeight = math.max(1, math.ceil(widget:GetStringHeight()))
+                        widget:SetHeight(measuredHeight)
+                    end
+                    metrics[index].height = measuredHeight
+                    end
+                end
+                height, rects = EXUI:UpdateSettingsRowControlsLayout(entry.host, rowWidth, metrics)
+                for index, control in ipairs(entry.controls) do
+                    if control.widget:IsShown() then
+                    local rect = rects[index]
+                    control.widget:ClearAllPoints()
+                    control.widget:SetPoint("TOPLEFT", entry.host, "TOPLEFT", rect.x, -rect.y)
+                    end
+                end
+            elseif entry.informational then
+                height = EXUI:UpdateSettingsSectionLayout(entry.host, rowWidth)
+            elseif entry.widget then
+                local widget = entry.widget
+                local controlHeight = math.max(1, widget:GetHeight())
+                local x, controlY, controlWidth
+                height, x, controlY, controlWidth = EXUI:UpdateSettingsRowLayout(
+                    entry.host, rowWidth, controlHeight, entry.descriptionWidget)
+                widget:SetWidth(controlWidth)
+                if entry.reflowFontGroup and type(widget._exCompositeReflow) == "function" then
+                    widget:_exCompositeReflow(controlWidth, controlHeight)
+                end
+                if entry.valuePosition or entry.ordinaryControl then
+                    EXUI:UpdateSettingsListControlLayout(widget, controlWidth)
+                end
+                -- Re-read geometry after the existing presentation reflow;
+                -- this layer never calls a value refresh or a data callback.
+                controlHeight = math.max(1, widget:GetHeight())
+                height, x, controlY, controlWidth = EXUI:UpdateSettingsRowLayout(
+                    entry.host, rowWidth, controlHeight, entry.descriptionWidget)
+                widget:ClearAllPoints()
+                widget:SetPoint("TOPLEFT", entry.host, "TOPLEFT", x, -controlY)
+            else
+                height = EXUI:UpdateSettingsSectionLayout(entry.host, rowWidth)
+            end
+            entry.host:ClearAllPoints()
+            entry.host:SetPoint("TOPLEFT", session.parent, "TOPLEFT", entry.indent or 0, -y)
+            y = y + math.max(0, height or 0) + entry.gap
+            end
+        end
+        session.height = math.max(1, y)
+        if not session.grid.CardSessionOwners[session.parent] then
+            session.parent:SetHeight(session.height)
+            session:RefreshPillVisuals()
+        end
+        return session.height
+    end
+
+    function SettingsListMixin:Relayout(width, pillVisualReflow)
+        if self.released then return self.height or 1 end
+        if self.busy then
+            if pillVisualReflow then
+                self.relayoutPending = true
+                if width ~= nil then self.relayoutPendingWidth = width end
+            end
+            return self.height or 1
+        end
+        local result
+        -- A final pill paint can discover its new natural width after the
+        -- first measurement. Consume that visual request once, without timers
+        -- or recursive layout; the second pass measures the stored new width.
+        for pass = 1, 2 do
+            self.busy = true
+            local ok
+            ok, result = pcall(LayoutSettingsList, self, width)
+            self.busy = nil
+            local pending, pendingWidth = self.relayoutPending, self.relayoutPendingWidth
+            self.relayoutPending, self.relayoutPendingWidth = nil, nil
+            if not ok then error(result, 0) end
+            if not pending or self.released then break end
+            width = pendingWidth or width
+        end
+        return result
+    end
+
+    function SettingsListMixin:Release()
+        if self.released then return end
+        self.released = true
+        self.relayoutPending, self.relayoutPendingWidth = nil, nil
+        self.pillHoverRefreshRequest, self.pillHoverRefreshNeeded = nil, nil
+        sessions[self.parent] = nil
+        for _, saved in ipairs(self.suppressedDividers or {}) do saved.widget:SetShown(saved.shown) end
+        for _, saved in ipairs(self.externalDescriptions or {}) do
+            local widget = saved.widget
+            EXUI:RestoreSettingsListControl(widget)
+            widget:ClearAllPoints()
+            widget:SetSize(saved.width, saved.height)
+            for _, point in ipairs(saved.points) do widget:SetPoint(unpack(point)) end
+        end
+        for _, entry in ipairs(self.entries) do
+            if entry.descriptionWidget then
+                local widget = entry.descriptionWidget
+                EXUI:RestoreSettingsListControl(widget)
+                widget:ClearAllPoints()
+                widget:SetSize(entry.descriptionWidth, entry.descriptionHeight)
+                for _, point in ipairs(entry.descriptionPoints) do widget:SetPoint(unpack(point)) end
+            end
+            for _, cell in ipairs(entry.cells or {}) do
+                if cell.widget then
+                    EXUI:RestoreSettingsListControl(cell.widget)
+                    cell.widget:ClearAllPoints()
+                    cell.widget:SetSize(cell.width, cell.height)
+                    for _, point in ipairs(cell.points) do cell.widget:SetPoint(unpack(point)) end
+                end
+            end
+            for _, control in ipairs(entry.controls or {}) do
+                local widget = control.widget
+                EXUI:RestoreSettingsListControl(widget)
+                widget:ClearAllPoints()
+                widget:SetSize(control.width, control.height)
+                for _, point in ipairs(control.points) do widget:SetPoint(unpack(point)) end
+            end
+            if entry.widget then
+                local widget = entry.widget
+                EXUI:RestoreSettingsListControl(widget)
+                widget:ClearAllPoints()
+                widget:SetSize(entry.width, entry.height)
+                for _, point in ipairs(entry.points) do
+                    widget:SetPoint(unpack(point))
+                end
+            end
+            entry.host:Release()
+        end
+        if self.card then EXUI:RestoreSettingsListCard(self.card) end
+        self.headerlessColumns, self.columnRects = nil, nil
+        self.entries = {}
+    end
+
+    function Grid:MountSettingsList(parent, declaration)
+        if not parent or type(declaration) ~= "table" then
+            error("[ExwindGrid] settings list requires a parent and presentation declaration", 2)
+        end
+        if self:GetSettingsListSession(parent) then
+            error("[ExwindGrid] release the existing settings list before mounting", 2)
+        end
+        local seen = {}
+        for _, widget in ipairs(declaration.externalDescriptionWidgets or {}) do
+            if not IsSettingsDescription(widget) or widget:GetParent() ~= parent or seen[widget] then
+                error("[ExwindGrid] external descriptions require unique original same-parent text controls", 2)
+            end
+            seen[widget] = true
+        end
+        for _, section in ipairs(declaration.sections or {}) do
+            for _, row in ipairs(section.rows or {}) do
+                if row.subtitle == nil then
+                if row.informational and (not IsSettingsDescription(row.widget) or row.controls
+                    or row.cells or row.fullWidth or row.descriptionWidget or row.description ~= nil) then
+                    error("[ExwindGrid] informational content requires a single original text control", 2)
+                end
+                if (row.controls and row.widget) or (row.cells and (row.controls or row.widget)) then
+                    error("[ExwindGrid] settings list row must use only one control layout", 2)
+                end
+                if row.cells and (not declaration.columns or #row.cells ~= #declaration.columns) then
+                    error("[ExwindGrid] table row must match its declared columns", 2)
+                end
+                local controls = row.cells or row.controls or {{ widget = row.widget }}
+                if #controls == 0 then error("[ExwindGrid] settings list controls cannot be empty", 2) end
+                for _, control in ipairs(controls) do
+                    local widget = control.widget
+                    if row.cells and control.text ~= nil then
+                        if widget or type(control.text) ~= "string" then
+                            error("[ExwindGrid] table text cell must contain only visual text", 2)
+                        end
+                    elseif not widget or not widget.GetParent or widget:GetParent() ~= parent then
+                        error("[ExwindGrid] settings list controls must already belong to its parent", 2)
+                    elseif seen[widget] then
+                        error("[ExwindGrid] a settings list control cannot appear twice", 2)
+                    else
+                        seen[widget] = true
+                    end
+                end
+                if row.descriptionWidget then
+                    local description = row.descriptionWidget
+                    if row.controls or row.cells or row.fullWidth or row.description ~= nil
+                        or not IsSettingsDescription(description, false)
+                        or not description.GetParent or description:GetParent() ~= parent then
+                        error("[ExwindGrid] original description requires a same-parent ordinary single-control row", 2)
+                    end
+                    if seen[description] then
+                        error("[ExwindGrid] a settings list control cannot appear twice", 2)
+                    end
+                    seen[description] = true
+                end
+                end
+            end
+        end
+        local session = setmetatable({ grid = self, parent = parent, entries = {},
+            headerlessColumns = declaration.tableHeader == false and declaration.columns or nil },
+            { __index = SettingsListMixin })
+        sessions[parent] = session
+        local function AddHeading(options)
+            if options.title == nil and options.description == nil then return end
+            local host = EXUI:CreateSettingsSection(parent, options)
+            session.entries[#session.entries + 1] = { host = host, gap = 8 }
+        end
+        local ok, reason = pcall(function()
+            session.suppressedDividers = {}
+            session.externalDescriptions = {}
+            for _, widget in ipairs(declaration.externalDescriptionWidgets or {}) do
+                local saved = { widget = widget, width = widget:GetWidth(), height = widget:GetHeight(), points = {} }
+                session.externalDescriptions[#session.externalDescriptions + 1] = saved
+                for index = 1, widget:GetNumPoints() do saved.points[index] = { widget:GetPoint(index) } end
+                EXUI:PrepareSettingsListControl(widget, { role = "description" })
+            end
+            AddHeading({ title = declaration.title, description = declaration.description, kind = "page" })
+            if declaration.columns and declaration.tableHeader ~= false then
+                local host = EXUI:CreateSettingsTableHeader(parent, { columns = declaration.columns })
+                session.entries[#session.entries + 1] = { host = host, tableHeader = true, gap = 0 }
+            end
+            for _, section in ipairs(declaration.sections or {}) do
+                AddHeading({ title = section.title, description = section.description, kind = "section" })
+                for rowIndex, row in ipairs(section.rows or {}) do
+                    local informational = row.informational == true
+                        or (row.allowInformationFallback ~= false and not row.children
+                            and (row.indent == nil or row.indent == 0)
+                            and row.fullWidth == true and (row.label == nil or row.label == "")
+                            and row.description == nil and not row.descriptionWidget
+                            and not row.controls and not row.cells and IsSettingsDescription(row.widget))
+                    if row.subtitle ~= nil then
+                        local host = EXUI:CreateSettingsSection(parent, {
+                            kind = "subsection", title = row.subtitle,
+                        })
+                        session.entries[#session.entries + 1] = {
+                            host = host, gap = 0, indent = row.indent, section = section,
+                        }
+                    elseif row.widget and row.widget._gridType == "GridDivider"
+                        and not row.controls and not row.cells and not row.descriptionWidget then
+                        session.suppressedDividers[#session.suppressedDividers + 1] = {
+                            widget = row.widget, shown = row.widget:IsShown(),
+                        }
+                        row.widget:Hide()
+                    else
+                    local widget = row.widget
+                    local ordinaryControl = not row.fullWidth and not informational
+                        and not row.controls and not row.cells
+                        and row.presentation ~= "pill" and row.presentation ~= "switch"
+                        and IsOrdinarySettingsControl(widget)
+                    local staticCells = {}
+                    for index, cell in ipairs(row.cells or {}) do staticCells[index] = cell.text end
+                    local host = informational and EXUI:CreateSettingsSection(parent, {
+                        kind = "information", descriptionWidgets = { widget },
+                    }) or row.cells and EXUI:CreateSettingsTableRow(parent, {
+                        staticCells = staticCells, isLast = rowIndex == #section.rows,
+                    }) or EXUI:CreateSettingsRow(parent, {
+                        label = row.label, description = row.description,
+                        controlWidth = row.controlWidth,
+                        controlKind = ordinaryControl and "ordinary" or nil,
+                        inputWidthPercent = row.inputWidthPercent,
+                        fullWidth = row.fullWidth == true,
+                        isLast = rowIndex == #section.rows,
+                    })
+                    local entry = { host = host, gap = 0, indent = row.indent, section = section,
+                        informational = informational, ordinaryControl = ordinaryControl }
+                    session.entries[#session.entries + 1] = entry
+                    if row.descriptionWidget then
+                        local description = row.descriptionWidget
+                        entry.descriptionWidget, entry.descriptionPoints = description, {}
+                        entry.descriptionWidth, entry.descriptionHeight = description:GetWidth(), description:GetHeight()
+                        for index = 1, description:GetNumPoints() do
+                            entry.descriptionPoints[index] = { description:GetPoint(index) }
+                        end
+                        EXUI:PrepareSettingsListControl(description, { role = "description" })
+                    end
+                    if row.cells then
+                        entry.cells = {}
+                        for _, cell in ipairs(row.cells) do
+                            local control = cell.widget
+                            local saved = { text = cell.text, widget = control }
+                            entry.cells[#entry.cells + 1] = saved
+                            if control then
+                                saved.width, saved.height, saved.points = control:GetWidth(), control:GetHeight(), {}
+                                for index = 1, control:GetNumPoints() do
+                                    saved.points[index] = { control:GetPoint(index) }
+                                end
+                                EXUI:PrepareSettingsListControl(control, {
+                                    hideLabel = true, presentation = cell.presentation,
+                                })
+                            end
+                        end
+                    elseif row.controls then
+                        entry.controls = {}
+                        for _, spec in ipairs(row.controls) do
+                            local control = spec.widget
+                            local saved = { widget = control, requestedWidth = spec.width, presentation = spec.presentation,
+                                role = spec.role,
+                                align = spec.align,
+                                width = control:GetWidth(), height = control:GetHeight(), points = {} }
+                            for index = 1, control:GetNumPoints() do
+                                saved.points[index] = { control:GetPoint(index) }
+                            end
+                            entry.controls[#entry.controls + 1] = saved
+                            EXUI:PrepareSettingsListControl(control, {
+                                presentation = spec.presentation,
+                                width = spec.width,
+                                role = spec.role,
+                                hideLabel = spec.hideLabel == true,
+                            })
+                            saved.preparedWidth = control:GetWidth()
+                        end
+                    else
+                        entry.widget, entry.points = widget, {}
+                        entry.reflowFontGroup = row.fullWidth == true and widget._fromPool == "CompositeFontGroup"
+                        entry.valuePosition = row.fullWidth ~= true and widget._gridType == "GridSlider"
+                            and (row.valuePosition or "right") or nil
+                        entry.width, entry.height = widget:GetWidth(), widget:GetHeight()
+                        for index = 1, widget:GetNumPoints() do
+                            entry.points[index] = { widget:GetPoint(index) }
+                        end
+                        EXUI:PrepareSettingsListControl(widget, {
+                            ordinaryControl = ordinaryControl,
+                            role = informational and "description" or nil,
+                            hideLabel = not informational and row.fullWidth ~= true and row.label ~= nil,
+                            presentation = row.presentation,
+                            valuePosition = entry.valuePosition,
+                        })
+                    end
+                    end
+                end
+            end
+            self:EnsurePixelLayoutHooks(parent)
+            session:Relayout()
+        end)
+        if not ok then
+            session:Release()
+            error(reason, 0)
+        end
+        return session
+    end
+
+    function Grid:MountDeclaredSettingsLists(cardSession, declaration)
+        local hasSettingsList = false
+        local pageDescriptions, pageKeysByCard = {}, {}
+        for _, spec in ipairs(declaration.settingsPageDescriptions or {}) do
+            local owner = cardSession.byId[spec.card]
+            if not owner or not owner.definition.settingsList or spec.key == nil then
+                error("[ExwindGrid] page descriptions require an existing settings-list card", 2)
+            end
+            local keys = pageKeysByCard[spec.card] or {}
+            pageKeysByCard[spec.card] = keys
+            keys[#keys + 1] = spec.key
+        end
+        cardSession.settingsGroups = {}
+        local groupIds = {}
+        for _, definition in ipairs(declaration.settingsGroups or {}) do
+            if not definition.id or groupIds[definition.id] then
+                error("[ExwindGrid] settings group requires a unique id", 2)
+            end
+            groupIds[definition.id] = true
+            local group = {
+                members = {}, title = definition.title,
+                collapsible = definition.collapsible ~= false,
+            }
+            cardSession.settingsGroups[#cardSession.settingsGroups + 1] = group
+            for index, cardId in ipairs(definition.cards or {}) do
+                local member = cardSession.byId[cardId]
+                if not member or not member.definition.settingsList or member.settingsGroup then
+                    error("[ExwindGrid] settings group requires unique existing settings-list cards", 2)
+                end
+                group.members[index] = member
+                member.settingsGroup, member.settingsGroupIndex = group, index
+            end
+            if #group.members == 0 then
+                error("[ExwindGrid] settings group must contain an existing card", 2)
+            end
+            local firstPlacement = group.members[1].definition.placement
+            if not firstPlacement and group.members[1].previous ~= nil then
+                error("[ExwindGrid] first settings group member requires an explicit placement", 2)
+            end
+            local firstTarget = firstPlacement and cardSession.byId[firstPlacement.target]
+            if firstTarget and firstTarget.settingsGroup == group then
+                error("[ExwindGrid] first settings group member must target outside its group", 2)
+            end
+        end
+        for _, definition in ipairs(declaration.cards) do
+            local presentation = definition.settingsList
+            if presentation then
+                hasSettingsList = true
+                local cardState = cardSession.byId[definition.id]
+                local rows, covered = {}, {}
+                local externalDescriptions, sectionDescriptions = {}, {}
+                local function ResolveDescription(key, target)
+                    local widget = cardSession:GetWidget(definition.id, key)
+                    if not IsSettingsDescription(widget) or widget:GetParent() ~= cardState.body or covered[widget] then
+                        error("[ExwindGrid] heading descriptions require unique original same-card text controls", 2)
+                    end
+                    covered[widget] = true
+                    externalDescriptions[#externalDescriptions + 1] = widget
+                    target[#target + 1] = widget
+                end
+                for _, key in ipairs(pageKeysByCard[definition.id] or {}) do ResolveDescription(key, pageDescriptions) end
+                for _, key in ipairs(presentation.descriptionKeys or {}) do ResolveDescription(key, sectionDescriptions) end
+                local function ResolveRow(row, child)
+                    if child and (row.children or row.controls or row.cells) then
+                        error("[ExwindGrid] settings children support only one level of subtitle or single-control rows", 2)
+                    end
+                    if row.subtitle ~= nil then
+                        if not child or type(row.subtitle) ~= "string" or row.key ~= nil then
+                            error("[ExwindGrid] subtitle requires explicit text in a child presentation row", 2)
+                        end
+                        rows[#rows + 1] = { subtitle = row.subtitle, indent = 20 }
+                        return
+                    end
+                    if row.children and row.key == nil then
+                        error("[ExwindGrid] settings children require an original single-control parent row", 2)
+                    end
+                    if row.informational and (row.children or child or row.fullWidth or row.controls
+                        or row.cells or row.descriptionKey ~= nil or row.description ~= nil) then
+                        error("[ExwindGrid] informational content requires a standalone original text row", 2)
+                    end
+                    if (row.controls and row.key ~= nil) or (row.cells and (row.controls or row.key ~= nil)) then
+                        error("[ExwindGrid] settings list row must use only key, controls or cells", 2)
+                    end
+                    local resolved = {
+                        label = row.label, description = row.description,
+                        fullWidth = row.fullWidth, presentation = row.presentation,
+                        controlWidth = row.controlWidth,
+                        inputWidthPercent = row.inputWidthPercent,
+                        valuePosition = row.valuePosition,
+                        informational = row.informational == true,
+                        allowInformationFallback = not row.children and not child,
+                        indent = child and 20 or 0,
+                    }
+                    if row.controls then resolved.controls = {} end
+                    if row.cells then resolved.cells = {} end
+                    for _, spec in ipairs(row.cells or row.controls or {{ key = row.key }}) do
+                        if row.cells and spec.text ~= nil then
+                            if spec.key ~= nil or type(spec.text) ~= "string" then
+                                error("[ExwindGrid] table text cell must contain only visual text", 2)
+                            end
+                            resolved.cells[#resolved.cells + 1] = { text = spec.text }
+                        else
+                            local widget = cardSession:GetWidget(definition.id, spec.key)
+                            if not widget then
+                                error("[ExwindGrid] settings list widget not found: " .. tostring(spec.key), 2)
+                            end
+                            if covered[widget] then
+                                error("[ExwindGrid] a settings list control cannot appear twice", 2)
+                            end
+                            covered[widget] = true
+                            if row.cells then
+                                resolved.cells[#resolved.cells + 1] = {
+                                    widget = widget, presentation = spec.presentation,
+                                }
+                            elseif row.controls then
+                                resolved.controls[#resolved.controls + 1] = {
+                                    widget = widget, width = spec.width, presentation = spec.presentation,
+                                    role = spec.role,
+                                    align = spec.align, hideLabel = spec.hideLabel,
+                                }
+                            else
+                                resolved.widget = widget
+                            end
+                        end
+                    end
+                    if row.descriptionKey ~= nil then
+                        if row.controls or row.cells or row.fullWidth or row.children or child
+                            or row.description ~= nil then
+                            error("[ExwindGrid] descriptionKey requires an ordinary single-control row without another description or children", 2)
+                        end
+                        local description = cardSession:GetWidget(definition.id, row.descriptionKey)
+                        if not IsSettingsDescription(description, false) then
+                            error("[ExwindGrid] descriptionKey must reference an original description control", 2)
+                        end
+                        if covered[description] then
+                            error("[ExwindGrid] a settings list control cannot appear twice", 2)
+                        end
+                        covered[description] = true
+                        resolved.descriptionWidget = description
+                    end
+                    rows[#rows + 1] = resolved
+                    for _, childRow in ipairs(row.children or {}) do ResolveRow(childRow, true) end
+                end
+                for _, row in ipairs(presentation.rows or {}) do ResolveRow(row, false) end
+                local state = self.ContainerStates[cardState.body]
+                for _, widget in ipairs(state and state.instances or {}) do
+                    if not covered[widget] then
+                        error("[ExwindGrid] settings list must include every original card control", 2)
+                    end
+                end
+                cardState.pageDescriptionOnly = #rows == 0 and #externalDescriptions > 0
+                    and #sectionDescriptions == 0 and not cardState.settingsGroup
+                local flattened, flatReason = EXUI:PrepareSettingsListCard(cardState.card, {
+                    descriptionOnly = cardState.pageDescriptionOnly,
+                    preserveHeader = not cardState.pageDescriptionOnly and presentation.preserveHeader == true,
+                    groupMember = cardState.settingsGroup ~= nil,
+                    groupCollapsible = cardState.settingsGroup and cardState.settingsGroup.collapsible,
+                    collapsed = cardState.settingsGroup ~= nil and cardState.settingsGroup.collapsible
+                        and cardState.settingsGroupIndex > 1,
+                    isLast = cardState.settingsGroup ~= nil
+                        and cardState.settingsGroupIndex == #cardState.settingsGroup.members,
+                })
+                if not flattened then
+                    error("[ExwindGrid] settings list cannot flatten card " .. definition.id
+                        .. ": " .. tostring(flatReason), 2)
+                end
+                local mounted, list = pcall(self.MountSettingsList, self, cardState.body, {
+                    columns = presentation.columns,
+                    tableHeader = presentation.tableHeader,
+                    externalDescriptionWidgets = externalDescriptions,
+                    sections = {{ rows = rows }},
+                })
+                if not mounted then
+                    EXUI:RestoreSettingsListCard(cardState.card)
+                    error(list, 0)
+                end
+                list.card = cardState.card
+                cardState.settingsDescriptionWidgets = sectionDescriptions
+                if not cardState.settingsGroup and not cardState.pageDescriptionOnly
+                    and (presentation.title ~= nil or presentation.description ~= nil or #sectionDescriptions > 0) then
+                    cardState.settingsSection = EXUI:CreateSettingsSection(cardSession.parent, {
+                        kind = "section", title = presentation.title,
+                        description = presentation.description,
+                        descriptionWidgets = sectionDescriptions,
+                    })
+                end
+            end
+        end
+        for _, group in ipairs(cardSession.settingsGroups) do
+            local descriptions = {}
+            for _, member in ipairs(group.members) do
+                for _, widget in ipairs(member.settingsDescriptionWidgets or {}) do
+                    descriptions[#descriptions + 1] = widget
+                end
+            end
+            group.surface = EXUI:CreateSettingsCardGroupSurface(cardSession.parent, {})
+            group.members[1].settingsSection = EXUI:CreateSettingsSection(cardSession.parent, {
+                kind = "section", title = group.title,
+                descriptionWidgets = descriptions,
+            })
+        end
+        local context = cardSession.context
+        cardSession.hasSettingsList = hasSettingsList
+        cardSession.settingsPageDescriptionWidgets = pageDescriptions
+        local title = context.settingsPageTitle
+        local description = context.settingsPageDescription
+        if hasSettingsList then
+            if title == nil then title = declaration.title end
+            if description == nil then description = declaration.description end
+        end
+        if title ~= nil or description ~= nil or #pageDescriptions > 0 then
+            cardSession.settingsHeading = EXUI:CreateSettingsSection(cardSession.parent, {
+                kind = "page", title = title, description = description,
+                descriptionWidgets = pageDescriptions,
+            })
+        end
+    end
 end
 
 -- =========================================================
@@ -2338,6 +3159,8 @@ local function ReflowCardBody(grid, cardState, bodyWidth)
             maxBottom = math.max(maxBottom, -py + math.max(0, tonumber(actualHeight) or ph))
         end
     end
+    local settingsList = grid:GetSettingsListSession(body)
+    if settingsList then return settingsList:Relayout(bodyWidth) end
     return math.max(0, maxBottom)
 end
 
@@ -2526,6 +3349,7 @@ local function MeasureSessionCards(session, availableWidth)
         local placement = cardState.definition.placement or {}
         local width = ResolveDeclaredWidth(placement.width, availableWidth)
         if not width then width = availableWidth end
+        if session.hasSettingsList then width = math.min(width, availableWidth) end
         cardState.width = math.max(1, width)
         if cardState.content.kind == "composite"
             and cardState.width < CARD_COMPOSITE_MIN_OUTER_WIDTH then
@@ -2549,8 +3373,15 @@ local function MeasureSessionCards(session, availableWidth)
                 .. ": Card:GetPreferredHeight(width) returned an invalid height", 0)
         end
         cardState.outerHeight = preferred
-        cardState.layoutHeight = cardState.visible and preferred or 0
+        cardState.layoutHeight = cardState.visible and not cardState.pageDescriptionOnly and preferred or 0
         SetCardHeight(cardState.card, preferred)
+        if cardState.settingsSection then
+            cardState.settingsSectionHeight = EXUI:UpdateSettingsSectionLayout(
+                cardState.settingsSection, cardState.width)
+            if cardState.visible then
+                cardState.layoutHeight = cardState.layoutHeight + cardState.settingsSectionHeight
+            end
+        end
     end
 end
 
@@ -2604,6 +3435,13 @@ local function ResolveSessionPositions(session, metrics, parentWidth, parentHeig
         end
         status[cardState] = "visiting"
         local placement = cardState.definition.placement
+        local settingsGroup = cardState.settingsGroup
+        if settingsGroup and cardState.settingsGroupIndex > 1 then
+            placement = {
+                target = settingsGroup.members[cardState.settingsGroupIndex - 1].id,
+                side = "below", align = "start", gap = 0,
+            }
+        end
         local targetId
         if placement then
             targetId = placement.target or CARD_CONTAINER_TARGET
@@ -2650,16 +3488,32 @@ local function ResolveSessionPositions(session, metrics, parentWidth, parentHeig
                     .. tostring(targetId) .. "; using safe vertical fallback")
                 return
             end
+            if target.settingsGroup and target.settingsGroup ~= settingsGroup
+                and (placement.side or "below") == "below" then
+                local members = target.settingsGroup.members
+                target = members[#members]
+            end
             Resolve(target)
             if status[cardState] == "done" then return end
+            cardState.leadingPageDescriptionOnly = cardState.pageDescriptionOnly
+                and target.leadingPageDescriptionOnly == true
             if target.usedFallback then
                 Fallback(cardState, "dependency",
                     "card placement target used fallback; using the same safe vertical fallback")
                 return
             end
             local actualGap = placement.gap ~= nil and placement.gap or gap
+            if placement.gap == nil and cardState.definition.settingsList
+                and (placement.side or "below") == "below" then
+                actualGap = 26
+            end
+            if placement.gap == nil and cardState.pageDescriptionOnly
+                and (placement.side or "below") == "below" then actualGap = 0 end
+            if placement.gap == nil and target.leadingPageDescriptionOnly
+                and (placement.side or "below") == "below" then actualGap = 0 end
             SetRelativeCardAnchor(cardState, target, placement, actualGap, session.parent)
         else
+            cardState.leadingPageDescriptionOnly = cardState.pageDescriptionOnly == true
             local point = placement.point or "TOPLEFT"
             local relativePoint = placement.relativePoint or point
             local x, y = tonumber(placement.x) or 0, tonumber(placement.y) or 0
@@ -2709,6 +3563,20 @@ local function PerformSessionRelayout(session)
     local parentWidth = math.max(1, parent:GetWidth())
     local metrics = CardLayoutMetrics(session)
     local availableWidth = math.max(1, parentWidth - metrics.left - metrics.right)
+    if session.hasSettingsList then
+        availableWidth = Grid:ResolveSettingsListWidth(availableWidth)
+        parentWidth = metrics.left + availableWidth + metrics.right
+    end
+    local pageHeadingHeight = 0
+    if session.settingsHeading then
+        metrics.top = metrics.top + 16
+        local heading = session.settingsHeading
+        local height = EXUI:UpdateSettingsSectionLayout(heading, availableWidth)
+        pageHeadingHeight = height
+        heading:ClearAllPoints()
+        heading:SetPoint("TOPLEFT", parent, "TOPLEFT", metrics.left, -metrics.top)
+        metrics.top = metrics.top + height
+    end
     local parentHeight = tonumber(session.context.viewportHeight)
         or (session.context.scrollFrame and session.context.scrollFrame:GetHeight())
         or parent:GetHeight()
@@ -2718,13 +3586,61 @@ local function PerformSessionRelayout(session)
     local measured, measureReason = pcall(MeasureSessionCards, session, availableWidth)
     RestoreGridActivation(session.grid, snapshot)
     if not measured then error(measureReason, 0) end
+    -- Original Grid reflow retains ownership of each text control and runs first.
+    -- Reapply only heading presentation anchors after every card has been measured.
+    if session.settingsHeading and #(session.settingsPageDescriptionWidgets or {}) > 0 then
+        local height = EXUI:UpdateSettingsSectionLayout(session.settingsHeading, availableWidth)
+        metrics.top = metrics.top + height - pageHeadingHeight
+    end
+    for _, cardState in ipairs(session.cards) do
+        if cardState.settingsSection then
+            local height = EXUI:UpdateSettingsSectionLayout(cardState.settingsSection, cardState.width)
+            if cardState.visible then
+                cardState.layoutHeight = cardState.layoutHeight + height - (cardState.settingsSectionHeight or 0)
+            end
+            cardState.settingsSectionHeight = height
+        end
+    end
     ResolveSessionPositions(session, metrics, parentWidth, math.max(1, parentHeight))
 
     local maxBottom = metrics.top
     for _, cardState in ipairs(session.cards) do
         cardState.card:SetShown(cardState.visible)
-        if cardState.visible then
+        if cardState.settingsSection then
+            local heading = cardState.settingsSection
+            heading:SetShown(cardState.visible)
+            heading:ClearAllPoints()
+            heading:SetPoint("TOPLEFT", parent, "TOPLEFT", cardState.x, -cardState.y)
+            cardState.card:ClearAllPoints()
+            cardState.card:SetPoint("TOPLEFT", parent, "TOPLEFT", cardState.x,
+                -(cardState.y + cardState.settingsSectionHeight))
+        end
+        if cardState.visible and not cardState.pageDescriptionOnly then
             maxBottom = math.max(maxBottom, cardState.y + cardState.layoutHeight)
+        end
+    end
+    for _, group in ipairs(session.settingsGroups or {}) do
+        local left, top, right, bottom
+        local lastVisible
+        for index = #group.members, 1, -1 do
+            if group.members[index].visible then lastVisible = group.members[index]; break end
+        end
+        for _, member in ipairs(group.members) do
+            EXUI:SetSettingsCardGroupMemberLast(member.card, member == lastVisible or not member.visible)
+            if member.visible then
+                local memberTop = member.y + (member.settingsSectionHeight or 0)
+                left = left and math.min(left, member.x) or member.x
+                top = top and math.min(top, memberTop) or memberTop
+                right = math.max(right or 0, member.x + member.width)
+                bottom = math.max(bottom or 0, member.y + member.layoutHeight)
+            end
+        end
+        local surface = group.surface
+        surface:SetShown(left ~= nil)
+        if left then
+            EXUI:UpdateSettingsCardGroupSurfaceLayout(surface, right - left, bottom - top)
+            surface:ClearAllPoints()
+            surface:SetPoint("TOPLEFT", parent, "TOPLEFT", left, -top)
         end
     end
     local totalHeight = math.max(1, maxBottom + metrics.bottom)
@@ -2736,6 +3652,10 @@ local function PerformSessionRelayout(session)
         end
     end
     ClampSessionScroll(session, totalHeight)
+    for _, cardState in ipairs(session.cards) do
+        local list = session.grid:GetSettingsListSession(cardState.body)
+        if list then list:RefreshPillVisuals() end
+    end
 end
 
 function CardSessionMixin:Relayout()
@@ -2939,7 +3859,19 @@ function CardSessionMixin:Release()
         if type(cardState.card.Release) == "function" then
             Capture(pcall(cardState.card.Release, cardState.card))
         end
+        if cardState.settingsSection then
+            Capture(pcall(cardState.settingsSection.Release, cardState.settingsSection))
+            cardState.settingsSection = nil
+        end
         self.cards[index] = nil
+    end
+    for _, group in ipairs(self.settingsGroups or {}) do
+        if group.surface then Capture(pcall(group.surface.Release, group.surface)) end
+    end
+    self.settingsGroups = nil
+    if self.settingsHeading then
+        Capture(pcall(self.settingsHeading.Release, self.settingsHeading))
+        self.settingsHeading = nil
     end
     if self.grid.CardSessions[self.parent] == self then self.grid.CardSessions[self.parent] = nil end
     self.grid.CardSessionOwners[self.parent] = nil
@@ -3090,7 +4022,10 @@ function Grid:MountCards(parent, declaration, context)
             end)
         end
     end
-    local laidOut, layoutReason = pcall(session.Relayout, session)
+    local laidOut, layoutReason = pcall(function()
+        self:MountDeclaredSettingsLists(session, declaration)
+        return session:Relayout()
+    end)
     if not laidOut then
         local released, releaseReason = pcall(session.Release, session)
         if not released then

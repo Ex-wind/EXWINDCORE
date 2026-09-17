@@ -2584,6 +2584,8 @@ function EXUI:ShowModuleSettingsPage()
                 binding = centralController and centralController.binding or nil,
                 config = config,
                 moduleKey = currentModuleKey,
+                settingsPageTitle = moduleMeta.Name,
+                settingsPageDescription = moduleMeta.Desc,
                 scrollFrame = EXUI.ModuleScrollFrame,
                 layoutDefaults = { bottom = (tonumber(baseBottom) or 0) + 52 },
             })

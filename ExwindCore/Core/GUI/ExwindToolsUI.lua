@@ -4,6 +4,8 @@
 
 local ExwindTools = _G.ExwindTools
 if not ExwindTools then return end
+local GC = ExwindTools.GUIColors
+if not GC then error("ExwindGUIColor.lua must load before ExwindToolsUI.lua") end
 
 local L = ExwindTools.L
 
@@ -27,17 +29,17 @@ local msyhbd = defaultFontPath
 
 local THEME = {
     -- [v26.7 Style] Protocol 风格：低对比深色画布，强调色只用于状态和主操作。
-    Background = { 0.078, 0.086, 0.102, 1 }, -- #14161a
+    Background = GC.page,
     Sidebar = { 0.045, 0.048, 0.065, 0.58 },
-    Border = { 0.19, 0.18, 0.24, 0.74 },
+    Border = GC.panelBorder,
     Primary = { 0.57, 0.49, 0.91 },
     Success = { 0.31, 0.78, 0.55 },
     Danger = { 0.91, 0.38, 0.47 },
-    TextMain = { 0.94, 0.93, 0.97, 1 },
-    TextSub = { 0.62, 0.60, 0.68, 1 },
-    TextDim = { 0.40, 0.38, 0.46, 1 },
-    CardBg = { 0.09, 0.09, 0.13, 0.72 },
-    CardBgHover = { 0.13, 0.12, 0.18, 0.86 },
+    TextMain = GC.text,
+    TextSub = GC.textDim,
+    TextDim = GC.textPlaceholder,
+    CardBg = GC.card,
+    CardBgHover = GC.headerHover,
 }
 
 local UI_AMBIENT_TEXTURE = "Interface\\AddOns\\ExwindCore\\Textures\\UI\\EXWIND_ProtocolAmbient.png"
@@ -682,19 +684,19 @@ local function CreateSidebarSearchBox(parent, initialText, opts)
     edit:SetHeight(config.height or 26)
     if edit.SetAutoFocus then edit:SetAutoFocus(false) end
     if edit.SetFont then edit:SetFont(defaultFontPath, 14, "") end
-    if edit.SetTextColor then edit:SetTextColor(0.90, 0.93, 0.98, 1) end
-    if edit.SetCursorColor then edit:SetCursorColor(0.0, 0.72, 1.0) end
+    if edit.SetTextColor then edit:SetTextColor(unpack(GC.text)) end
+    if edit.SetCursorColor then edit:SetCursorColor(unpack(GC.accent)) end
     if edit.SetTextInsets then edit:SetTextInsets(10, 10, 0, 0) end
     edit:SetBackdrop(FRAME_BACKDROP_FLAT)
-    edit:SetBackdropColor(0.06, 0.07, 0.09, 0.96)
-    edit:SetBackdropBorderColor(0.20, 0.22, 0.28, 1)
+    edit:SetBackdropColor(unpack(GC.input))
+    edit:SetBackdropBorderColor(unpack(GC.panelBorder))
 
     local placeholder = EXUI:CreateVisualFontString(edit, EXFONTFRAME)
     placeholder:SetPoint("LEFT", 10, 0)
     placeholder:SetPoint("RIGHT", -10, 0)
     placeholder:SetJustifyH("LEFT")
     placeholder:SetFont(defaultFontPath, 14, "")
-    placeholder:SetTextColor(0.45, 0.50, 0.58, 1)
+    placeholder:SetTextColor(unpack(GC.textPlaceholder))
     placeholder:SetText(config.placeholder or L["搜索..."])
     edit._placeholder = placeholder
 
@@ -705,11 +707,11 @@ local function CreateSidebarSearchBox(parent, initialText, opts)
     edit:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
     edit:SetScript("OnEnterPressed", function(self) self:ClearFocus() end)
     edit:SetScript("OnEditFocusGained", function(self)
-        self:SetBackdropBorderColor(0.00, 0.72, 1.00, 0.95)
+        self:SetBackdropBorderColor(unpack(GC.accent))
         RefreshPlaceholder(self)
     end)
     edit:SetScript("OnEditFocusLost", function(self)
-        self:SetBackdropBorderColor(0.20, 0.22, 0.28, 1)
+        self:SetBackdropBorderColor(unpack(GC.panelBorder))
         RefreshPlaceholder(self)
     end)
     edit:SetScript("OnTextChanged", function(self, userInput)
@@ -805,20 +807,20 @@ function EXUI:CreateMainFrame()
 
     local ambientMask = EXUI:CreateVisualTexture(f, EXBACKGROUNDFRAME)
     ambientMask:SetAllPoints()
-    ambientMask:SetColorTexture(0.078, 0.086, 0.102, 0.38)
+    ambientMask:SetColorTexture(unpack(GC.shell.toolsAmbientMask))
     f.AmbientMask = ambientMask
 
     local topLine = EXUI:CreateVisualTexture(f, EXBASEFRAME)
     topLine:SetPoint("TOPLEFT", 1, -46)
     topLine:SetPoint("TOPRIGHT", -1, -46)
     topLine:SetHeight(1)
-    topLine:SetColorTexture(0.48, 0.42, 0.70, 0.34)
+    topLine:SetColorTexture(unpack(GC.shell.toolsTopLine))
 
     local bottomLine = EXUI:CreateVisualTexture(f, EXBASEFRAME)
     bottomLine:SetPoint("BOTTOMLEFT", 1, 44)
     bottomLine:SetPoint("BOTTOMRIGHT", -1, 44)
     bottomLine:SetHeight(1)
-    bottomLine:SetColorTexture(0.28, 0.27, 0.35, 0.64)
+    bottomLine:SetColorTexture(unpack(GC.shell.toolsBottomLine))
 
     -- 拖拽逻辑
     f:RegisterForDrag("LeftButton")
@@ -983,15 +985,15 @@ function EXUI:CreateSidebar(parent, options)
         sidebar:SetPoint("BOTTOMLEFT", 1, 45)
     end
     sidebar:SetBackdrop(BACKDROP)
-    sidebar:SetBackdropColor(0.06, 0.06, 0.08, 1)
-    sidebar:SetBackdropBorderColor(0.2, 0.2, 0.25, 1)
+    sidebar:SetBackdropColor(unpack(GC.shell.toolsSidebar))
+    sidebar:SetBackdropBorderColor(unpack(GC.shell.toolsSidebarBorder))
 
     -- [Style] 添加一条垂直分割线，区分侧边栏和内容区
     local vLine = EXUI:CreateVisualTexture(sidebar, EXBASEFRAME)
     vLine:SetPoint("TOPRIGHT", 0, 0)
     vLine:SetPoint("BOTTOMRIGHT", 0, 0)
     vLine:SetWidth(1)
-    vLine:SetColorTexture(0.12, 0.15, 0.20, 0.9)
+    vLine:SetColorTexture(unpack(GC.shell.toolsSidebarDivider))
 
     local scrollFrame
     local searchBox = CreateSidebarSearchBox(sidebar, EXUI.SidebarState.SearchText or "", {
@@ -1100,30 +1102,30 @@ local function ApplySidebarModuleButtonState(btn, isActive, isEnabled)
     end
 
     if btn.isEnabledState == false then
-        btn.label:SetTextColor(0.38, 0.42, 0.50, 1)
-        btn.rail:SetColorTexture(0.18, 0.20, 0.24, 0.35)
+        btn.label:SetTextColor(unpack(GC.shell.sidebarDisabledText))
+        btn.rail:SetColorTexture(unpack(GC.shell.sidebarDisabledRail))
         btn.accent:SetAlpha(0)
-        btn.dot:SetTextColor(0.0, 0.72, 1.0, 0.0)
+        btn.dot:SetTextColor(GC.shell.sidebarAccent[1], GC.shell.sidebarAccent[2], GC.shell.sidebarAccent[3], 0)
         return
     end
 
     if btn.isActive then
-        btn.label:SetTextColor(0.92, 0.96, 1.00, 1)
-        btn.rail:SetColorTexture(0.24, 0.29, 0.38, 0.25)
+        btn.label:SetTextColor(unpack(GC.shell.sidebarActiveText))
+        btn.rail:SetColorTexture(unpack(GC.shell.sidebarActiveRail))
         btn.accent:SetAlpha(1)
-        btn.dot:SetTextColor(0.0, 0.72, 1.0, 1.0)
+        btn.dot:SetTextColor(unpack(GC.shell.sidebarAccent))
         return
     end
 
     if btn._hovered then
-        btn.label:SetTextColor(0.83, 0.88, 0.97, 1)
-        btn.rail:SetColorTexture(0.34, 0.40, 0.52, 0.8)
+        btn.label:SetTextColor(unpack(GC.shell.sidebarHoverText))
+        btn.rail:SetColorTexture(unpack(GC.shell.sidebarHoverRail))
     else
-        btn.label:SetTextColor(0.57, 0.63, 0.75, 1)
-        btn.rail:SetColorTexture(0.24, 0.29, 0.38, 0.55)
+        btn.label:SetTextColor(unpack(GC.shell.sidebarIdleText))
+        btn.rail:SetColorTexture(unpack(GC.shell.sidebarIdleRail))
     end
     btn.accent:SetAlpha(0)
-    btn.dot:SetTextColor(0.0, 0.72, 1.0, 0.0)
+    btn.dot:SetTextColor(GC.shell.sidebarAccent[1], GC.shell.sidebarAccent[2], GC.shell.sidebarAccent[3], 0)
 end
 
 -- 对象池获取
@@ -1157,13 +1159,13 @@ function EXUI:CreateCategoryHeaderBase(parent)
     btn.label:SetPoint("RIGHT", 0, 0)
     btn.label:SetJustifyH("LEFT")
     btn.label:SetFont(defaultFontPath, 16, "OUTLINE")
-    btn.label:SetTextColor(0.97, 0.98, 1.0, 0.98)
+    btn.label:SetTextColor(unpack(GC.text))
 
     btn:SetScript("OnEnter", function(self)
-        self.label:SetTextColor(1, 1, 1, 1)
+        self.label:SetTextColor(unpack(GC.white))
     end)
     btn:SetScript("OnLeave", function(self)
-        self.label:SetTextColor(0.97, 0.98, 1.0, 0.98)
+        self.label:SetTextColor(unpack(GC.text))
     end)
 
     return btn
@@ -1184,20 +1186,20 @@ function EXUI:CreateSidebarItemBase(parent)
     btn.rail:SetPoint("TOPLEFT", 10, -2)
     btn.rail:SetPoint("BOTTOMLEFT", 10, 2)
     btn.rail:SetWidth(1)
-    btn.rail:SetColorTexture(0.24, 0.29, 0.38, 0.55)
+    btn.rail:SetColorTexture(unpack(GC.shell.sidebarIdleRail))
 
     btn.accent = EXUI:CreateVisualTexture(btn, EXBORDERFRAME)
     btn.accent:SetPoint("TOPLEFT", 10, -2)
     btn.accent:SetPoint("BOTTOMLEFT", 10, 2)
     btn.accent:SetWidth(1)
-    btn.accent:SetColorTexture(0.0, 0.72, 1.0, 1.0)
+    btn.accent:SetColorTexture(unpack(GC.shell.sidebarAccent))
     btn.accent:SetAlpha(0)
 
     btn.dot = EXUI:CreateVisualFontString(btn, EXFONTFRAME)
     btn.dot:SetFont(defaultFontPath, 15, "OUTLINE")
     btn.dot:SetPoint("CENTER", btn, "LEFT", 10, 0)
     btn.dot:SetText("")
-    btn.dot:SetTextColor(0.0, 0.72, 1.0, 0.0)
+    btn.dot:SetTextColor(GC.shell.sidebarAccent[1], GC.shell.sidebarAccent[2], GC.shell.sidebarAccent[3], 0)
 
     btn.topnavAccent = EXUI:CreateVisualTexture(btn, EXBASEFRAME)
     btn.topnavAccent:SetPoint("LEFT", 0, 0)
@@ -1213,7 +1215,7 @@ function EXUI:CreateSidebarItemBase(parent)
     btn.label:SetPoint("LEFT", 26, 0)
     btn.label:SetPoint("RIGHT", -10, 0)
     btn.label:SetJustifyH("LEFT")
-    btn.label:SetTextColor(0.57, 0.63, 0.75, 1)
+    btn.label:SetTextColor(unpack(GC.shell.sidebarIdleText))
     btn.label:SetWordWrap(false)
 
     btn:SetBackdrop(FRAME_BACKDROP_FLAT)
@@ -1416,7 +1418,7 @@ function EXUI:CreateRightPanel(parent, options)
     end
     -- 内容区是连续画布，页面各自决定信息分组；不再为整个区域套厚重卡片。
     panel:SetBackdrop(BACKDROP_SIMPLE)
-    panel:SetBackdropColor(0.025, 0.027, 0.04, 0.22)
+    panel:SetBackdropColor(unpack(GC.shell.toolsRightPanel))
 
     -- [New] 通用滚动容器 (为所有普通页面提供滚动支持)
     local sf = CreateFrame("ScrollFrame", "ExwindCommonScroll", panel, "ScrollFrameTemplate")
@@ -2721,25 +2723,24 @@ function EXUI:CreateActionButton(parent, text, onClick)
     local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
     btn:SetSize(180, 40)
     btn:SetBackdrop(FRAME_BACKDROP_FLAT)
-    btn:SetBackdropColor(unpack(THEME.Primary))
-    btn:SetBackdropBorderColor(0.79, 0.73, 1.0, 0.68)
+    btn:SetBackdropColor(unpack(GC.accent))
+    btn:SetBackdropBorderColor(unpack(GC.accent))
 
     local btnText = EXUI:CreateVisualFontString(btn, EXFONTFRAME)
     btn.Label = btnText
     btnText:SetFontObject("GameFontNormal")
     btnText:SetPoint("CENTER")
     btnText:SetText(text)
-    btnText:SetTextColor(1, 1, 1, 1)
+    btnText:SetTextColor(unpack(GC.primaryText))
 
     btn:SetScript("OnClick", onClick)
     btn:SetScript("OnEnter", function(self)
-        self:SetBackdropColor(0.68, 0.60, 1.0, 1)
-        self:SetBackdropBorderColor(0.90, 0.86, 1.0, 0.96)
+        self:SetBackdropColor(unpack(GC.accentHover))
+        self:SetBackdropBorderColor(unpack(GC.accentHover))
     end)
     btn:SetScript("OnLeave", function(self)
-        -- 回复到 Exwind 经典紫色
-        self:SetBackdropColor(unpack(THEME.Primary))
-        self:SetBackdropBorderColor(0.79, 0.73, 1.0, 0.68)
+        self:SetBackdropColor(unpack(GC.accent))
+        self:SetBackdropBorderColor(unpack(GC.accent))
     end)
 
     return btn
@@ -2749,24 +2750,24 @@ function EXUI:CreateSmallButton(parent, text, onClick)
     local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
     btn:SetSize(120, 28)
     btn:SetBackdrop(FRAME_BACKDROP_FLAT)
-    btn:SetBackdropColor(0.10, 0.095, 0.14, 0.84)
-    btn:SetBackdropBorderColor(0.30, 0.28, 0.38, 0.62)
+    btn:SetBackdropColor(unpack(GC.transparent))
+    btn:SetBackdropBorderColor(unpack(GC.secondaryBorder))
 
     local btnText = EXUI:CreateVisualFontString(btn, EXFONTFRAME)
     btn.Label = btnText
     btnText:SetFontObject("GameFontNormal")
     btnText:SetPoint("CENTER")
     btnText:SetText(text)
-    btnText:SetTextColor(unpack(THEME.TextMain))
+    btnText:SetTextColor(unpack(GC.secondaryText))
 
     btn:SetScript("OnClick", onClick)
     btn:SetScript("OnEnter", function(self)
-        self:SetBackdropColor(0.16, 0.14, 0.22, 0.96)
-        self:SetBackdropBorderColor(0.54, 0.48, 0.72, 0.86)
+        self:SetBackdropColor(unpack(GC.secondaryHoverFill))
+        self:SetBackdropBorderColor(unpack(GC.secondaryHoverBorder))
     end)
     btn:SetScript("OnLeave", function(self)
-        self:SetBackdropColor(0.10, 0.095, 0.14, 0.84)
-        self:SetBackdropBorderColor(0.30, 0.28, 0.38, 0.62)
+        self:SetBackdropColor(unpack(GC.transparent))
+        self:SetBackdropBorderColor(unpack(GC.secondaryBorder))
     end)
 
     return btn
@@ -2803,7 +2804,7 @@ function EXUI:ShowDiagnosticPage()
     pageTitle:SetFont(defaultFontPath, 24, "OUTLINE")
     pageTitle:SetPoint("TOPLEFT", 16, yOffset)
     pageTitle:SetText(L["状态总控"])
-    pageTitle:SetTextColor(0.98, 0.99, 1, 1)
+    pageTitle:SetTextColor(unpack(GC.text))
     yOffset = yOffset - 38
 
     local pageIntro = EXUI:CreateVisualFontString(page, EXFONTFRAME)
@@ -2812,7 +2813,7 @@ function EXUI:ShowDiagnosticPage()
     pageIntro:SetWidth(sectionWidth)
     pageIntro:SetJustifyH("LEFT")
     pageIntro:SetText(L["实时查看 ExwindTools 当前环境、玩家状态与核心运行信息。"])
-    pageIntro:SetTextColor(0.58, 0.67, 0.8, 1)
+    pageIntro:SetTextColor(unpack(GC.textDim))
     yOffset = yOffset - 30
 
     local YES      = "|cff00ff00" .. L["是"] .. "|r"
@@ -2899,7 +2900,7 @@ function EXUI:ShowDiagnosticPage()
         header:SetFont(defaultFontPath, 22, "OUTLINE")
         header:SetPoint("TOPLEFT", 16, yOffset)
         header:SetText(title)
-        header:SetTextColor(0.98, 0.99, 1, 1)
+        header:SetTextColor(unpack(GC.text))
         yOffset = yOffset - 36
     end
 
@@ -2929,7 +2930,7 @@ function EXUI:ShowDiagnosticPage()
                 label:SetJustifyH("LEFT")
                 label:SetJustifyV("TOP")
                 label:SetText(field.label)
-                label:SetTextColor(0.48, 0.57, 0.70, 1)
+                label:SetTextColor(unpack(GC.textPlaceholder))
 
                 local value = EXUI:CreateVisualFontString(page, EXFONTFRAME)
                 value:SetFont(defaultFontPath, 15, "")
@@ -2938,7 +2939,7 @@ function EXUI:ShowDiagnosticPage()
                 value:SetJustifyH("LEFT")
                 value:SetJustifyV("TOP")
                 value:SetText(field.value)
-                value:SetTextColor(0.90, 0.94, 1, 1)
+                value:SetTextColor(unpack(GC.text))
 
                 rowHeight = math.max(rowHeight, label:GetStringHeight() or 18, value:GetStringHeight() or 20)
                 usedCols = usedCols + span
@@ -3129,7 +3130,7 @@ function EXUI:ShowProfileManagerPage()
     exportSection:SetSize(780, 400)
     exportSection:SetPoint("TOPLEFT", 20, yOffset)
     exportSection:SetBackdrop(BACKDROP)
-    exportSection:SetBackdropColor(0.08, 0.08, 0.1, 0.9)
+    exportSection:SetBackdropColor(unpack(GC.panel))
     exportSection:SetBackdropBorderColor(unpack(THEME.Border))
 
     local exportTitle = EXUI:CreateVisualFontString(exportSection, EXFONTFRAME)
@@ -3187,8 +3188,8 @@ function EXUI:ShowProfileManagerPage()
         end
     end)
     exportBtn:SetSize(200, 38)
-    exportBtn:SetBackdropColor(unpack(THEME.Primary))
-    exportBtn:SetBackdropBorderColor(0.5, 0.5, 0.55, 0.8)
+    exportBtn:SetBackdropColor(unpack(GC.accent))
+    exportBtn:SetBackdropBorderColor(unpack(GC.accent))
     exportBtn:SetPoint("BOTTOMRIGHT", exportSection, "BOTTOMRIGHT", -15, 15)
     EXUI.ExportGenBtn = exportBtn
 
@@ -3200,7 +3201,7 @@ function EXUI:ShowProfileManagerPage()
     -- 初始位置设低一点，等待动态计算覆盖
     importSection:SetPoint("TOPLEFT", 20, -1000)
     EXUI.ImportSection = importSection
-    importSection:SetBackdropColor(0.08, 0.08, 0.1, 0.9)
+    importSection:SetBackdropColor(unpack(GC.panel))
     importSection:SetBackdropBorderColor(unpack(THEME.Border))
 
     local importTitle = EXUI:CreateVisualFontString(importSection, EXFONTFRAME)
@@ -3327,7 +3328,7 @@ function EXUI:RefreshExportCheckboxes()
         cb.label:ClearAllPoints()
         cb.label:SetPoint("LEFT", cb.checkbox, "RIGHT", 5, 0)
         cb.label:SetJustifyH("LEFT")
-        cb.label:SetTextColor(0.9, 0.9, 0.9)
+        cb.label:SetTextColor(unpack(GC.text))
 
         col = col + 1
         if col >= 3 then

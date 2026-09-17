@@ -30,7 +30,16 @@ local Grid = {
     CardSessions = setmetatable({}, { __mode = "k" }),
     CardSessionOwners = setmetatable({}, { __mode = "k" }),
     CardScrollSessions = setmetatable({}, { __mode = "k" }),
-    CardBodyOnlyComponents = { fontgroup = true, icongroup = true },
+    CardBodyOnlyComponents = {
+        fontgroup = true,
+        icongroup = true,
+        soundgroup = true,
+        timerbargroup = true,
+        widgetlayout = true,
+        modulecommonsettings = true,
+        anchorgroup = true,
+        glow_settings = true,
+    },
     EditorGridLinesByContainer = setmetatable({}, { __mode = "k" }),
     EditorRowGuidesByContainer = setmetatable({}, { __mode = "k" }),
     _effectiveCols = 50,
@@ -1554,7 +1563,9 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         if contextPath then
             subConfig = GetConfigPath(config, contextPath) or config
         end
-        widget = EXUI:CreateGlowSettings(container, pw, ele.label, subConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end)
+        widget = EXUI:CreateGlowSettings(container, pw, ele.label, subConfig, ele.key,
+            function() NotifyCompositeWrite(moduleKey, fullPath) end,
+            BuildCompositeOptions(ele.opts, moduleKey, fullPath))
     elseif ele.type == "glow_settings_legacy" then
         local subConfig = config
         if contextPath then subConfig = GetConfigPath(config, contextPath) or config end

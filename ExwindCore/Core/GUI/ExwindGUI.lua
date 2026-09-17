@@ -178,49 +178,69 @@ EXUI.TooltipBackdrop = {
 -- no longer owns a second skin or a second set of pools.
 -- =========================================================
 local MODERN_MEDIA = "Interface\\AddOns\\ExwindCore\\Textures\\GUI\\"
+local GC = ExwindTools.GUIColors
+if not GC then error("ExwindGUIColor.lua must load before ExwindGUI.lua") end
 local MODERN = {
     colors = {
-        background = { 0.078, 0.086, 0.102, 1 }, -- #14161a
-        panel = { 0.106, 0.118, 0.137, 1 },      -- #1b1e23
-        input = { 0.090, 0.098, 0.114, 1 },      -- #17191d
-        raised = { 0.133, 0.149, 0.173, 1 },     -- #22262c
-        hover = { 0.165, 0.188, 0.220, 1 },      -- #2a3038
-        border = { 0.204, 0.227, 0.259, 1 },     -- #343a42
-        text = { 0.925, 0.933, 0.945, 1 },       -- #eceef1
-        muted = { 0.655, 0.678, 0.710, 1 },      -- #a7adb5
-        disabled = { 0.36, 0.38, 0.43, 1 },
-        blue = { 0.659, 0.847, 1.000, 1 },       -- #a8d8ff
-        blueHover = { 0.796, 0.906, 1.000, 1 },  -- #cbe7ff
-        primaryHover = { 194/255, 228/255, 255/255, 1 },  -- #c2e4ff
-        primaryPressed = { 140/255, 198/255, 245/255, 1 },-- #8cc6f5
-        lightBlue = { 0.796, 0.906, 1.000, 1 },  -- #cbe7ff
+        background = GC.page,
+        panel = GC.panel,
+        header = GC.header,
+        headerHover = GC.headerHover,
+        headerDivider = GC.headerDivider,
+        input = GC.input,
+        inputHoverBorder = GC.inputHoverBorder,
+        inputDisabled = GC.inputDisabled,
+        inputDisabledBorder = GC.inputDisabledBorder,
+        raised = GC.card,
+        hover = GC.headerHover,
+        cardHoverBorder = GC.cardHoverBorder,
+        border = GC.panelBorder,
+        text = GC.text,
+        muted = GC.textDim,
+        placeholder = GC.textPlaceholder,
+        disabled = GC.textDisabled,
+        blue = GC.accent,
+        blueHover = GC.accentHover,
+        primaryHover = GC.accentHover,
+        primaryPressed = GC.accentActive,
+        lightBlue = GC.selectedText,
         blueSoft = { 0.133, 0.173, 0.216, 1 },   -- #222c37
-        focus = { 0.431, 0.608, 0.765, 1 },      -- #6e9bc3
-        accent = { 0.659, 0.847, 1.000, 1 },     -- #a8d8ff
-        sliderTrack = { 0.212, 0.235, 0.267, 1 },-- #363c44
-        popup = { 0.165, 0.184, 0.212, 1 },      -- #2a2f36
-        popupBorder = { 0.290, 0.322, 0.361, 1 },-- #4a525c
-        menuSelected = { 0.659, 0.847, 1.000, 0.18 },
-        menuHover = { 0.659, 0.847, 1.000, 0.26 },
-        primaryFill = { 168/255, 216/255, 1, 1 },
-        primaryText = { 15/255, 26/255, 36/255, 1 },-- #0f1a24
-        secondaryBorder = { 74/255, 82/255, 92/255, 1 },      -- #4a525c
-        secondaryText = { 213/255, 217/255, 222/255, 1 },        -- #d5d9de
-        secondaryHoverFill = { 1, 1, 1, 0.05 },
-        secondaryHoverBorder = { 95/255, 104/255, 115/255, 1 }, -- #5f6873
-        secondaryPressedFill = { 1, 1, 1, 0.09 },
-        secondaryPressedText = { 184/255, 190/255, 197/255, 1 }, -- #b8bec5
-        dangerFill = { 242/255, 139/255, 139/255, .05 },
-        dangerBorder = { 242/255, 139/255, 139/255, 1 },         -- #f28b8b
-        dangerText = { 246/255, 165/255, 165/255, 1 },           -- #f6a5a5
-        dangerHoverFill = { 242/255, 139/255, 139/255, .14 },
-        dangerHover = { 246/255, 165/255, 165/255, 1 },          -- #f6a5a5
-        dangerPressedFill = { 242/255, 139/255, 139/255, .22 },
-        disabledFill = { 31/255, 34/255, 39/255, 1 },         -- #1f2227
-        disabledBorder = { 48/255, 53/255, 60/255, 1 },       -- #30353c
-        disabledText = { 95/255, 102/255, 111/255, 1 },         -- #5f666f
-        transparent = { 0, 0, 0, 0 },
-        white = { 1, 1, 1, 1 },
+        focus = GC.accent,
+        accent = GC.accent,
+        sliderTrack = GC.sliderTrack,
+        sliderTrackHover = GC.sliderTrackHover,
+        popup = GC.popup,
+        popupBorder = GC.popupBorder,
+        popupSearch = GC.popupSearch,
+        popupSearchBorder = GC.popupSearchBorder,
+        popupDivider = GC.popupDivider,
+        menuSelected = GC.menuSelected,
+        menuSelectedHover = GC.menuSelectedHover,
+        menuHover = GC.menuHover,
+        primaryFill = GC.accent,
+        primaryText = GC.primaryText,
+        secondaryBorder = GC.secondaryBorder,
+        secondaryText = GC.secondaryText,
+        secondaryHoverFill = GC.secondaryHoverFill,
+        secondaryHoverBorder = GC.secondaryHoverBorder,
+        secondaryPressedFill = GC.secondaryPressedFill,
+        secondaryPressedText = GC.secondaryPressedText,
+        dangerFill = GC.transparent,
+        dangerBorder = GC.dangerBorder,
+        dangerText = GC.dangerText,
+        dangerHoverFill = GC.dangerHoverFill,
+        dangerHover = GC.dangerText,
+        dangerPressedFill = GC.dangerPressedFill,
+        disabledFill = GC.disabledFill,
+        disabledBorder = GC.disabledBorder,
+        disabledText = GC.textDisabled,
+        checkboxBorder = GC.checkboxBorder,
+        checkboxHoverBorder = GC.checkboxHoverBorder,
+        checkboxChecked = GC.checkboxChecked,
+        checkboxCheckedHover = GC.checkboxCheckedHover,
+        checkboxCheckedActive = GC.checkboxCheckedActive,
+        transparent = GC.transparent,
+        white = GC.white,
         neutral = { 0.584, 0.616, 0.667, 1 },
         include = { 0.412, 0.620, 0.969, 1 },
         exclude = { 0.933, 0.443, 0.502, 1 },
@@ -247,7 +267,7 @@ local MC = MODERN.colors
 local function CreateModernMenuFontObject(globalName, size)
     local font = _G[globalName] or CreateFont(globalName)
     font:SetFont(defaultFontPath, size, "")
-    font:SetTextColor(1, 1, 1, 1)
+    font:SetTextColor(unpack(GC.white))
     if font.SetShadowOffset then font:SetShadowOffset(0, 0) end
     return font
 end
@@ -363,7 +383,7 @@ MODERN.typography = {
     control = { size = MODERN.metrics.control, color = MC.text, template = "GameFontHighlight" },
     fieldValue = { size = MODERN.metrics.fieldValue, color = MC.text, template = "GameFontHighlight" },
     button = { size = MODERN.metrics.button, color = MC.text, template = "GameFontHighlight" },
-    hint = { size = MODERN.metrics.hint, color = MC.muted, template = "GameFontHighlightSmall" },
+    hint = { size = MODERN.metrics.hint, color = MC.placeholder, template = "GameFontHighlightSmall" },
 }
 
 function MODERN.ApplyTextRole(region, role, color, template)
@@ -670,9 +690,9 @@ local function PaintModernButton(frame)
     if isColorButton then
         fill, edge, text = MC.input, MC.border, MC.text
         if frame._exModernPressed and enabled then
-            fill, edge = MC.secondaryPressedFill, MC.secondaryBorder
+            fill, edge = MC.input, MC.blue
         elseif frame._exModernHover and enabled then
-            fill, edge, text = MC.secondaryHoverFill, MC.secondaryHoverBorder, MC.text
+            fill, edge, text = MC.input, MC.inputHoverBorder, MC.text
         end
     elseif variant == "primary" then
         fill, edge, text = MC.primaryFill, MC.primaryFill, MC.primaryText
@@ -711,9 +731,11 @@ local function PaintModernButton(frame)
     -- 这样即使背景色差在某些显示器上不明显，鼠标提示仍然清楚。
     if isColorButton and frame.swatchBorder then
         if not enabled then
-            frame.swatchBorder:SetBackdropBorderColor(unpack(MC.disabled))
-        elseif frame._exModernPressed or frame._exModernHover then
-            frame.swatchBorder:SetBackdropBorderColor(unpack(MC.focus))
+            frame.swatchBorder:SetBackdropBorderColor(unpack(MC.disabledText))
+        elseif frame._exModernPressed then
+            frame.swatchBorder:SetBackdropBorderColor(unpack(MC.blue))
+        elseif frame._exModernHover then
+            frame.swatchBorder:SetBackdropBorderColor(unpack(MC.inputHoverBorder))
         else
             frame.swatchBorder:SetBackdropBorderColor(unpack(MC.border))
         end
@@ -786,13 +808,14 @@ local function PaintModernInput(surface, editBox)
     local hover = enabled and editBox and editBox._exModernHover
     local focusBorder = surface and surface._exModernInputFocusBorder or MC.focus
     local idleFill = surface and surface._exModernInputIdleFill or MC.input
-    local activeFill = surface and surface._exModernInputActiveFill or MC.raised
-    local hoverBorder = surface and surface._exModernInputHoverBorder or MC.focus
-    EXUI:SetControlSurface(surface, 4,
-        (focus or hover) and activeFill or idleFill,
-        focus and focusBorder or (hover and hoverBorder or MC.border))
+    local activeFill = surface and surface._exModernInputActiveFill or idleFill
+    local hoverBorder = surface and surface._exModernInputHoverBorder or MC.inputHoverBorder
+    local fill = enabled and ((focus or hover) and activeFill or idleFill) or MC.inputDisabled
+    local edge = enabled and (focus and focusBorder or (hover and hoverBorder or MC.border))
+        or MC.inputDisabledBorder
+    EXUI:SetControlSurface(surface, 4, fill, edge)
     if editBox and editBox.SetTextColor then
-        editBox:SetTextColor(unpack(enabled and MC.text or MC.disabled))
+        editBox:SetTextColor(unpack(enabled and MC.text or MC.disabledText))
     end
 end
 
@@ -829,13 +852,14 @@ local function PaintModernDropdown(frame)
     local enabled = frame:IsEnabled()
     local menuOpen = enabled and frame.IsMenuOpen and frame:IsMenuOpen()
     local active = enabled and (frame._exModernHover or menuOpen)
-    EXUI:SetControlSurface(frame, 4, active and MC.raised or MC.input,
-        menuOpen and MC.blue or (active and MC.focus or MC.border))
-    if frame.Text then frame.Text:SetTextColor(unpack(enabled and MC.text or MC.disabled)) end
+    EXUI:SetControlSurface(frame, 4, enabled and MC.input or MC.inputDisabled,
+        enabled and (menuOpen and MC.blue or (active and MC.inputHoverBorder or MC.border))
+            or MC.inputDisabledBorder)
+    if frame.Text then frame.Text:SetTextColor(unpack(enabled and MC.text or MC.disabledText)) end
     if frame._exModernChevron then
         frame._exModernChevron:SetRotation(menuOpen and math.pi or 0)
         frame._exModernChevron:SetVertexColor(unpack(enabled and (menuOpen and MC.blue
-            or (active and MC.lightBlue or MC.muted)) or MC.disabled))
+            or (active and MC.white or MC.muted)) or MC.disabledText))
     end
 end
 
@@ -873,14 +897,23 @@ local function PaintModernCheckbox(container)
     HideControlSkin(box)
     local enabled, selected = box:IsEnabled(), box:GetChecked() == true
     local hover = enabled and box._exModernHover
-    local fill = selected and (hover and MC.blueHover or MC.blue) or (hover and MC.hover or MC.input)
-    local edge = selected and (hover and MC.blueHover or MC.blue) or (hover and MC.focus or MC.border)
+    local pressed = enabled and box._exModernPressed
+    local fill, edge
+    if not enabled then
+        fill, edge = MC.disabledFill, MC.disabledBorder
+    elseif selected then
+        fill = pressed and MC.checkboxCheckedActive or (hover and MC.checkboxCheckedHover or MC.checkboxChecked)
+        edge = fill
+    else
+        fill = MC.input
+        edge = hover and MC.checkboxHoverBorder or MC.checkboxBorder
+    end
     EXUI:SetControlSurface(box._exModernCheckSurface, 4, fill, edge)
     box._exModernCheckMark:SetShown(selected)
-    box._exModernCheckMark:SetVertexColor(unpack(enabled and MC.background or MC.disabled))
-    box._exModernCheckSurface:SetAlpha(enabled and 1 or .55)
+    box._exModernCheckMark:SetVertexColor(unpack(enabled and MC.white or MC.disabledText))
+    box._exModernCheckSurface:SetAlpha(1)
     if container.label then
-        container.label:SetTextColor(unpack(enabled and (hover and MC.lightBlue or MC.text) or MC.disabled))
+        container.label:SetTextColor(unpack(enabled and MC.text or MC.disabledText))
     end
 end
 
@@ -918,6 +951,23 @@ local function ApplyModernCheckbox(container)
         end)
         box._exModernCheckVisual = visual
     end
+    if not box._exModernCheckPointerHooks then
+        box._exModernCheckPointerHooks = true
+        box:HookScript("OnMouseDown", function(self, button)
+            if button == "LeftButton" and self:IsEnabled() then
+                self._exModernPressed = true
+                PaintModernCheckbox(container)
+            end
+        end)
+        box:HookScript("OnMouseUp", function(self)
+            self._exModernPressed = nil
+            PaintModernCheckbox(container)
+        end)
+        box:HookScript("OnLeave", function(self)
+            self._exModernPressed = nil
+            PaintModernCheckbox(container)
+        end)
+    end
     if container.label then
         container.label:ClearAllPoints()
         container.label:SetPoint("LEFT", container, "LEFT", 27, 0)
@@ -951,17 +1001,21 @@ local function PaintModernSlider(frame)
     SuppressModernSliderSteppers(frame)
     local interactive = frame.Slider or frame
     local enabled = IsModernSliderEnabled(frame)
-    local hover = enabled and (interactive._exModernHover or interactive._exModernPressed or frame._exDragging)
-    frame._exModernSliderTrack:SetColorTexture(unpack(hover and MC.focus or MC.sliderTrack))
+    local pressed = enabled and (interactive._exModernPressed or frame._exDragging)
+    local hover = enabled and (interactive._exModernHover or pressed)
+    frame._exModernSliderTrack:SetColorTexture(unpack(hover and MC.sliderTrackHover or MC.sliderTrack))
     local thumb = interactive.GetThumbTexture and interactive:GetThumbTexture()
-    if thumb then thumb:SetVertexColor(unpack(enabled and (hover and MC.blueHover or MC.blue) or MC.disabled)) end
+    if thumb then
+        thumb:SetVertexColor(unpack(enabled and (pressed and MC.primaryPressed
+            or (hover and MC.primaryHover or MC.blue)) or MC.disabledText))
+    end
     if frame.numberInput then
         if enabled and frame.numberInput.Enable then frame.numberInput:Enable()
         elseif not enabled and frame.numberInput.Disable then frame.numberInput:Disable() end
         PaintModernInput(frame.numberInput, frame.numberInput)
     end
-    if frame.Title then frame.Title:SetTextColor(unpack(enabled and MC.text or MC.disabled)) end
-    if frame.ValueText then frame.ValueText:SetTextColor(unpack(enabled and MC.lightBlue or MC.disabled)) end
+    if frame.Title then frame.Title:SetTextColor(unpack(enabled and MC.text or MC.disabledText)) end
+    if frame.ValueText then frame.ValueText:SetTextColor(unpack(enabled and MC.lightBlue or MC.disabledText)) end
 end
 
 local function ApplyModernSlider(frame)
@@ -1174,6 +1228,11 @@ function EXUI:StyleDropdownMenuProxy(proxy)
     return proxy
 end
 
+local function PaintModernGridCard(frame)
+    EXUI:SetControlSurface(frame, 10, MC.raised,
+        frame._exModernHover and MC.cardHoverBorder or MC.border)
+end
+
 if _G.MenuStyleMixin and _G.CreateFromMixins then
     EXUI.ModernMenuStyleMixin = CreateFromMixins(MenuStyleMixin)
     function EXUI.ModernMenuStyleMixin:Generate()
@@ -1270,7 +1329,21 @@ function EXUI:ApplyControlAppearance(frame)
     elseif kind == "GridDescription" then
         MODERN.ApplyTextRole(frame.text, "hint")
     elseif kind == "GridCard" then
-        self:ApplyModernPanel(frame)
+        if frame.EnableMouse then frame:EnableMouse(true) end
+        if frame.SetMouseMotionEnabled then frame:SetMouseMotionEnabled(true) end
+        if frame.SetMouseClickEnabled then frame:SetMouseClickEnabled(false) end
+        if not frame._exModernCardHoverHooks then
+            frame._exModernCardHoverHooks = true
+            frame:HookScript("OnEnter", function(self)
+                self._exModernHover = true
+                PaintModernGridCard(self)
+            end)
+            frame:HookScript("OnLeave", function(self)
+                self._exModernHover = nil
+                PaintModernGridCard(self)
+            end)
+        end
+        PaintModernGridCard(frame)
         for _, key in ipairs({
             "_exCardFrameGlow", "_exCardTopEdge", "_exCardRightEdge", "_exCardBottomEdge",
             "_exCardGlowHost", "_exCardTopGlow", "_exCardRightGlow", "_exCardBottomGlow",
@@ -1451,7 +1524,7 @@ local function AttachModernMenuSelectionMark(frame, enabled, selected)
         check:SetPoint("LEFT", frame, "LEFT", 10, 0)
         check:SetSize(16, 16)
         check:SetDrawLayer("ARTWORK", 7)
-        check:SetVertexColor(unpack(enabled and MC.blue or MC.disabled))
+        check:SetVertexColor(unpack(enabled and MC.blue or MC.disabledText))
     end
 end
 
@@ -1531,9 +1604,9 @@ local function PaintModernMenuRow(frame)
 
     local pieces = frame._exModernMenuHighlightPieces
     if not pieces then return end
-    -- hover 与 selected 使用同一浅蓝色相；hover 只提高透明度作区分。
-    local color = frame._exModernMenuHover and MC.menuHover
-        or (frame._exModernMenuSelected and MC.menuSelected or nil)
+    local color = frame._exModernMenuSelected
+        and (frame._exModernMenuHover and MC.menuSelectedHover or MC.menuSelected)
+        or (frame._exModernMenuHover and MC.menuHover or nil)
     for _, texture in ipairs(pieces) do
         if color and frame._exModernMenuEnabled then
             texture:SetVertexColor(unpack(color))
@@ -1544,8 +1617,9 @@ local function PaintModernMenuRow(frame)
     end
     local fontString = frame.fontString or frame.Text
     if fontString then
-        local textColor = not frame._exModernMenuEnabled and MC.disabled
-            or ((frame._exModernMenuHover or frame._exModernMenuSelected) and MC.lightBlue)
+        local textColor = not frame._exModernMenuEnabled and MC.disabledText
+            or (frame._exModernMenuSelected and MC.lightBlue)
+            or (frame._exModernMenuHover and MC.white)
             or MC.text
         fontString:SetTextColor(unpack(textColor))
     end
@@ -1573,7 +1647,7 @@ local function AttachModernMenuSubmenuArrow(frame, enabled, selected)
     arrow:SetDrawLayer("ARTWORK", 2)
     -- GlyphChevron 的默认方向向下；旋转四分之一圈后用于右侧子菜单指示。
     arrow:SetRotation(math.pi / 2)
-    arrow:SetVertexColor(unpack(enabled and (selected and MC.lightBlue or MC.muted) or MC.disabled))
+    arrow:SetVertexColor(unpack(enabled and (selected and MC.lightBlue or MC.muted) or MC.disabledText))
 end
 
 -- Every menu row is still created and reclaimed by Blizzard_Menu.  This
@@ -1596,7 +1670,7 @@ local function StyleModernMenuDescription(description, role)
         end
         local fontString = frame.fontString or frame.Text
         if fontString then
-            local color = not enabled and MC.disabled
+            local color = not enabled and MC.disabledText
                 or (role == "title" and MC.muted)
                 or (selected and MC.lightBlue)
                 or MC.text
@@ -1670,11 +1744,11 @@ local function PaintModernMenuSoundPreviewButton(button)
     local hover = enabled and button._exModernHover
     if button._exModernSoundIcon then
         if not enabled then
-            button._exModernSoundIcon:SetVertexColor(.36, .38, .43, 1)
+            button._exModernSoundIcon:SetVertexColor(unpack(MC.disabledText))
         elseif hover then
-            button._exModernSoundIcon:SetVertexColor(1, 1, 1, 1)
+            button._exModernSoundIcon:SetVertexColor(unpack(MC.white))
         else
-            button._exModernSoundIcon:SetVertexColor(.72, .74, .78, 1)
+            button._exModernSoundIcon:SetVertexColor(unpack(MC.secondaryPressedText))
         end
         button._exModernSoundIcon:SetAlpha(1)
     end
@@ -1855,16 +1929,16 @@ EnsureDropdownFloatingSearchFrame = function()
     searchBox.ClearButton = clearBtn
     frame.SearchBox = searchBox
     searchBox._exModernInputFocusBorder = MC.blue
-    searchBox._exModernInputIdleFill = MC.input
-    searchBox._exModernInputActiveFill = MC.input
-    searchBox._exModernInputHoverBorder = MC.border
+    searchBox._exModernInputIdleFill = MC.popupSearch
+    searchBox._exModernInputActiveFill = MC.popupSearch
+    searchBox._exModernInputHoverBorder = MC.popupSearchBorder
     ApplyModernInput(searchBox)
 
     local divider = EXUI:CreateVisualTexture(frame, EXBORDERFRAME)
     divider:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 8, 0)
     divider:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -8, 0)
     divider:SetHeight(1)
-    divider:SetColorTexture(unpack(MC.border))
+    divider:SetColorTexture(unpack(MC.popupDivider))
     frame.Divider = divider
 
     function frame:AnchorToDropdown(dropdown)
@@ -3763,7 +3837,7 @@ local function CompositeEmitUpdate(host)
     if host._exCompositeOnUpdate then host._exCompositeOnUpdate(host._exCompositeDb) end
 end
 
-local COMPOSITE_HEADER_FILL = MC.panel -- #1b1e23
+local COMPOSITE_HEADER_FILL = MC.header
 local SETTINGS_CARD_HEADER_HEIGHT = 48
 local SETTINGS_CARD_BODY_PADDING = 12
 
@@ -3811,7 +3885,7 @@ local function CreateCompositeGroupHeader(host, width)
     divider:SetPoint("BOTTOMLEFT", 0, 0)
     divider:SetPoint("BOTTOMRIGHT", 0, 0)
     divider:SetHeight(1)
-    divider:SetColorTexture(unpack(MC.border))
+    divider:SetColorTexture(unpack(MC.headerDivider))
 
     local iconSlot = CreateHeaderIconSlot(header, 24)
     iconSlot:SetPoint("LEFT", 9, 0)
@@ -3850,6 +3924,9 @@ function EXUI:CreateSettingsCard(parent, options)
         header:SetPoint("TOPLEFT", card, "TOPLEFT", 1, -1)
         header:SetPoint("TOPRIGHT", card, "TOPRIGHT", -1, -1)
         header:SetHeight(SETTINGS_CARD_HEADER_HEIGHT - 1)
+        header:EnableMouse(true)
+        if header.SetMouseMotionEnabled then header:SetMouseMotionEnabled(true) end
+        if header.SetMouseClickEnabled then header:SetMouseClickEnabled(false) end
         EXUI:SetControlSurface(header, 10, COMPOSITE_HEADER_FILL, COMPOSITE_HEADER_FILL)
 
         local squareBottom = EXUI:CreateVisualTexture(header, EXBASEFRAME)
@@ -3862,7 +3939,7 @@ function EXUI:CreateSettingsCard(parent, options)
         divider:SetPoint("BOTTOMLEFT", 0, 0)
         divider:SetPoint("BOTTOMRIGHT", 0, 0)
         divider:SetHeight(1)
-        divider:SetColorTexture(unpack(MC.border))
+        divider:SetColorTexture(unpack(MC.headerDivider))
 
         local iconSlot = CreateHeaderIconSlot(header, 30)
         iconSlot:SetPoint("LEFT", 12, 0)
@@ -3879,13 +3956,32 @@ function EXUI:CreateSettingsCard(parent, options)
         toggle:RegisterForClicks("LeftButtonUp")
         local glyph = EXUI:CreateVisualFontString(toggle, EXFONTFRAME, "GameFontHighlight")
         glyph:SetPoint("CENTER", 0, 1)
-        MODERN.ApplyTextRole(glyph, "title", MC.lightBlue)
+        MODERN.ApplyTextRole(glyph, "title", MC.muted)
         toggle._exGlyph = glyph
+        local function PaintHeader()
+            local hovered = header._exModernHover == true
+            local fill = hovered and MC.headerHover or MC.header
+            EXUI:SetControlSurface(header, 10, fill, fill)
+            squareBottom:SetColorTexture(unpack(fill))
+            title:SetTextColor(unpack(hovered and MC.white or MC.text))
+            glyph:SetTextColor(unpack(hovered and MC.text or MC.muted))
+        end
+        card._exSettingsCardPaintHeader = PaintHeader
+        header:SetScript("OnEnter", function(self)
+            self._exModernHover = true
+            PaintHeader()
+        end)
+        header:SetScript("OnLeave", function(self)
+            self._exModernHover = nil
+            PaintHeader()
+        end)
         toggle:SetScript("OnEnter", function(self)
-            self._exGlyph:SetTextColor(unpack(MC.blueHover))
+            header._exModernHover = true
+            PaintHeader()
         end)
         toggle:SetScript("OnLeave", function(self)
-            self._exGlyph:SetTextColor(unpack(MC.lightBlue))
+            header._exModernHover = nil
+            PaintHeader()
         end)
         toggle:SetScript("OnClick", function()
             card:SetCollapsed(not card._exSettingsCardCollapsed)
@@ -3902,6 +3998,7 @@ function EXUI:CreateSettingsCard(parent, options)
         card._exSettingsCardIcon = iconSlot
         card._exSettingsCardTitle = title
         card._exSettingsCardToggle = toggle
+        card._exSettingsCardDivider = divider
         card._exSettingsCardBody = body
 
         function card:GetBody()
@@ -3937,6 +4034,7 @@ function EXUI:CreateSettingsCard(parent, options)
             local changed = self._exSettingsCardCollapsed ~= collapsed
             self._exSettingsCardCollapsed = collapsed
             self._exSettingsCardBody:SetShown(not collapsed)
+            self._exSettingsCardDivider:SetShown(not collapsed)
             self._exSettingsCardToggle._exGlyph:SetText(collapsed and "v" or "^")
             self:SetHeight(self:GetPreferredHeight())
             if changed and silent ~= true and self._exSettingsCardInvalidation then
@@ -3980,7 +4078,8 @@ function EXUI:CreateSettingsCard(parent, options)
         )
     end
     EXUI:SetControlSurface(card, 10, MC.panel, MC.border)
-    EXUI:SetControlSurface(card._exSettingsCardHeader, 10, COMPOSITE_HEADER_FILL, COMPOSITE_HEADER_FILL)
+    card._exSettingsCardHeader._exModernHover = nil
+    card._exSettingsCardPaintHeader()
     card:SetCollapsed(options.collapsed == true, true)
     return card
 end
@@ -4031,8 +4130,8 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         utility = MC.raised,
         border = MC.border,
         borderSoft = MC.border,
-        text = { 0.96, 0.96, 0.97, 1 },
-        value = { 0.663, 0.792, 1.000, 1 },
+        text = MC.text,
+        value = MC.blue,
         accent = MC.blue,
     }
     local group, isNew = AcquireCompositeGroup("CompositeFontGroup", parent)
@@ -4522,11 +4621,13 @@ end
 -- secondaryCheckbox 的现有调用者仍保持原来的 104/180 高度。
 function EXUI:BuildSoundGroupLayout(width, opts)
     local groupWidth = math.max(1, tonumber(width) or 750)
+    local bodyOnly = type(opts) == "table" and opts.bodyOnly == true
+    local headerHeight = bodyOnly and 0 or 40
     local secondaryCheckbox = ResolveSoundGroupSecondaryCheckbox(opts)
     local extraHeight = secondaryCheckbox and 56 or 0
     if groupWidth >= 760 then
         return {
-            height = 104 + extraHeight,
+            height = headerHeight + 64 + extraHeight,
             isWide = true,
             secondaryCheckbox = secondaryCheckbox,
             enabledY = -4,
@@ -4537,7 +4638,7 @@ function EXUI:BuildSoundGroupLayout(width, opts)
         }
     end
     return {
-        height = 180 + extraHeight,
+        height = headerHeight + 140 + extraHeight,
         isWide = false,
         secondaryCheckbox = secondaryCheckbox,
         enabledY = -8,
@@ -4637,13 +4738,14 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
         group:_exCompositeConfigure()
         AttachCompositeRelease(group)
         ReflowCompositeGroup(group, groupWidth, groupHeight)
+        if opts.bodyOnly == true then EXUI:ClearControlSurface(group) end
         return group
     end
 
     local palette = {
         panel = MC.panel, card = MC.raised,
         utility = MC.input, border = MC.border,
-        text = { 0.922, 0.929, 0.949, 1 }, value = { 0.663, 0.792, 1.000, 1 },
+        text = MC.text, value = MC.blue,
     }
     local flatBackdrop = {
         bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1,
@@ -4829,6 +4931,13 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
     end
     group._exCompositeReflow = function(self, nextWidth, nextHeight)
         local layout = EXUI:BuildSoundGroupLayout(nextWidth, self._exCompositeOpts)
+        local bodyOnly = self._exCompositeOpts and self._exCompositeOpts.bodyOnly == true
+        local headerHeight = bodyOnly and 0 or 40
+        header:SetShown(not bodyOnly)
+        content:ClearAllPoints()
+        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -headerHeight)
+        content:SetSize(nextWidth, math.max(1, nextHeight - headerHeight))
+        if bodyOnly then EXUI:ClearControlSurface(self) end
         if layout.isWide then
             -- 对应在线编辑器的标准比例：20 / 35 / 62 / 30 / 25。
             -- 当前音效位只会显示 LSM、路径或 TTS 三者之一。
@@ -4844,9 +4953,8 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
             local channelX = padding + 128 * scale
             local testX = padding + 168 * scale
             header:SetSize(nextWidth, 40)
-            content:SetSize(nextWidth, math.max(1, nextHeight - 40))
             settingsCard:ClearAllPoints(); settingsCard:SetPoint("TOPLEFT", content, "TOPLEFT")
-            settingsCard:SetSize(nextWidth, math.max(1, nextHeight - 40))
+            settingsCard:SetSize(nextWidth, math.max(1, nextHeight - headerHeight))
 
             enabled:ClearAllPoints(); enabled:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", padding, layout.enabledY); enabled:SetWidth(checkWidth)
             secondaryCheckbox:ClearAllPoints(); secondaryCheckbox:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", padding, layout.secondaryY); secondaryCheckbox:SetWidth(checkWidth)
@@ -4863,9 +4971,9 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
         local itemWidth = math.max(140, math.floor((nextWidth - padding * 2 - gap) / 2))
         local col1, col2 = padding, padding + itemWidth + gap
         header:SetSize(nextWidth, 40)
-        content:SetSize(nextWidth, math.max(1, nextHeight - 40))
         settingsCard:ClearAllPoints(); settingsCard:SetPoint("TOPLEFT", content, "TOPLEFT", padding, -8)
-        settingsCard:SetSize(nextWidth - padding * 2, math.max(1, nextHeight - 56))
+        settingsCard:SetSize(nextWidth - padding * 2,
+            math.max(1, nextHeight - headerHeight - 16))
         enabled:ClearAllPoints(); enabled:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", 10, layout.enabledY)
         secondaryCheckbox:ClearAllPoints(); secondaryCheckbox:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", 10, layout.secondaryY)
         sourceDrop:ClearAllPoints(); sourceDrop:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", col1, layout.sourceY); sourceDrop:SetWidth(itemWidth)
@@ -5848,8 +5956,8 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
         utility = MC.raised,
         border = MC.border,
         borderSoft = MC.border,
-        text = { 0.96, 0.96, 0.97, 1 },
-        value = { 0.663, 0.792, 1.000, 1 },
+        text = MC.text,
+        value = MC.blue,
         accent = MC.blue,
     }
 
@@ -6438,7 +6546,8 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
     for field, value in pairs(defaults) do
         if db[field] == nil then db[field] = value end
     end
-    local groupWidth, groupHeight = width or 975, 282
+    local groupWidth = width or 975
+    local groupHeight = opts.bodyOnly == true and 242 or 282
     -- 层数条复用计时条的尺寸／材质／颜色／边框控件，但没有 duration、图标或填充模式语义。
     -- 使用独立对象池，避免普通计时条和层数条之间残留可见控件。
     local poolType = opts.applicationBar == true and "CompositeTimerBarApplicationGroup" or "CompositeTimerBarGroup"
@@ -6506,6 +6615,7 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
         SetDropdownDisplayText(fillMode, CompositeDropdownText(db.fillMode, fillMode._items) or L["请选择..."])
         AttachCompositeRelease(group)
         ReflowCompositeGroup(group, groupWidth, groupHeight)
+        if opts.bodyOnly == true then EXUI:ClearControlSurface(group) end
         return group
     end
     local proxy = CreateCompositeProxy(group)
@@ -6542,7 +6652,7 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
     local palette = {
         panel = MC.panel, card = MC.raised,
         utility = MC.input, border = MC.border,
-        text = { 0.922, 0.929, 0.949, 1 }, value = { 0.663, 0.792, 1.000, 1 },
+        text = MC.text, value = MC.blue,
     }
     local flatBackdrop = {
         bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1,
@@ -6834,6 +6944,7 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
     group._exCompositePopups = popupList
     group._timerBarDb = proxy
     group._exCompositeReflow = function(self, nextWidth, nextHeight)
+        local bodyOnly = self._exCompositeOpts and self._exCompositeOpts.bodyOnly == true
         local nextControlWidth = math.min(416, math.max(364, math.floor(nextWidth * 0.40)))
         local nextMetricsWidth = nextWidth - padding * 2 - controlsGap - nextControlWidth
         local nextItemWidth = math.floor((nextMetricsWidth - gap) / 2)
@@ -6842,8 +6953,12 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
         local nextSliderWidth = nextItemWidth - 20
         local nextColorHalfWidth = math.floor((nextItemWidth - 30) / 2)
 
+        header:SetShown(not bodyOnly)
         header:SetSize(nextWidth, 40)
-        content:SetSize(nextWidth, nextHeight - 40)
+        content:ClearAllPoints()
+        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, bodyOnly and 0 or -40)
+        content:SetSize(nextWidth, nextHeight - (bodyOnly and 0 or 40))
+        if bodyOnly then EXUI:ClearControlSurface(self) end
         for _, card in ipairs({ widthCard, heightCard, xCard, yCard, colorCard, textureCard }) do card:SetSize(nextItemWidth, 60) end
         widthCard:ClearAllPoints(); widthCard:SetPoint("TOPLEFT", content, "TOPLEFT", col1, row1)
         heightCard:ClearAllPoints(); heightCard:SetPoint("TOPLEFT", content, "TOPLEFT", nextCol2, row1)
@@ -6877,8 +6992,9 @@ end
 -- =========================================================
 EXUI.CreateGlowSettingsLegacy = EXUI.CreateGlowSettings
 
-function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate)
+function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate, opts)
     db = type(db) == "table" and db or {}
+    opts = type(opts) == "table" and opts or {}
     key = key or "glow"
 
     local legacyStyles = {
@@ -6907,7 +7023,8 @@ function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate)
     SetDefault("ColorA", 1)
     db[key .. "Style"] = legacyStyles[db[key .. "Style"]] or db[key .. "Style"]
 
-    local groupWidth, groupHeight = width or 750, 292
+    local groupWidth = width or 750
+    local groupHeight = opts.bodyOnly == true and 250 or 292
     local group = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     group:SetSize(groupWidth, groupHeight)
     -- 标准 Slider 合同元数据：只暴露既有控件与其真实 DB 路径，
@@ -6920,8 +7037,8 @@ function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate)
         edgeSize = 1,
         insets = { left = 0, right = 0, top = 0, bottom = 0 },
     })
-    group:SetBackdropColor(0.094, 0.094, 0.106, 1)
-    group:SetBackdropBorderColor(1, 1, 1, 0.10)
+    group:SetBackdropColor(unpack(MC.panel))
+    group:SetBackdropBorderColor(unpack(MC.border))
 
     local titleAccent = EXUI:CreateVisualTexture(group, EXBASEFRAME)
     titleAccent:SetPoint("TOPLEFT", 7, -12)
@@ -6933,8 +7050,8 @@ function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate)
     StyleModernTitle(title)
 
     local content = CreateFrame("Frame", nil, group)
-    content:SetPoint("TOPLEFT", 0, -42)
-    content:SetSize(groupWidth, groupHeight - 42)
+    content:SetPoint("TOPLEFT", 0, opts.bodyOnly == true and 0 or -42)
+    content:SetSize(groupWidth, groupHeight - (opts.bodyOnly == true and 0 or 42))
     local padding, gap = 15, 16
     local itemWidth = math.floor((groupWidth - padding * 2 - gap * 2) / 3)
     local col1, col2, col3 = padding, padding + itemWidth + gap, padding + (itemWidth + gap) * 2
@@ -7030,7 +7147,32 @@ function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate)
         enabled, styleDrop, color, lines, length, thickness,
         frequency, scale, offset, direction,
     }
-    EXUI:ApplyModernPanel(group)
+    group._exCompositeReflow = function(self, nextWidth, nextHeight)
+        local bodyOnly = opts.bodyOnly == true
+        itemWidth = math.floor((nextWidth - padding * 2 - gap * 2) / 3)
+        col1, col2, col3 = padding, padding + itemWidth + gap, padding + (itemWidth + gap) * 2
+        titleAccent:SetShown(not bodyOnly)
+        title:SetShown(not bodyOnly)
+        content:ClearAllPoints()
+        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, bodyOnly and 0 or -42)
+        content:SetSize(nextWidth, nextHeight - (bodyOnly and 0 or 42))
+        enabled:SetSize(itemWidth, 28)
+        enabled:ClearAllPoints(); enabled:SetPoint("TOPLEFT", content, "TOPLEFT", col2, -8)
+        styleDrop:SetWidth(itemWidth)
+        styleDrop:ClearAllPoints(); styleDrop:SetPoint("TOPLEFT", content, "TOPLEFT", col3, -14)
+        color:SetWidth(itemWidth)
+        color:ClearAllPoints(); color:SetPoint("TOPLEFT", content, "TOPLEFT", col1, -14)
+        for _, control in ipairs({ lines, length, thickness, frequency, scale, offset, direction }) do
+            control:SetWidth(itemWidth)
+        end
+        self:RefreshLayout()
+        if bodyOnly then
+            EXUI:ClearControlSurface(self)
+        else
+            EXUI:ApplyModernPanel(self)
+        end
+    end
+    group:_exCompositeReflow(groupWidth, groupHeight)
     return group
 end
 
@@ -7070,7 +7212,8 @@ function EXUI:CreateWidgetLayoutGroup(parent, width, label, db, key, onUpdate, o
     -- Slider 的数字输入框位于轨道下方；卡片必须把它完整纳入自身高度。
     -- 旧高度 72/118 会让最后一排输入框伸进下一张 Grid 卡片：画面可见，
     -- 但鼠标命中被下一张卡接管，于是只能拖轨道、不能直接点数值输入。
-    local groupHeight = (includeMaxPerRow or includeWrapDirection) and 134 or 88
+    local fullHeight = (includeMaxPerRow or includeWrapDirection) and 134 or 88
+    local groupHeight = opts.bodyOnly == true and (fullHeight - 22) or fullHeight
     -- 二维换行卡有额外的下拉控件，必须使用已注册的独立宿主池；
     -- 不能让它和普通单轴卡复用，也不能接受任意外部池名。
     local poolType = includeWrapDirection and "CompositeWidgetLayoutGroupWithWrap" or "CompositeWidgetLayoutGroup"
@@ -7088,6 +7231,7 @@ function EXUI:CreateWidgetLayoutGroup(parent, width, label, db, key, onUpdate, o
             maxVisible:SetValue(value)
         end
         ReflowCompositeGroup(group, groupWidth, groupHeight)
+        if opts.bodyOnly == true then EXUI:ClearControlSurface(group) end
         if group._exWidgetLayoutHint then group._exWidgetLayoutHint:Hide() end
         return group
     end
@@ -7099,8 +7243,8 @@ function EXUI:CreateWidgetLayoutGroup(parent, width, label, db, key, onUpdate, o
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = 1,
     })
-    group:SetBackdropColor(0.094, 0.094, 0.106, 1)
-    group:SetBackdropBorderColor(1, 1, 1, 0.10)
+    group:SetBackdropColor(unpack(MC.panel))
+    group:SetBackdropBorderColor(unpack(MC.border))
 
     local accent = EXUI:CreateVisualTexture(group, EXBASEFRAME)
     accent:SetPoint("TOPLEFT", 7, -11)
@@ -7233,21 +7377,29 @@ function EXUI:CreateWidgetLayoutGroup(parent, width, label, db, key, onUpdate, o
     end
     group:_exCompositeConfigure()
     group._exCompositeReflow = function(self, nextWidth, nextHeight)
+        local bodyOnly = self._exCompositeOpts and self._exCompositeOpts.bodyOnly == true
+        local bodyOffset = bodyOnly and 22 or 0
         local firstWidth = math.min(220, nextWidth - 40)
         local metricWidth = math.min(180, math.max(120, nextWidth * 0.24))
+        accent:SetShown(not bodyOnly)
+        title:SetShown(not bodyOnly)
+        if bodyOnly then EXUI:ClearControlSurface(self) end
         direction:SetWidth(firstWidth)
-        direction:ClearAllPoints(); direction:SetPoint("TOPLEFT", self, "TOPLEFT", 16, -42)
+        direction:ClearAllPoints(); direction:SetPoint("TOPLEFT", self, "TOPLEFT", 16, -42 + bodyOffset)
         spacing:SetWidth(metricWidth)
-        spacing:ClearAllPoints(); spacing:SetPoint("TOPLEFT", self, "TOPLEFT", math.min(255, nextWidth * 0.36), -46)
+        spacing:ClearAllPoints(); spacing:SetPoint("TOPLEFT", self, "TOPLEFT",
+            math.min(255, nextWidth * 0.36), -46 + bodyOffset)
         maxVisible:SetWidth(metricWidth)
-        maxVisible:ClearAllPoints(); maxVisible:SetPoint("TOPLEFT", self, "TOPLEFT", math.min(470, nextWidth * 0.64), -46)
+        maxVisible:ClearAllPoints(); maxVisible:SetPoint("TOPLEFT", self, "TOPLEFT",
+            math.min(470, nextWidth * 0.64), -46 + bodyOffset)
         if maxPerRow then
             maxPerRow:SetWidth(metricWidth)
-            maxPerRow:ClearAllPoints(); maxPerRow:SetPoint("TOPLEFT", self, "TOPLEFT", 16, -92)
+            maxPerRow:ClearAllPoints(); maxPerRow:SetPoint("TOPLEFT", self, "TOPLEFT", 16, -92 + bodyOffset)
         end
         if wrapDirection then
             wrapDirection:SetWidth(metricWidth)
-            wrapDirection:ClearAllPoints(); wrapDirection:SetPoint("TOPLEFT", self, "TOPLEFT", math.min(255, nextWidth * 0.36), -88)
+            wrapDirection:ClearAllPoints(); wrapDirection:SetPoint("TOPLEFT", self, "TOPLEFT",
+                math.min(255, nextWidth * 0.36), -88 + bodyOffset)
         end
     end
     group:_exCompositeReflow(groupWidth, groupHeight)
@@ -7297,6 +7449,7 @@ end
 -- 公共纯布局计算：Grid 在创建 widget 前也调用它，以相同规则压缩布局占位。
 function EXUI:BuildModuleCommonSettingsFlow(width, opts)
     opts = type(opts) == "table" and opts or {}
+    local bodyOnly = opts.bodyOnly == true
     local fields = CollectModuleCommonFields(opts)
     local groupWidth = math.max(1, tonumber(width) or 760)
 
@@ -7305,10 +7458,10 @@ function EXUI:BuildModuleCommonSettingsFlow(width, opts)
     -- 让 Grid measure 与复合控件重排始终共享同一份高度合同。
     if type(opts.fixedLayout) == "table" then
         local fixed = opts.fixedLayout
-        local logicalWidth = math.max(1, tonumber(fixed.logicalWidth) or 197)
+        local logicalWidth = math.max(1, tonumber(fixed.logicalWidth) or 200)
         local controlW = math.max(1, tonumber(fixed.controlW) or 40)
         local controlH = math.max(1, tonumber(fixed.controlH) or 6)
-        local slotX = type(fixed.slotX) == "table" and fixed.slotX or { 5, 55, 105, 155 }
+        local slotX = type(fixed.slotX) == "table" and fixed.slotX or { 1, 51, 101, 151 }
         local firstY = tonumber(fixed.firstY) or 5
         local rowStep = math.max(controlH, tonumber(fixed.rowStep) or 12)
         local headerLogical = math.max(1, tonumber(fixed.headerH) or 6)
@@ -7360,6 +7513,7 @@ function EXUI:BuildModuleCommonSettingsFlow(width, opts)
             }
         end
 
+        local headerHeight = bodyOnly and 0 or headerLogical * scale
         return {
             fields = fields,
             entries = entries,
@@ -7369,13 +7523,13 @@ function EXUI:BuildModuleCommonSettingsFlow(width, opts)
             padding = 0,
             contentTopInset = 0,
             entryOriginX = 0,
-            headerHeight = headerLogical * scale,
+            headerHeight = headerHeight,
             cardInsetX = 0,
             cardInsetY = cardTopLogical * scale,
             cardBottomInset = cardBottomLogical * scale,
             rowVisibleBottoms = rowVisibleBottoms,
             cardHeight = cardHeight,
-            height = math.max(1, headerLogical * scale + cardTopLogical * scale
+            height = math.max(1, headerHeight + cardTopLogical * scale
                 + cardHeight + cardBottomLogical * scale),
         }
     end
@@ -7424,6 +7578,7 @@ function EXUI:BuildModuleCommonSettingsFlow(width, opts)
     end
 
     local rows = math.max(1, #entries > 0 and (entries[#entries].row + 1) or 1)
+    local headerHeight = bodyOnly and 0 or 40
     return {
         fields = fields,
         entries = entries,
@@ -7433,13 +7588,14 @@ function EXUI:BuildModuleCommonSettingsFlow(width, opts)
         padding = padding,
         contentTopInset = contentTopInset,
         entryOriginX = padding,
-        headerHeight = 40,
+        headerHeight = headerHeight,
         cardInsetX = padding,
         cardInsetY = 8,
         cardBottomInset = 8,
         -- 保留原来的外框总高度基线；紧凑首行只把后续行上移，留下底部安全
         -- 留白，避免 slider 的数值输入框贴住外框。
-        height = math.max(1, 108 + (rows - 1) * rowStep + heightOffset),
+        height = math.max(1, 108 + (rows - 1) * rowStep + heightOffset
+            - (bodyOnly and 40 or 0)),
     }
 end
 
@@ -7458,8 +7614,8 @@ function EXUI:CreateModuleCommonSettingsGroup(parent, width, label, db, key, onU
     -- 重套，避免上一轮清理后整个“模块通用设置”面板变成透明；内部 settingsCard
     -- 和每个 field card 都只定位，绝不绘制第二层黑框。
     ApplyCompositeGroupSurface(group,
-        0.094, 0.094, 0.106, 1,
-        1, 1, 1, 0.10)
+        MC.panel[1], MC.panel[2], MC.panel[3], MC.panel[4],
+        MC.border[1], MC.border[2], MC.border[3], MC.border[4])
     group._exCompositeLabel = label or L["模块通用设置"]
     -- modulecommonsettings 的 fields 是模块声明的动态结构，不能像字体/计时条/图标
     -- 等固定结构组那样整树复用。先归还上一轮的子控件，再按本轮 fields 建立；外壳
@@ -7485,8 +7641,8 @@ function EXUI:CreateModuleCommonSettingsGroup(parent, width, label, db, key, onU
     end
 
     local palette = {
-        text = { 0.96, 0.96, 0.97, 1 },
-        value = { 0.663, 0.792, 1.000, 1 },
+        text = MC.text,
+        value = MC.blue,
     }
     group:SetSize(groupWidth, groupHeight)
     -- ModuleCommon 只保留外层组边界和标题；这里是无装饰的内部定位宿主，
@@ -7694,6 +7850,9 @@ function EXUI:CreateModuleCommonSettingsGroup(parent, width, label, db, key, onU
         end
         self:SetSize(nextFlow.width, nextFlow.height)
         local headerHeight = tonumber(nextFlow.headerHeight) or 40
+        local bodyOnly = self._exCompositeOpts and self._exCompositeOpts.bodyOnly == true
+        header:SetShown(not bodyOnly)
+        if bodyOnly then EXUI:ClearControlSurface(self) end
         local cardInsetX = tonumber(nextFlow.cardInsetX)
         if cardInsetX == nil then cardInsetX = nextFlow.padding or 0 end
         local cardInsetY = tonumber(nextFlow.cardInsetY) or 8
@@ -7823,7 +7982,8 @@ function EXUI:CreateAnchorGroup(parent, width, label, db, key, onUpdate, opts)
     local supportsCustomAttach = opts.allowCustomAttach ~= false
     local defaultX = tonumber(opts.defaultOffsetX) or 0
     local defaultY = tonumber(opts.defaultOffsetY) or 0
-    local groupWidth, groupHeight = width or 760, 92
+    local groupWidth = width or 760
+    local groupHeight = opts.bodyOnly == true and 52 or 92
 
     if db[xKey] == nil then db[xKey] = defaultX end
     if db[yKey] == nil then db[yKey] = defaultY end
@@ -7836,6 +7996,7 @@ function EXUI:CreateAnchorGroup(parent, width, label, db, key, onUpdate, opts)
     if not isNew then
         AttachCompositeRelease(group)
         ReflowCompositeGroup(group, groupWidth, groupHeight)
+        if opts.bodyOnly == true then EXUI:ClearControlSurface(group) end
         if group._exAnchorRefresh then group:_exAnchorRefresh() end
         return group
     end
@@ -7844,8 +8005,8 @@ function EXUI:CreateAnchorGroup(parent, width, label, db, key, onUpdate, opts)
     db = proxy
     group:SetSize(groupWidth, groupHeight)
     group:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-    group:SetBackdropColor(0.094, 0.094, 0.106, 1)
-    group:SetBackdropBorderColor(1, 1, 1, 0.10)
+    group:SetBackdropColor(unpack(MC.panel))
+    group:SetBackdropBorderColor(unpack(MC.border))
 
     local accent = EXUI:CreateVisualTexture(group, EXBASEFRAME)
     accent:SetPoint("TOPLEFT", 7, -11)
@@ -7889,11 +8050,17 @@ function EXUI:CreateAnchorGroup(parent, width, label, db, key, onUpdate, opts)
 
     group._anchorDb = proxy
     group._exCompositeReflow = function(self, nextWidth, nextHeight)
+        local bodyOnly = self._exCompositeOpts and self._exCompositeOpts.bodyOnly == true
+        local bodyOffset = bodyOnly and 40 or 0
+        accent:SetShown(not bodyOnly)
+        title:SetShown(not bodyOnly)
+        if bodyOnly then EXUI:ClearControlSurface(self) end
         if not supportsCustomAttach then return end
         local nextTargetWidth = math.max(180, nextWidth - 330)
         target:SetWidth(nextTargetWidth)
-        target:ClearAllPoints(); target:SetPoint("TOPLEFT", self, "TOPLEFT", 142, -50)
-        picker:ClearAllPoints(); picker:SetPoint("TOPRIGHT", self, "TOPRIGHT", -16, -50)
+        attach:ClearAllPoints(); attach:SetPoint("TOPLEFT", self, "TOPLEFT", 16, -55 + bodyOffset)
+        target:ClearAllPoints(); target:SetPoint("TOPLEFT", self, "TOPLEFT", 142, -50 + bodyOffset)
+        picker:ClearAllPoints(); picker:SetPoint("TOPRIGHT", self, "TOPRIGHT", -16, -50 + bodyOffset)
     end
     group:_exCompositeReflow(groupWidth, groupHeight)
     AttachCompositeRelease(group)
@@ -7938,8 +8105,8 @@ function EXUI:CreateTextureGroup(parent, width, label, db, key, onUpdate, opts)
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = 1,
     })
-    group:SetBackdropColor(0.094, 0.094, 0.106, 1)
-    group:SetBackdropBorderColor(1, 1, 1, 0.10)
+    group:SetBackdropColor(unpack(MC.panel))
+    group:SetBackdropBorderColor(unpack(MC.border))
 
     local accent = EXUI:CreateVisualTexture(group, EXBASEFRAME)
     accent:SetPoint("TOPLEFT", 7, -11)
@@ -8190,9 +8357,10 @@ EXUI:RegisterGridComponentMeasure("icongroup", function(width, opts)
     local height = narrow and (bodyOnly and 296 or 336) or (bodyOnly and 150 or 220)
     return { minHeight = height, preferredHeight = height }
 end)
-EXUI:RegisterGridComponentMeasure("timerbargroup", FixedGridMeasure(282))
+EXUI:RegisterGridComponentMeasure("timerbargroup", FixedGridMeasure(282, 242))
 EXUI:RegisterGridComponentMeasure("texturegroup", FixedGridMeasure(250))
-EXUI:RegisterGridComponentMeasure("anchorgroup", FixedGridMeasure(92))
+EXUI:RegisterGridComponentMeasure("anchorgroup", FixedGridMeasure(92, 52))
+EXUI:RegisterGridComponentMeasure("glow_settings", FixedGridMeasure(292, 250))
 EXUI:RegisterGridComponentMeasure("soundgroup", function(width, opts)
     local height = EXUI:BuildSoundGroupLayout(width, opts).height
     return { minHeight = height, preferredHeight = height }
@@ -8205,6 +8373,7 @@ EXUI:RegisterGridComponentMeasure("widgetlayout", function(_, opts)
     -- bottom controls, so direction/spacing/maxVisible could appear clickable
     -- while their mouse input was intercepted by another component.
     local height = tall and 134 or 88
+    if opts.bodyOnly == true then height = height - 22 end
     return { minHeight = height, preferredHeight = height }
 end)
 EXUI:RegisterGridComponentMeasure("modulecommonsettings", function(width, opts)

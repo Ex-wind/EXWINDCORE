@@ -29,6 +29,7 @@ Locale\itIT.lua
 # 1. 主引擎
 Core\ExwindTools_Metadata.lua
 Core\ExwindTools.lua
+Core\GUI\ExwindGUIColor.lua
 Core\Panel\ExwindPanelTheme.lua
 Core\Renderer\ExwindVisualLayers.lua
 Core\ExwindMedia.lua

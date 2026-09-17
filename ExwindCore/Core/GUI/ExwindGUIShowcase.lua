@@ -58,12 +58,6 @@ local sampleDB = {
             [2] = { enabled = false, sourceType = "file", customPath = "", channel = "Dialog", volume = 0.6 },
         },
     },
-    moduleCommon = {
-        enabled = true,
-        threshold = 65,
-        mode = "auto",
-        name = "Showcase",
-    },
     auraChildren = {
         children = {
             {
@@ -366,27 +360,8 @@ Add({ type = "divider", key = "separator", h = 2 })
 
 Add({ type = "header", key = "header", label = "9 · Header", h = 5 }, 2)
 
-Chapter("10", "10 · FontGroup 章节说明")
-Add({
-    type = "description", key = "fontGroupNote",
-    label = "源码第 10 节只有 FontGroup 的说明；真实构造入口位于 10.1，下面展示完整共享组。",
-    h = 4,
-})
-
-Chapter("10_1", "10.1 · FontGroup")
-Add({ type = "fontgroup", key = "fontGroup", label = "字体设置组", measure = true, h = 24 })
-
 Chapter("11", "11 · ColorButton")
 Add({ type = "color", key = "accentColor", label = "强调色（RGBA）", h = 5 })
-
-Chapter("12", "12 · SoundGroup")
-Add({
-    type = "soundgroup", key = "soundGroup", label = "音效设置组", measure = true, h = 20,
-    opts = { sources = { "lsm", "file", "tts" }, testLabel = "试听" },
-})
-
-Chapter("12_legacy", "旧 12 · GlowSettingsLegacy（兼容别名）")
-Add({ type = "glow_settings_legacy", key = "legacyGlow", label = "旧版 LibCustomGlow 参数", h = 29 })
 
 Chapter("12_voice", "12 附项 · VoiceGroup")
 Add({ type = "voicegroup", key = "voiceSettings", parentKey = "voiceSample", label = "语音触发设置", h = 18 })
@@ -416,40 +391,9 @@ Add({
     end,
 })
 
-Chapter("17", "17 · IconGroup")
-Add({ type = "icongroup", key = "iconGroup", label = "图标设置组", measure = true, h = 24 })
-
-Chapter("18", "18 · TimerBarGroup")
-Add({ type = "timerbargroup", key = "timerBar", label = "计时条设置组", measure = true, h = 30 })
-
-Chapter("19", "19 · GlowSettings（当前）")
-Add({ type = "glow_settings", key = "modernGlow", label = "Core 原生动画发光", h = 30 })
-
-Chapter("20", "20 · WidgetLayoutGroup")
-Add({
-    type = "widgetlayout", key = "widgetLayout", label = "排列设置组", measure = true, h = 16,
-    opts = { includeMaxPerRow = true, includeWrapDirection = true },
-})
-
-Chapter("20_1_common", "20.1 · ModuleCommonSettingsGroup")
-Add({
-    type = "modulecommonsettings", key = "moduleCommon", label = "模块通用设置", measure = true, h = 18,
-    opts = {
-        fields = {
-            { path = "enabled", type = "checkbox", label = "启用" },
-            { path = "threshold", type = "slider", label = "阈值", min = 0, max = 100, step = 1 },
-            { path = "mode", type = "dropdown", label = "模式", items = { { "自动", "auto" }, { "手动", "manual" } } },
-            { path = "name", type = "input", label = "名称" },
-        },
-    },
-})
-
 Chapter("20_1_aura_bars", "20.1 附项 · AuraDuration / AuraApplication")
 Add({ type = "auradurationbargroup", key = "durationBar", label = "Aura Duration Bar", measure = true, h = 24 })
 Add({ type = "auraapplicationbargroup", key = "applicationBar", label = "Aura Application Bar", measure = true, h = 20 })
-
-Chapter("20_1_anchor", "20.1 · AnchorGroup（源码同号第二项）")
-Add({ type = "anchorgroup", key = "anchor", label = "锚点设置组", measure = true, h = 11 })
 
 Chapter("21", "21 · TextureGroup")
 Add({ type = "texturegroup", key = "texture", label = "材质设置组", measure = true, h = 27 })

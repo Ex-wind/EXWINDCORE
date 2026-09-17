@@ -15,7 +15,7 @@ Factory:InitPool(ITEM, "Button", "BackdropTemplate", function(button)
     button.label:SetJustifyH("CENTER")
     button.icon = button:CreateTexture(nil, "ARTWORK")
     button.line = button:CreateTexture(nil, "OVERLAY")
-    button.line:SetColorTexture(0.294, 0.824, 0.910, 1)
+    button.line:SetColorTexture(unpack(Appearance.colors.focus))
     button.line:SetPoint("BOTTOMLEFT", 0, 0)
     button.line:SetPoint("BOTTOMRIGHT", 0, 0)
     button.line:SetHeight(2)
@@ -60,15 +60,20 @@ Paint = function(button)
     local selected = not button._choiceArrow and Selected(host, item.id)
     local disabled = host.disabled or item.disabled
     local hover = button._choiceHover and not disabled
+    local pressed = button._choicePressed and not disabled
     button:SetEnabled(not disabled)
-    local fill = selected and Appearance.colors.blueSoft
-        or (hover and Appearance.colors.hover or Appearance.colors.input)
+    local fill = selected and (pressed and Appearance.colors.menuSelectedHover or Appearance.colors.blueSoft)
+        or (pressed and Appearance.colors.secondaryPressedFill
+            or (hover and Appearance.colors.hover or Appearance.colors.input))
     local edge = selected and Appearance.colors.focus
-        or (hover and Appearance.colors.focus or Appearance.colors.border)
-    if disabled then fill, edge = Appearance.colors.input, Appearance.colors.border end
+        or (pressed and Appearance.colors.secondaryBorder
+            or (hover and Appearance.colors.focus or Appearance.colors.border))
+    if disabled then fill, edge = Appearance.colors.disabledFill, Appearance.colors.disabledBorder end
     UI:SetControlSurface(button, 4, fill, edge)
-    button.label:SetTextColor(unpack(disabled and Appearance.colors.disabled
-        or (selected and Appearance.colors.lightBlue or (hover and Appearance.colors.text or Appearance.colors.muted))))
+    button.label:SetTextColor(unpack(disabled and Appearance.colors.disabledText
+        or (selected and Appearance.colors.lightBlue
+            or (pressed and Appearance.colors.secondaryPressedText
+                or (hover and Appearance.colors.text or Appearance.colors.muted)))))
     button.line:SetColorTexture(unpack(Appearance.colors.focus))
     button.line:SetShown(host.variant == "tabs" and selected and not button._choiceArrow)
     button.icon:SetAlpha(disabled and .35 or 1)
@@ -117,7 +122,7 @@ end
 
 local function AcquireButton(host, parent, item, onClick)
     local button = Factory:Acquire(ITEM, parent)
-    button._choiceHost, button._choiceItem, button._choiceHover, button._choiceArrow = host, item, false, false
+    button._choiceHost, button._choiceItem, button._choiceHover, button._choicePressed, button._choiceArrow = host, item, false, false, false
     Appearance.ApplyTextRole(button.label, "control", nil, "GameFontNormalSmall")
     button.label:ClearAllPoints()
     button.label:SetPoint("LEFT", item.icon and 26 or 6, 0)
@@ -138,14 +143,21 @@ local function AcquireButton(host, parent, item, onClick)
             GameTooltip:Show()
         end
     end)
-    button:SetScript("OnLeave", function(self) self._choiceHover = false; Paint(self); CloseTooltip(self) end)
-    button:SetScript("OnHide", CloseTooltip)
+    button:SetScript("OnLeave", function(self)
+        self._choiceHover, self._choicePressed = false, false
+        Paint(self)
+        CloseTooltip(self)
+    end)
+    button:SetScript("OnMouseDown", function(self) self._choicePressed = true; Paint(self) end)
+    button:SetScript("OnMouseUp", function(self) self._choicePressed = false; Paint(self) end)
+    button:SetScript("OnHide", function(self) self._choicePressed = false; CloseTooltip(self) end)
     button:EnableMouseWheel(host.variant == "tabs")
     button:SetScript("OnMouseWheel", function(_, delta) host:ScrollBy(-delta * 80) end)
     Factory:AttachPoolRelease(button, function(self)
         CloseTooltip(self)
-        self._choiceHost, self._choiceItem, self._choiceHover, self._choiceArrow = nil, nil, nil, nil
-        self:SetScript("OnMouseWheel", nil); self:SetScript("OnHide", nil)
+        self._choiceHost, self._choiceItem, self._choiceHover, self._choicePressed, self._choiceArrow = nil, nil, nil, nil, nil
+        self:SetScript("OnMouseWheel", nil); self:SetScript("OnMouseDown", nil)
+        self:SetScript("OnMouseUp", nil); self:SetScript("OnHide", nil)
         self.line:Hide()
     end)
     return button

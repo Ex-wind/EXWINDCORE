@@ -1566,11 +1566,6 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         widget = EXUI:CreateGlowSettings(container, pw, ele.label, subConfig, ele.key,
             function() NotifyCompositeWrite(moduleKey, fullPath) end,
             BuildCompositeOptions(ele.opts, moduleKey, fullPath))
-    elseif ele.type == "glow_settings_legacy" then
-        local subConfig = config
-        if contextPath then subConfig = GetConfigPath(config, contextPath) or config end
-        widget = EXUI.CreateGlowSettingsLegacy(EXUI, container, pw, ele.label, subConfig, ele.key,
-            function() NotifyCompositeWrite(moduleKey, fullPath) end)
     elseif ele.type == "widgetlayout" then
         local subConfig = config
         if contextPath then
@@ -1853,8 +1848,8 @@ end
 
 Grid.CardLayoutDefaults = Grid.CardLayoutDefaults or {
     gap = 12,
-    left = 0,
-    right = 0,
+    left = 12,
+    right = 12,
     top = 0,
     bottom = 0,
 }
@@ -2274,7 +2269,12 @@ local function ReflowCardBody(grid, cardState, bodyWidth)
     local body = cardState.body
     local state = GetContainerState(grid, body)
     grid:SetContainerCols(body, CARD_GRID_COLS)
-    grid:SetContainerPadding(body, { left = 0, right = 0, top = 0, bottom = 0 })
+    grid:SetContainerPadding(body, {
+        left = 0,
+        right = 0,
+        top = cardState.content.kind == "grid" and 12 or 0,
+        bottom = 0,
+    })
     grid:UpdateMetrics(math.max(1, bodyWidth), body)
 
     local layout = BuildCardMeasuredItems(grid, body, cardState.sourceItems,
@@ -2351,7 +2351,12 @@ local function MountCardBody(grid, cardState)
     state.moduleKey = cardState.binding.moduleKey
     ActivateContainerState(grid, body, state)
     grid:SetContainerCols(body, CARD_GRID_COLS)
-    grid:SetContainerPadding(body, { left = 0, right = 0, top = 0, bottom = 0 })
+    grid:SetContainerPadding(body, {
+        left = 0,
+        right = 0,
+        top = cardState.content.kind == "grid" and 12 or 0,
+        bottom = 0,
+    })
     grid:UpdateMetrics(math.max(1, body:GetWidth()), body)
     cardState.widgetsByOrdinal = {}
     cardState.identityByOrdinal = {}

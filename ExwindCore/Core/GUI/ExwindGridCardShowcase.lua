@@ -107,6 +107,16 @@ local function NewShowcaseConfig()
             shadow = false,
             x = 0, y = 0,
         },
+        icon = {},
+        timerBar = {},
+        widgetLayout = {},
+        moduleCommon = {
+            enabled = true,
+            threshold = 65,
+            mode = "auto",
+            name = "Showcase",
+        },
+        anchor = {},
     }
 end
 
@@ -144,7 +154,7 @@ function Grid:GetCardShowcaseDeclaration()
             },
             {
                 id = "shared-composite",
-                title = "Shared composite",
+                title = "Font group",
                 collapsible = true,
                 placement = {
                     target = "declared-grid",
@@ -160,13 +170,142 @@ function Grid:GetCardShowcaseDeclaration()
                 },
             },
             {
-                id = "dynamic-custom",
-                title = "Custom dynamic content",
+                id = "icon-composite",
+                title = "Icon group",
                 collapsible = true,
                 placement = {
                     target = "shared-composite",
                     side = "below",
                     align = "end",
+                    gap = gap,
+                    width = { ratio = 1 },
+                },
+                content = {
+                    kind = "composite",
+                    component = "icongroup",
+                    key = "icon",
+                },
+            },
+            {
+                id = "sound-composite",
+                title = "Sound group",
+                collapsible = true,
+                placement = {
+                    target = "icon-composite",
+                    side = "below",
+                    align = "start",
+                    gap = gap,
+                    width = { ratio = 1 },
+                },
+                content = {
+                    kind = "composite",
+                    component = "soundgroup",
+                    key = "sound",
+                    opts = { sources = { "lsm", "file", "tts" }, testLabel = "试听" },
+                },
+            },
+            {
+                id = "timer-composite",
+                title = "Timer bar group",
+                collapsible = true,
+                placement = {
+                    target = "sound-composite",
+                    side = "below",
+                    align = "start",
+                    gap = gap,
+                    width = { ratio = 1 },
+                },
+                content = {
+                    kind = "composite",
+                    component = "timerbargroup",
+                    key = "timerBar",
+                },
+            },
+            {
+                id = "glow-composite",
+                title = "Glow settings",
+                collapsible = true,
+                placement = {
+                    target = "timer-composite",
+                    side = "below",
+                    align = "start",
+                    gap = gap,
+                    width = { ratio = 1 },
+                },
+                content = {
+                    kind = "composite",
+                    component = "glow_settings",
+                    key = "modernGlow",
+                },
+            },
+            {
+                id = "widget-layout-composite",
+                title = "Widget layout group",
+                collapsible = true,
+                placement = {
+                    target = "glow-composite",
+                    side = "below",
+                    align = "start",
+                    gap = gap,
+                    width = { ratio = 1 },
+                },
+                content = {
+                    kind = "composite",
+                    component = "widgetlayout",
+                    key = "widgetLayout",
+                    opts = { includeMaxPerRow = true, includeWrapDirection = true },
+                },
+            },
+            {
+                id = "module-common-composite",
+                title = "Module common settings",
+                collapsible = true,
+                placement = {
+                    target = "widget-layout-composite",
+                    side = "below",
+                    align = "start",
+                    gap = gap,
+                    width = { ratio = 1 },
+                },
+                content = {
+                    kind = "composite",
+                    component = "modulecommonsettings",
+                    key = "moduleCommon",
+                    opts = {
+                        fields = {
+                            { path = "enabled", type = "checkbox", label = "启用" },
+                            { path = "threshold", type = "slider", label = "阈值", min = 0, max = 100, step = 1 },
+                            { path = "mode", type = "dropdown", label = "模式", items = { { "自动", "auto" }, { "手动", "manual" } } },
+                            { path = "name", type = "input", label = "名称" },
+                        },
+                    },
+                },
+            },
+            {
+                id = "anchor-composite",
+                title = "Anchor group",
+                collapsible = true,
+                placement = {
+                    target = "module-common-composite",
+                    side = "below",
+                    align = "start",
+                    gap = gap,
+                    width = { ratio = 1 },
+                },
+                content = {
+                    kind = "composite",
+                    component = "anchorgroup",
+                    key = "anchor",
+                },
+            },
+            {
+                id = "dynamic-custom",
+                title = "Custom dynamic content",
+                collapsible = true,
+                placement = {
+                    target = "anchor-composite",
+                    side = "below",
+                    align = "start",
                     gap = gap,
                     width = { ratio = 1 },
                 },

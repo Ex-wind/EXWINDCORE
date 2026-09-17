@@ -204,7 +204,7 @@ local MODERN = {
         primaryHover = GC.accentHover,
         primaryPressed = GC.accentActive,
         lightBlue = GC.selectedText,
-        blueSoft = { 0.133, 0.173, 0.216, 1 },   -- #222c37
+        blueSoft = GC.menuSelected,
         focus = GC.accent,
         accent = GC.accent,
         sliderTrack = GC.sliderTrack,
@@ -3568,64 +3568,6 @@ local function AcquireCompositeGroup(poolType, parent)
     return CreateFrame("Frame", nil, parent, "BackdropTemplate"), true
 end
 
--- Composite hosts normally come from a BackdropTemplate pool.  A module can
--- nevertheless pass a pool key which was not registered yet; FramePool then
--- intentionally creates a plain Frame for that key.  A settings group is a
--- valid composite host in either case, so its visual shell must not assume the
--- optional Backdrop API exists.  This is an explicit rendering fallback (not a
--- protected-call suppression): it keeps the same background and one-pixel
--- outline using ordinary textures on a plain pooled Frame.
-local function ApplyCompositeGroupSurface(host, bgR, bgG, bgB, bgA, borderR, borderG, borderB, borderA)
-    if EXUI.ApplyModernPanel then
-        EXUI:ApplyModernPanel(host)
-        return
-    end
-    if host.SetBackdrop and host.SetBackdropColor and host.SetBackdropBorderColor then
-        host:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
-        })
-        host:SetBackdropColor(bgR, bgG, bgB, bgA)
-        host:SetBackdropBorderColor(borderR, borderG, borderB, borderA)
-        return
-    end
-
-    local surface = host._exCompositeFallbackSurface
-    if not surface then
-        surface = host:CreateTexture(nil, "BACKGROUND", nil, -8)
-        surface:SetAllPoints(host)
-        host._exCompositeFallbackSurface = surface
-
-        local borders = {}
-        local function CreateBorder(anchorA, relativeA, anchorB, relativeB)
-            local border = host:CreateTexture(nil, "BORDER", nil, -8)
-            border:SetPoint(anchorA, host, relativeA)
-            border:SetPoint(anchorB, host, relativeB)
-            borders[#borders + 1] = border
-        end
-        CreateBorder("TOPLEFT", "TOPLEFT", "TOPRIGHT", "TOPRIGHT")
-        CreateBorder("BOTTOMLEFT", "BOTTOMLEFT", "BOTTOMRIGHT", "BOTTOMRIGHT")
-        CreateBorder("TOPLEFT", "TOPLEFT", "BOTTOMLEFT", "BOTTOMLEFT")
-        CreateBorder("TOPRIGHT", "TOPRIGHT", "BOTTOMRIGHT", "BOTTOMRIGHT")
-        host._exCompositeFallbackBorders = borders
-    end
-
-    surface:SetColorTexture(bgR, bgG, bgB, bgA)
-    surface:Show()
-    for _, border in ipairs(host._exCompositeFallbackBorders or {}) do
-        border:SetColorTexture(borderR, borderG, borderB, borderA)
-        border:Show()
-    end
-    local borders = host._exCompositeFallbackBorders
-    if borders then
-        borders[1]:SetHeight(1)
-        borders[2]:SetHeight(1)
-        borders[3]:SetWidth(1)
-        borders[4]:SetWidth(1)
-    end
-end
-
 -- 右侧弹出面板不能作为 ScrollChild 的子对象：即使设为高层也会被滚动区域裁切。
 -- 统一挂在 UIParent 的 DIALOG 层。内部 Dropdown 的列表由 Blizzard_Menu 自动创建在
 -- FULLSCREEN_DIALOG，层级天然高于弹窗本身，避免同 TOOLTIP 层互相遮挡。
@@ -3838,7 +3780,7 @@ local function CompositeEmitUpdate(host)
 end
 
 local COMPOSITE_HEADER_FILL = MC.header
-local SETTINGS_CARD_HEADER_HEIGHT = 48
+local SETTINGS_CARD_HEADER_HEIGHT = 32
 local SETTINGS_CARD_BODY_PADDING = 12
 
 local function CreateHeaderIconSlot(parent, size)
@@ -3867,50 +3809,8 @@ local function SetHeaderIcon(slot, iconPath)
     end
 end
 
--- Font/Icon 复合组继续保留自身标题时，也与真正的 SettingsCard 共用同一标题语言。
--- 不声明 headerIcon 时保留纯蓝占位块；这里没有 subtitle，避免页面各自拼小字。
-local function CreateCompositeGroupHeader(host, width)
-    local header = CreateFrame("Frame", nil, host)
-    header:SetPoint("TOPLEFT", host, "TOPLEFT", 1, -1)
-    header:SetSize(math.max(1, width - 2), 39)
-    EXUI:SetControlSurface(header, 10, COMPOSITE_HEADER_FILL, COMPOSITE_HEADER_FILL)
-
-    local squareBottom = EXUI:CreateVisualTexture(header, EXBASEFRAME)
-    squareBottom:SetPoint("BOTTOMLEFT", 0, 0)
-    squareBottom:SetPoint("BOTTOMRIGHT", 0, 0)
-    squareBottom:SetHeight(10)
-    squareBottom:SetColorTexture(unpack(COMPOSITE_HEADER_FILL))
-
-    local divider = EXUI:CreateVisualTexture(header, EXBORDERFRAME)
-    divider:SetPoint("BOTTOMLEFT", 0, 0)
-    divider:SetPoint("BOTTOMRIGHT", 0, 0)
-    divider:SetHeight(1)
-    divider:SetColorTexture(unpack(MC.headerDivider))
-
-    local iconSlot = CreateHeaderIconSlot(header, 24)
-    iconSlot:SetPoint("LEFT", 9, 0)
-
-    local title = EXUI:CreateVisualFontString(header, EXFONTFRAME, "GameFontNormalHuge")
-    title:SetPoint("LEFT", iconSlot, "RIGHT", 10, 0)
-    title:SetPoint("RIGHT", header, "RIGHT", -12, 0)
-    title:SetJustifyH("LEFT")
-    MODERN.ApplyTextRole(title, "cardTitle")
-
-    host.labelText = title
-    host._exCompositeTitle = title
-    host._exCompositeHeader = header
-    host._exCompositeHeaderIcon = iconSlot
-    host._exCompositeHeaderRefresh = function(self)
-        title:SetText(self._exCompositeLabel or "")
-        local activeOpts = self._exCompositeOpts or {}
-        SetHeaderIcon(iconSlot, activeOpts.headerIcon)
-    end
-    host:_exCompositeHeaderRefresh()
-    return header, title
-end
-
 -- 真正供 Grid:MountCards 使用的共享卡片。标题、图标占位、折叠状态和高度
--- 都由这一层拥有；Card body 内的 composite 以 bodyOnly 模式仅渲染内容。
+-- 都由这一层拥有；Card body 内的 composite 只负责渲染无外壳内容。
 function EXUI:CreateSettingsCard(parent, options)
     options = type(options) == "table" and options or {}
     local card, isNew = AcquireCompositeGroup("CompositeSettingsCard", parent)
@@ -3926,7 +3826,7 @@ function EXUI:CreateSettingsCard(parent, options)
         header:SetHeight(SETTINGS_CARD_HEADER_HEIGHT - 1)
         header:EnableMouse(true)
         if header.SetMouseMotionEnabled then header:SetMouseMotionEnabled(true) end
-        if header.SetMouseClickEnabled then header:SetMouseClickEnabled(false) end
+        if header.SetMouseClickEnabled then header:SetMouseClickEnabled(true) end
         EXUI:SetControlSurface(header, 10, COMPOSITE_HEADER_FILL, COMPOSITE_HEADER_FILL)
 
         local squareBottom = EXUI:CreateVisualTexture(header, EXBASEFRAME)
@@ -3941,18 +3841,18 @@ function EXUI:CreateSettingsCard(parent, options)
         divider:SetHeight(1)
         divider:SetColorTexture(unpack(MC.headerDivider))
 
-        local iconSlot = CreateHeaderIconSlot(header, 30)
+        local iconSlot = CreateHeaderIconSlot(header, 18)
         iconSlot:SetPoint("LEFT", 12, 0)
 
         local title = EXUI:CreateVisualFontString(header, EXFONTFRAME, "GameFontNormalHuge")
-        title:SetPoint("LEFT", iconSlot, "RIGHT", 12, 0)
-        title:SetPoint("RIGHT", header, "RIGHT", -48, 0)
+        title:SetPoint("LEFT", iconSlot, "RIGHT", 8, 0)
+        title:SetPoint("RIGHT", header, "RIGHT", -36, 0)
         title:SetJustifyH("LEFT")
         MODERN.ApplyTextRole(title, "cardTitle")
 
         local toggle = CreateFrame("Button", nil, header)
-        toggle:SetSize(32, 30)
-        toggle:SetPoint("RIGHT", -8, 0)
+        toggle:SetSize(24, 22)
+        toggle:SetPoint("RIGHT", -6, 0)
         toggle:RegisterForClicks("LeftButtonUp")
         local glyph = EXUI:CreateVisualFontString(toggle, EXFONTFRAME, "GameFontHighlight")
         glyph:SetPoint("CENTER", 0, 1)
@@ -3983,9 +3883,14 @@ function EXUI:CreateSettingsCard(parent, options)
             header._exModernHover = nil
             PaintHeader()
         end)
-        toggle:SetScript("OnClick", function()
+        local function ToggleCollapsed()
+            if not card._exSettingsCardCollapsible then return end
             card:SetCollapsed(not card._exSettingsCardCollapsed)
+        end
+        header:SetScript("OnMouseUp", function(_, button)
+            if button == "LeftButton" then ToggleCollapsed() end
         end)
+        toggle:SetScript("OnClick", ToggleCollapsed)
 
         local body = CreateFrame("Frame", nil, card)
         body:SetPoint("TOPLEFT", card, "TOPLEFT", SETTINGS_CARD_BODY_PADDING,
@@ -3999,6 +3904,7 @@ function EXUI:CreateSettingsCard(parent, options)
         card._exSettingsCardTitle = title
         card._exSettingsCardToggle = toggle
         card._exSettingsCardDivider = divider
+        card._exSettingsCardSquareBottom = squareBottom
         card._exSettingsCardBody = body
 
         function card:GetBody()
@@ -4035,6 +3941,7 @@ function EXUI:CreateSettingsCard(parent, options)
             self._exSettingsCardCollapsed = collapsed
             self._exSettingsCardBody:SetShown(not collapsed)
             self._exSettingsCardDivider:SetShown(not collapsed)
+            self._exSettingsCardSquareBottom:SetShown(not collapsed)
             self._exSettingsCardToggle._exGlyph:SetText(collapsed and "v" or "^")
             self:SetHeight(self:GetPreferredHeight())
             if changed and silent ~= true and self._exSettingsCardInvalidation then
@@ -4120,9 +4027,7 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     local groupWidth = width or 750
     local narrowLayout = groupWidth < 720
     -- 窄卡把右侧功能区移到字段下方，避免半宽 SettingsCard 产生负 Slider 宽度。
-    local groupHeight = opts.bodyOnly == true
-        and (narrowLayout and 420 or 204)
-        or (narrowLayout and 460 or 220)
+    local groupHeight = narrowLayout and 420 or 204
     -- 与 IconGroup 共用同一组层级；两种复合控件只保留内容差异。
     local palette = {
         panel = MC.panel,
@@ -4141,11 +4046,7 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         if group._exSetUnboundedWidthControls then group:_exSetUnboundedWidthControls(opts) end
         AttachCompositeRelease(group)
         ReflowCompositeGroup(group, groupWidth, groupHeight)
-        if opts.bodyOnly == true then
-            EXUI:ClearControlSurface(group)
-        else
-            EXUI:SetControlSurface(group, 10, palette.panel, palette.borderSoft)
-        end
+        EXUI:ClearControlSurface(group)
         for _, card in ipairs(group._exFontGroupMetricCards or {}) do
             EXUI:SetControlSurface(card, 10, palette.card, palette.border)
         end
@@ -4310,15 +4211,11 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         return slider
     end
     group:SetSize(groupWidth, groupHeight)
-    if opts.bodyOnly == true then EXUI:ClearControlSurface(group)
-    else EXUI:SetControlSurface(group, 10, palette.panel, palette.borderSoft) end
-
-    local header = CreateCompositeGroupHeader(group, groupWidth)
-    header:SetShown(opts.bodyOnly ~= true)
+    EXUI:ClearControlSurface(group)
 
     local content = CreateFrame("Frame", nil, group)
-    content:SetSize(groupWidth, groupHeight - (opts.bodyOnly == true and 0 or 40))
-    content:SetPoint("TOPLEFT", 0, opts.bodyOnly == true and 0 or -40)
+    content:SetSize(groupWidth, groupHeight)
+    content:SetPoint("TOPLEFT", 0, 0)
 
     local padding, gap, controlsGap = 15, 12, 18
     local controlWidth = narrowLayout and (groupWidth - padding * 2)
@@ -4555,14 +4452,10 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         local nextControlY = nextNarrow and (row3 - metricCardHeight - gap) or row1
         local nextSliderWidth = nextItemWidth - 20
 
-        local bodyOnly = self._exCompositeOpts and self._exCompositeOpts.bodyOnly == true
-        header:SetShown(not bodyOnly)
-        header:SetSize(math.max(1, nextWidth - 2), 39)
         content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, bodyOnly and 0 or -40)
-        content:SetSize(nextWidth, nextHeight - (bodyOnly and 0 or 40))
-        if bodyOnly then EXUI:ClearControlSurface(self)
-        else EXUI:SetControlSurface(self, 10, palette.panel, palette.borderSoft) end
+        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
+        content:SetSize(nextWidth, nextHeight)
+        EXUI:ClearControlSurface(self)
         for _, card in ipairs({ colorCard, fontCard, outlineCard }) do card:SetSize(nextItemWidth, metricCardHeight) end
         for _, card in ipairs({ sizeCard, xCard, yCard }) do card:SetSize(nextItemWidth, metricCardHeight) end
         colorCard:ClearAllPoints(); colorCard:SetPoint("TOPLEFT", content, "TOPLEFT", col1, row1)
@@ -4618,16 +4511,14 @@ end
 
 -- SoundGroup 的测量和控件重排必须共用同一份纯布局结果。额外复选框由组件
 -- 自己占据第二行，因而能与“启用”使用完全相同的父级和水平内边距；未声明
--- secondaryCheckbox 的现有调用者仍保持原来的 104/180 高度。
+-- secondaryCheckbox 的现有调用者仍保持无额外行时的 64/140 高度。
 function EXUI:BuildSoundGroupLayout(width, opts)
     local groupWidth = math.max(1, tonumber(width) or 750)
-    local bodyOnly = type(opts) == "table" and opts.bodyOnly == true
-    local headerHeight = bodyOnly and 0 or 40
     local secondaryCheckbox = ResolveSoundGroupSecondaryCheckbox(opts)
     local extraHeight = secondaryCheckbox and 56 or 0
     if groupWidth >= 760 then
         return {
-            height = headerHeight + 64 + extraHeight,
+            height = 64 + extraHeight,
             isWide = true,
             secondaryCheckbox = secondaryCheckbox,
             enabledY = -4,
@@ -4638,7 +4529,7 @@ function EXUI:BuildSoundGroupLayout(width, opts)
         }
     end
     return {
-        height = headerHeight + 140 + extraHeight,
+        height = 140 + extraHeight,
         isWide = false,
         secondaryCheckbox = secondaryCheckbox,
         enabledY = -8,
@@ -4738,36 +4629,15 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
         group:_exCompositeConfigure()
         AttachCompositeRelease(group)
         ReflowCompositeGroup(group, groupWidth, groupHeight)
-        if opts.bodyOnly == true then EXUI:ClearControlSurface(group) end
+        EXUI:ClearControlSurface(group)
         return group
     end
 
-    local palette = {
-        panel = MC.panel, card = MC.raised,
-        utility = MC.input, border = MC.border,
-        text = MC.text, value = MC.blue,
-    }
-    local flatBackdrop = {
-        bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1,
-        insets = { left = 0, right = 0, top = 0, bottom = 0 },
-    }
     group:SetSize(groupWidth, groupHeight)
-    group:SetBackdrop(flatBackdrop)
-    group:SetBackdropColor(unpack(palette.panel))
-    group:SetBackdropBorderColor(unpack(palette.border))
-
-    local header = CreateFrame("Frame", nil, group)
-    header:SetSize(groupWidth, 40); header:SetPoint("TOPLEFT")
-    local title = EXUI:CreateVisualFontString(header, EXFONTFRAME, "GameFontNormalHuge")
-    title:SetPoint("LEFT", 15, 0); title:SetText(group._exCompositeLabel)
-    StyleModernTitle(title)
-    group.labelText, group._exCompositeTitle = title, title
-    local accent = EXUI:CreateVisualTexture(header, EXBASEFRAME)
-    accent:SetPoint("LEFT", 6, 0); accent:SetSize(3, 21); accent:SetColorTexture(unpack(palette.value))
+    EXUI:ClearControlSurface(group)
 
     local content = CreateFrame("Frame", nil, group)
-    content:SetPoint("TOPLEFT", 0, -40)
-    -- 外层已经承担分组背景和标题；内容层不再额外套一张卡片框。
+    content:SetPoint("TOPLEFT", 0, 0)
     local settingsCard = CreateFrame("Frame", nil, content)
 
     local function ActiveDB() return type(group._exCompositeDb) == "table" and group._exCompositeDb or nil end
@@ -4931,13 +4801,10 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
     end
     group._exCompositeReflow = function(self, nextWidth, nextHeight)
         local layout = EXUI:BuildSoundGroupLayout(nextWidth, self._exCompositeOpts)
-        local bodyOnly = self._exCompositeOpts and self._exCompositeOpts.bodyOnly == true
-        local headerHeight = bodyOnly and 0 or 40
-        header:SetShown(not bodyOnly)
         content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, -headerHeight)
-        content:SetSize(nextWidth, math.max(1, nextHeight - headerHeight))
-        if bodyOnly then EXUI:ClearControlSurface(self) end
+        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
+        content:SetSize(nextWidth, math.max(1, nextHeight))
+        EXUI:ClearControlSurface(self)
         if layout.isWide then
             -- 对应在线编辑器的标准比例：20 / 35 / 62 / 30 / 25。
             -- 当前音效位只会显示 LSM、路径或 TTS 三者之一。
@@ -4952,9 +4819,8 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
             local soundX = padding + 62 * scale
             local channelX = padding + 128 * scale
             local testX = padding + 168 * scale
-            header:SetSize(nextWidth, 40)
             settingsCard:ClearAllPoints(); settingsCard:SetPoint("TOPLEFT", content, "TOPLEFT")
-            settingsCard:SetSize(nextWidth, math.max(1, nextHeight - headerHeight))
+            settingsCard:SetSize(nextWidth, math.max(1, nextHeight))
 
             enabled:ClearAllPoints(); enabled:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", padding, layout.enabledY); enabled:SetWidth(checkWidth)
             secondaryCheckbox:ClearAllPoints(); secondaryCheckbox:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", padding, layout.secondaryY); secondaryCheckbox:SetWidth(checkWidth)
@@ -4970,10 +4836,9 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
         local padding, gap = 15, 18
         local itemWidth = math.max(140, math.floor((nextWidth - padding * 2 - gap) / 2))
         local col1, col2 = padding, padding + itemWidth + gap
-        header:SetSize(nextWidth, 40)
         settingsCard:ClearAllPoints(); settingsCard:SetPoint("TOPLEFT", content, "TOPLEFT", padding, -8)
         settingsCard:SetSize(nextWidth - padding * 2,
-            math.max(1, nextHeight - headerHeight - 16))
+            math.max(1, nextHeight - 16))
         enabled:ClearAllPoints(); enabled:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", 10, layout.enabledY)
         secondaryCheckbox:ClearAllPoints(); secondaryCheckbox:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", 10, layout.secondaryY)
         sourceDrop:ClearAllPoints(); sourceDrop:SetPoint("TOPLEFT", settingsCard, "TOPLEFT", col1, layout.sourceY); sourceDrop:SetWidth(itemWidth)
@@ -5788,38 +5653,15 @@ end
 function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate)
     local container = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     local groupWidth = width or 750
-    local groupHeight = 280
+    local groupHeight = 240
 
     container:SetSize(groupWidth, groupHeight)
-
-    -- 盒子外观
-    container:SetBackdrop(EXUI.TooltipBackdrop)
-    container:SetBackdropColor(0, 0, 0, 0.6)
-    container:SetBackdropBorderColor(0.25, 0.25, 0.25, 0.8)
-
-    -- 标题区域
-    local header = CreateFrame("Frame", nil, container)
-    header:SetSize(groupWidth, 40)
-    header:SetPoint("TOPLEFT")
-
-    local title = EXUI:CreateVisualFontString(header, EXFONTFRAME, "GameFontNormalHuge")
-    title:SetPoint("LEFT", 15, 0)
-    title:SetText(label or L["发光样式"])
-    StyleModernTitle(title)
-    container.labelText = title
-
-    local line = EXUI:CreateVisualTexture(header, EXBASEFRAME)
-    line:SetPoint("BOTTOMLEFT", 10, 5)
-    line:SetPoint("BOTTOMRIGHT", -10, 5)
-    line:SetHeight(1)
-    line:SetTexture("Interface\\Buttons\\WHITE8X8")
-    line:SetGradient("HORIZONTAL", CreateColor(MC.border[1], MC.border[2], MC.border[3], .95),
-        CreateColor(MC.border[1], MC.border[2], MC.border[3], .08))
+    EXUI:ClearControlSurface(container)
 
     -- 内容容器
     local content = CreateFrame("Frame", nil, container)
-    content:SetSize(groupWidth, groupHeight - 40)
-    content:SetPoint("TOPLEFT", 0, -40)
+    content:SetSize(groupWidth, groupHeight)
+    content:SetPoint("TOPLEFT", 0, 0)
 
     -- 布局坐标
     local col1, col2, col3 = 15, 275, 535
@@ -5914,7 +5756,7 @@ function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate)
         cb, styleDropdown, colorBtn,
         sliders.Frequency, sliders.Lines, sliders.Scale, sliders.Offset,
     }
-    EXUI:ApplyModernPanel(container)
+    EXUI:ClearControlSurface(container)
     return container
 end
 
@@ -5926,9 +5768,7 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
     local groupWidth = width or 750
     local narrowLayout = groupWidth < 720
     -- 窄卡把功能区移到 2x2 字段下方；宽卡继续保持原来的左右结构。
-    local groupHeight = opts.bodyOnly == true
-        and (narrowLayout and 296 or 150)
-        or (narrowLayout and 336 or 220)
+    local groupHeight = narrowLayout and 296 or 150
 
     -- [关键修复] 获取嵌套子表，如果不存在则初始化
     db = type(db) == "table" and db or {}
@@ -5967,11 +5807,7 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
     if not isNew then
         AttachCompositeRelease(container)
         ReflowCompositeGroup(container, groupWidth, groupHeight)
-        if opts.bodyOnly == true then
-            EXUI:ClearControlSurface(container)
-        else
-            EXUI:SetControlSurface(container, 10, palette.panel, palette.borderSoft)
-        end
+        EXUI:ClearControlSurface(container)
         for _, card in ipairs(container._exIconMetricCards or {}) do
             EXUI:SetControlSurface(card, 10, palette.card, palette.border)
         end
@@ -6156,15 +5992,11 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
     end
 
     container:SetSize(groupWidth, groupHeight)
-    if opts.bodyOnly == true then EXUI:ClearControlSurface(container)
-    else EXUI:SetControlSurface(container, 10, palette.panel, palette.borderSoft) end
-
-    local header = CreateCompositeGroupHeader(container, groupWidth)
-    header:SetShown(opts.bodyOnly ~= true)
+    EXUI:ClearControlSurface(container)
 
     local content = CreateFrame("Frame", nil, container)
-    content:SetSize(groupWidth, groupHeight - (opts.bodyOnly == true and 0 or 40))
-    content:SetPoint("TOPLEFT", 0, opts.bodyOnly == true and 0 or -40)
+    content:SetSize(groupWidth, groupHeight)
+    content:SetPoint("TOPLEFT", 0, 0)
 
     -- 左侧默认是 2x2 几何滑条；不需要模块局部图标偏移时可显式隐藏
     -- Position 控件，根锚点仍是该模块唯一的位置来源。
@@ -6483,14 +6315,10 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
         local nextControlY = nextNarrow and (row2 - 64 - gap) or row1
         local nextSliderWidth = nextItemWidth - 20
 
-        local bodyOnly = self._exCompositeOpts and self._exCompositeOpts.bodyOnly == true
-        header:SetShown(not bodyOnly)
-        header:SetSize(math.max(1, nextWidth - 2), 39)
         content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, bodyOnly and 0 or -40)
-        content:SetSize(nextWidth, nextHeight - (bodyOnly and 0 or 40))
-        if bodyOnly then EXUI:ClearControlSurface(self)
-        else EXUI:SetControlSurface(self, 10, palette.panel, palette.borderSoft) end
+        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
+        content:SetSize(nextWidth, nextHeight)
+        EXUI:ClearControlSurface(self)
         local metricCards = { widthCard, heightCard }
         if xCard then metricCards[#metricCards + 1] = xCard end
         if yCard then metricCards[#metricCards + 1] = yCard end
@@ -6547,7 +6375,7 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
         if db[field] == nil then db[field] = value end
     end
     local groupWidth = width or 975
-    local groupHeight = opts.bodyOnly == true and 242 or 282
+    local groupHeight = 242
     -- 层数条复用计时条的尺寸／材质／颜色／边框控件，但没有 duration、图标或填充模式语义。
     -- 使用独立对象池，避免普通计时条和层数条之间残留可见控件。
     local poolType = opts.applicationBar == true and "CompositeTimerBarApplicationGroup" or "CompositeTimerBarGroup"
@@ -6615,7 +6443,7 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
         SetDropdownDisplayText(fillMode, CompositeDropdownText(db.fillMode, fillMode._items) or L["请选择..."])
         AttachCompositeRelease(group)
         ReflowCompositeGroup(group, groupWidth, groupHeight)
-        if opts.bodyOnly == true then EXUI:ClearControlSurface(group) end
+        EXUI:ClearControlSurface(group)
         return group
     end
     local proxy = CreateCompositeProxy(group)
@@ -6659,21 +6487,10 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
         insets = { left = 0, right = 0, top = 0, bottom = 0 },
     }
     group:SetSize(groupWidth, groupHeight)
-    group:SetBackdrop(flatBackdrop)
-    group:SetBackdropColor(unpack(palette.panel))
-    group:SetBackdropBorderColor(unpack(palette.border))
-
-    local header = CreateFrame("Frame", nil, group)
-    header:SetSize(groupWidth, 40); header:SetPoint("TOPLEFT")
-    local title = EXUI:CreateVisualFontString(header, EXFONTFRAME, "GameFontNormalHuge")
-    title:SetPoint("LEFT", 15, 0); title:SetText(group._exCompositeLabel)
-    StyleModernTitle(title)
-    group._exCompositeTitle = title
-    local accent = EXUI:CreateVisualTexture(header, EXBASEFRAME)
-    accent:SetPoint("LEFT", 6, 0); accent:SetSize(3, 21); accent:SetColorTexture(unpack(palette.value))
+    EXUI:ClearControlSurface(group)
 
     local content = CreateFrame("Frame", nil, group)
-    content:SetSize(groupWidth, groupHeight - 40); content:SetPoint("TOPLEFT", 0, -40)
+    content:SetSize(groupWidth, groupHeight); content:SetPoint("TOPLEFT", 0, 0)
     local padding, gap, controlsGap = 15, 12, 18
     local controlWidth = math.min(416, math.max(364, math.floor(groupWidth * 0.40)))
     local metricsWidth = groupWidth - padding * 2 - controlsGap - controlWidth
@@ -6792,7 +6609,7 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
 
     local actionCard = CreateFrame("Frame", nil, content, "BackdropTemplate")
     actionCard:SetPoint("TOPLEFT", controlX, row1); actionCard:SetSize(controlWidth, 196)
-    actionCard:SetBackdrop(flatBackdrop); actionCard:SetBackdropColor(unpack(palette.utility)); actionCard:SetBackdropBorderColor(1, 1, 1, 0.16)
+    actionCard:SetBackdrop(flatBackdrop); actionCard:SetBackdropColor(unpack(palette.utility)); actionCard:SetBackdropBorderColor(unpack(palette.border))
     local function ActionButton(text, y, callback)
         local button = EXUI:CreateButton(actionCard, math.min(187, math.floor(controlWidth * 0.45)), 28,
             text, callback, { variant = "soft" })
@@ -6944,7 +6761,6 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
     group._exCompositePopups = popupList
     group._timerBarDb = proxy
     group._exCompositeReflow = function(self, nextWidth, nextHeight)
-        local bodyOnly = self._exCompositeOpts and self._exCompositeOpts.bodyOnly == true
         local nextControlWidth = math.min(416, math.max(364, math.floor(nextWidth * 0.40)))
         local nextMetricsWidth = nextWidth - padding * 2 - controlsGap - nextControlWidth
         local nextItemWidth = math.floor((nextMetricsWidth - gap) / 2)
@@ -6953,12 +6769,10 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
         local nextSliderWidth = nextItemWidth - 20
         local nextColorHalfWidth = math.floor((nextItemWidth - 30) / 2)
 
-        header:SetShown(not bodyOnly)
-        header:SetSize(nextWidth, 40)
         content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, bodyOnly and 0 or -40)
-        content:SetSize(nextWidth, nextHeight - (bodyOnly and 0 or 40))
-        if bodyOnly then EXUI:ClearControlSurface(self) end
+        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
+        content:SetSize(nextWidth, nextHeight)
+        EXUI:ClearControlSurface(self)
         for _, card in ipairs({ widthCard, heightCard, xCard, yCard, colorCard, textureCard }) do card:SetSize(nextItemWidth, 60) end
         widthCard:ClearAllPoints(); widthCard:SetPoint("TOPLEFT", content, "TOPLEFT", col1, row1)
         heightCard:ClearAllPoints(); heightCard:SetPoint("TOPLEFT", content, "TOPLEFT", nextCol2, row1)
@@ -7024,34 +6838,18 @@ function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate, opts)
     db[key .. "Style"] = legacyStyles[db[key .. "Style"]] or db[key .. "Style"]
 
     local groupWidth = width or 750
-    local groupHeight = opts.bodyOnly == true and 250 or 292
+    local groupHeight = 250
     local group = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     group:SetSize(groupWidth, groupHeight)
     -- 标准 Slider 合同元数据：只暴露既有控件与其真实 DB 路径，
     -- 不改变视觉、写入时机或原有回调。
     group._exStandardSliderControls = {}
     group._exStandardSliderDB = db
-    group:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-        insets = { left = 0, right = 0, top = 0, bottom = 0 },
-    })
-    group:SetBackdropColor(unpack(MC.panel))
-    group:SetBackdropBorderColor(unpack(MC.border))
-
-    local titleAccent = EXUI:CreateVisualTexture(group, EXBASEFRAME)
-    titleAccent:SetPoint("TOPLEFT", 7, -12)
-    titleAccent:SetSize(3, 21)
-    titleAccent:SetColorTexture(unpack(MC.blue))
-    local title = EXUI:CreateVisualFontString(group, EXFONTFRAME, "GameFontNormalHuge")
-    title:SetPoint("TOPLEFT", 16, -8)
-    title:SetText(label or L["发光设置"])
-    StyleModernTitle(title)
+    EXUI:ClearControlSurface(group)
 
     local content = CreateFrame("Frame", nil, group)
-    content:SetPoint("TOPLEFT", 0, opts.bodyOnly == true and 0 or -42)
-    content:SetSize(groupWidth, groupHeight - (opts.bodyOnly == true and 0 or 42))
+    content:SetPoint("TOPLEFT", 0, 0)
+    content:SetSize(groupWidth, groupHeight)
     local padding, gap = 15, 16
     local itemWidth = math.floor((groupWidth - padding * 2 - gap * 2) / 3)
     local col1, col2, col3 = padding, padding + itemWidth + gap, padding + (itemWidth + gap) * 2
@@ -7148,14 +6946,11 @@ function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate, opts)
         frequency, scale, offset, direction,
     }
     group._exCompositeReflow = function(self, nextWidth, nextHeight)
-        local bodyOnly = opts.bodyOnly == true
         itemWidth = math.floor((nextWidth - padding * 2 - gap * 2) / 3)
         col1, col2, col3 = padding, padding + itemWidth + gap, padding + (itemWidth + gap) * 2
-        titleAccent:SetShown(not bodyOnly)
-        title:SetShown(not bodyOnly)
         content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, bodyOnly and 0 or -42)
-        content:SetSize(nextWidth, nextHeight - (bodyOnly and 0 or 42))
+        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
+        content:SetSize(nextWidth, nextHeight)
         enabled:SetSize(itemWidth, 28)
         enabled:ClearAllPoints(); enabled:SetPoint("TOPLEFT", content, "TOPLEFT", col2, -8)
         styleDrop:SetWidth(itemWidth)
@@ -7166,11 +6961,7 @@ function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate, opts)
             control:SetWidth(itemWidth)
         end
         self:RefreshLayout()
-        if bodyOnly then
-            EXUI:ClearControlSurface(self)
-        else
-            EXUI:ApplyModernPanel(self)
-        end
+        EXUI:ClearControlSurface(self)
     end
     group:_exCompositeReflow(groupWidth, groupHeight)
     return group
@@ -7213,7 +7004,7 @@ function EXUI:CreateWidgetLayoutGroup(parent, width, label, db, key, onUpdate, o
     -- 旧高度 72/118 会让最后一排输入框伸进下一张 Grid 卡片：画面可见，
     -- 但鼠标命中被下一张卡接管，于是只能拖轨道、不能直接点数值输入。
     local fullHeight = (includeMaxPerRow or includeWrapDirection) and 134 or 88
-    local groupHeight = opts.bodyOnly == true and (fullHeight - 22) or fullHeight
+    local groupHeight = fullHeight - 22
     -- 二维换行卡有额外的下拉控件，必须使用已注册的独立宿主池；
     -- 不能让它和普通单轴卡复用，也不能接受任意外部池名。
     local poolType = includeWrapDirection and "CompositeWidgetLayoutGroupWithWrap" or "CompositeWidgetLayoutGroup"
@@ -7231,31 +7022,14 @@ function EXUI:CreateWidgetLayoutGroup(parent, width, label, db, key, onUpdate, o
             maxVisible:SetValue(value)
         end
         ReflowCompositeGroup(group, groupWidth, groupHeight)
-        if opts.bodyOnly == true then EXUI:ClearControlSurface(group) end
+        EXUI:ClearControlSurface(group)
         if group._exWidgetLayoutHint then group._exWidgetLayoutHint:Hide() end
         return group
     end
     local proxy = CreateCompositeProxy(group)
     db = proxy
     group:SetSize(groupWidth, groupHeight)
-    group:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8X8",
-        edgeFile = "Interface\\Buttons\\WHITE8X8",
-        edgeSize = 1,
-    })
-    group:SetBackdropColor(unpack(MC.panel))
-    group:SetBackdropBorderColor(unpack(MC.border))
-
-    local accent = EXUI:CreateVisualTexture(group, EXBASEFRAME)
-    accent:SetPoint("TOPLEFT", 7, -11)
-    accent:SetSize(3, 20)
-    accent:SetColorTexture(unpack(MC.blue))
-
-    local title = EXUI:CreateVisualFontString(group, EXFONTFRAME, "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -8)
-    title:SetText(group._exCompositeLabel)
-    StyleModernTitle(title)
-    group._exCompositeTitle = title
+    EXUI:ClearControlSurface(group)
 
     local function EmitUpdate() CompositeEmitUpdate(group) end
 
@@ -7377,29 +7151,25 @@ function EXUI:CreateWidgetLayoutGroup(parent, width, label, db, key, onUpdate, o
     end
     group:_exCompositeConfigure()
     group._exCompositeReflow = function(self, nextWidth, nextHeight)
-        local bodyOnly = self._exCompositeOpts and self._exCompositeOpts.bodyOnly == true
-        local bodyOffset = bodyOnly and 22 or 0
         local firstWidth = math.min(220, nextWidth - 40)
         local metricWidth = math.min(180, math.max(120, nextWidth * 0.24))
-        accent:SetShown(not bodyOnly)
-        title:SetShown(not bodyOnly)
-        if bodyOnly then EXUI:ClearControlSurface(self) end
+        EXUI:ClearControlSurface(self)
         direction:SetWidth(firstWidth)
-        direction:ClearAllPoints(); direction:SetPoint("TOPLEFT", self, "TOPLEFT", 16, -42 + bodyOffset)
+        direction:ClearAllPoints(); direction:SetPoint("TOPLEFT", self, "TOPLEFT", 16, -20)
         spacing:SetWidth(metricWidth)
         spacing:ClearAllPoints(); spacing:SetPoint("TOPLEFT", self, "TOPLEFT",
-            math.min(255, nextWidth * 0.36), -46 + bodyOffset)
+            math.min(255, nextWidth * 0.36), -24)
         maxVisible:SetWidth(metricWidth)
         maxVisible:ClearAllPoints(); maxVisible:SetPoint("TOPLEFT", self, "TOPLEFT",
-            math.min(470, nextWidth * 0.64), -46 + bodyOffset)
+            math.min(470, nextWidth * 0.64), -24)
         if maxPerRow then
             maxPerRow:SetWidth(metricWidth)
-            maxPerRow:ClearAllPoints(); maxPerRow:SetPoint("TOPLEFT", self, "TOPLEFT", 16, -92 + bodyOffset)
+            maxPerRow:ClearAllPoints(); maxPerRow:SetPoint("TOPLEFT", self, "TOPLEFT", 16, -70)
         end
         if wrapDirection then
             wrapDirection:SetWidth(metricWidth)
             wrapDirection:ClearAllPoints(); wrapDirection:SetPoint("TOPLEFT", self, "TOPLEFT",
-                math.min(255, nextWidth * 0.36), -88 + bodyOffset)
+                math.min(255, nextWidth * 0.36), -66)
         end
     end
     group:_exCompositeReflow(groupWidth, groupHeight)
@@ -7449,7 +7219,6 @@ end
 -- 公共纯布局计算：Grid 在创建 widget 前也调用它，以相同规则压缩布局占位。
 function EXUI:BuildModuleCommonSettingsFlow(width, opts)
     opts = type(opts) == "table" and opts or {}
-    local bodyOnly = opts.bodyOnly == true
     local fields = CollectModuleCommonFields(opts)
     local groupWidth = math.max(1, tonumber(width) or 760)
 
@@ -7464,7 +7233,6 @@ function EXUI:BuildModuleCommonSettingsFlow(width, opts)
         local slotX = type(fixed.slotX) == "table" and fixed.slotX or { 1, 51, 101, 151 }
         local firstY = tonumber(fixed.firstY) or 5
         local rowStep = math.max(controlH, tonumber(fixed.rowStep) or 12)
-        local headerLogical = math.max(1, tonumber(fixed.headerH) or 6)
         local cardTopLogical = math.max(0, tonumber(fixed.cardTopInset) or 1)
         local cardBottomLogical = math.max(0, tonumber(fixed.cardBottomInset) or 5)
         local scale = groupWidth / logicalWidth
@@ -7513,7 +7281,6 @@ function EXUI:BuildModuleCommonSettingsFlow(width, opts)
             }
         end
 
-        local headerHeight = bodyOnly and 0 or headerLogical * scale
         return {
             fields = fields,
             entries = entries,
@@ -7523,13 +7290,13 @@ function EXUI:BuildModuleCommonSettingsFlow(width, opts)
             padding = 0,
             contentTopInset = 0,
             entryOriginX = 0,
-            headerHeight = headerHeight,
+            headerHeight = 0,
             cardInsetX = 0,
             cardInsetY = cardTopLogical * scale,
             cardBottomInset = cardBottomLogical * scale,
             rowVisibleBottoms = rowVisibleBottoms,
             cardHeight = cardHeight,
-            height = math.max(1, headerHeight + cardTopLogical * scale
+            height = math.max(1, cardTopLogical * scale
                 + cardHeight + cardBottomLogical * scale),
         }
     end
@@ -7578,7 +7345,6 @@ function EXUI:BuildModuleCommonSettingsFlow(width, opts)
     end
 
     local rows = math.max(1, #entries > 0 and (entries[#entries].row + 1) or 1)
-    local headerHeight = bodyOnly and 0 or 40
     return {
         fields = fields,
         entries = entries,
@@ -7588,14 +7354,13 @@ function EXUI:BuildModuleCommonSettingsFlow(width, opts)
         padding = padding,
         contentTopInset = contentTopInset,
         entryOriginX = padding,
-        headerHeight = headerHeight,
+        headerHeight = 0,
         cardInsetX = padding,
         cardInsetY = 8,
         cardBottomInset = 8,
         -- 保留原来的外框总高度基线；紧凑首行只把后续行上移，留下底部安全
         -- 留白，避免 slider 的数值输入框贴住外框。
-        height = math.max(1, 108 + (rows - 1) * rowStep + heightOffset
-            - (bodyOnly and 40 or 0)),
+        height = math.max(1, 68 + (rows - 1) * rowStep + heightOffset),
     }
 end
 
@@ -7610,12 +7375,7 @@ function EXUI:CreateModuleCommonSettingsGroup(parent, width, label, db, key, onU
     local flow = self:BuildModuleCommonSettingsFlow(groupWidth, opts)
     local groupHeight = flow.height
     local group, isNew = AcquireCompositeGroup(opts.poolType or "CompositeModuleCommonSettingsGroup", parent)
-    -- ModuleCommon 的根宿主是唯一可见的面板底色与边界。必须在每次从池中借用时
-    -- 重套，避免上一轮清理后整个“模块通用设置”面板变成透明；内部 settingsCard
-    -- 和每个 field card 都只定位，绝不绘制第二层黑框。
-    ApplyCompositeGroupSurface(group,
-        MC.panel[1], MC.panel[2], MC.panel[3], MC.panel[4],
-        MC.border[1], MC.border[2], MC.border[3], MC.border[4])
+    EXUI:ClearControlSurface(group)
     group._exCompositeLabel = label or L["模块通用设置"]
     -- modulecommonsettings 的 fields 是模块声明的动态结构，不能像字体/计时条/图标
     -- 等固定结构组那样整树复用。先归还上一轮的子控件，再按本轮 fields 建立；外壳
@@ -7640,24 +7400,10 @@ function EXUI:CreateModuleCommonSettingsGroup(parent, width, label, db, key, onU
         return group
     end
 
-    local palette = {
-        text = MC.text,
-        value = MC.blue,
-    }
     group:SetSize(groupWidth, groupHeight)
-    -- ModuleCommon 只保留外层组边界和标题；这里是无装饰的内部定位宿主，
-    -- 不再绘制第二层深色卡片，避免单个开关下方出现空白黑框。
-    local header = CreateFrame("Frame", nil, group)
-    header:SetSize(groupWidth, 40); header:SetPoint("TOPLEFT")
-    local title = EXUI:CreateVisualFontString(header, EXFONTFRAME, "GameFontNormalHuge")
-    title:SetPoint("LEFT", 15, 0); title:SetText(group._exCompositeLabel)
-    StyleModernTitle(title)
-    group.labelText, group._exCompositeTitle = title, title
-    local accent = EXUI:CreateVisualTexture(header, EXBASEFRAME)
-    accent:SetPoint("LEFT", 6, 0); accent:SetSize(3, 21); accent:SetColorTexture(unpack(palette.value))
 
     local content = CreateFrame("Frame", nil, group)
-    content:SetPoint("TOPLEFT", 0, -40)
+    content:SetPoint("TOPLEFT", 0, 0)
     local settingsCard = CreateFrame("Frame", nil, content)
 
     local function EmitUpdate() CompositeEmitUpdate(group) end
@@ -7849,22 +7595,18 @@ function EXUI:CreateModuleCommonSettingsGroup(parent, width, label, db, key, onU
             self._exGridFixedHeight = nextFlow.height
         end
         self:SetSize(nextFlow.width, nextFlow.height)
-        local headerHeight = tonumber(nextFlow.headerHeight) or 40
-        local bodyOnly = self._exCompositeOpts and self._exCompositeOpts.bodyOnly == true
-        header:SetShown(not bodyOnly)
-        if bodyOnly then EXUI:ClearControlSurface(self) end
+        EXUI:ClearControlSurface(self)
         local cardInsetX = tonumber(nextFlow.cardInsetX)
         if cardInsetX == nil then cardInsetX = nextFlow.padding or 0 end
         local cardInsetY = tonumber(nextFlow.cardInsetY) or 8
         local cardBottomInset = tonumber(nextFlow.cardBottomInset) or cardInsetY
-        header:SetSize(nextFlow.width, headerHeight)
         content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", 0, -headerHeight)
-        content:SetSize(nextFlow.width, math.max(1, nextFlow.height - headerHeight))
+        content:SetPoint("TOPLEFT", 0, 0)
+        content:SetSize(nextFlow.width, math.max(1, nextFlow.height))
         settingsCard:ClearAllPoints()
         settingsCard:SetPoint("TOPLEFT", content, "TOPLEFT", cardInsetX, -cardInsetY)
         local cardHeight = tonumber(nextFlow.cardHeight)
-            or math.max(1, nextFlow.height - headerHeight - cardInsetY - cardBottomInset)
+            or math.max(1, nextFlow.height - cardInsetY - cardBottomInset)
         settingsCard:SetSize(nextFlow.width - cardInsetX * 2, cardHeight)
         for index, entry in ipairs(nextFlow.entries) do
             local mounted = self._exModuleCommonEntries[index]
@@ -7983,7 +7725,7 @@ function EXUI:CreateAnchorGroup(parent, width, label, db, key, onUpdate, opts)
     local defaultX = tonumber(opts.defaultOffsetX) or 0
     local defaultY = tonumber(opts.defaultOffsetY) or 0
     local groupWidth = width or 760
-    local groupHeight = opts.bodyOnly == true and 52 or 92
+    local groupHeight = 52
 
     if db[xKey] == nil then db[xKey] = defaultX end
     if db[yKey] == nil then db[yKey] = defaultY end
@@ -7996,7 +7738,7 @@ function EXUI:CreateAnchorGroup(parent, width, label, db, key, onUpdate, opts)
     if not isNew then
         AttachCompositeRelease(group)
         ReflowCompositeGroup(group, groupWidth, groupHeight)
-        if opts.bodyOnly == true then EXUI:ClearControlSurface(group) end
+        EXUI:ClearControlSurface(group)
         if group._exAnchorRefresh then group:_exAnchorRefresh() end
         return group
     end
@@ -8004,20 +7746,7 @@ function EXUI:CreateAnchorGroup(parent, width, label, db, key, onUpdate, opts)
     local proxy = CreateCompositeProxy(group)
     db = proxy
     group:SetSize(groupWidth, groupHeight)
-    group:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-    group:SetBackdropColor(unpack(MC.panel))
-    group:SetBackdropBorderColor(unpack(MC.border))
-
-    local accent = EXUI:CreateVisualTexture(group, EXBASEFRAME)
-    accent:SetPoint("TOPLEFT", 7, -11)
-    accent:SetSize(3, 20)
-    accent:SetColorTexture(unpack(MC.blue))
-
-    local title = EXUI:CreateVisualFontString(group, EXFONTFRAME, "GameFontNormalLarge")
-    title:SetPoint("TOPLEFT", 16, -8)
-    title:SetText(group._exCompositeLabel)
-    StyleModernTitle(title)
-    group._exCompositeTitle = title
+    EXUI:ClearControlSurface(group)
 
     local function EmitUpdate() CompositeEmitUpdate(group) end
     -- 锚点是否启用只控制是否跟随目标；X/Y 仍是模块自身的控件配置，不能在此覆盖。
@@ -8028,7 +7757,7 @@ function EXUI:CreateAnchorGroup(parent, width, label, db, key, onUpdate, opts)
             db[attachKey] = value == true
             EmitUpdate()
         end)
-        attach:SetPoint("TOPLEFT", 16, -55)
+        attach:SetPoint("TOPLEFT", 16, -15)
         RegisterCompositeControl(group, attach, attachKey, "check")
 
         local targetWidth = math.max(180, groupWidth - 330)
@@ -8036,7 +7765,7 @@ function EXUI:CreateAnchorGroup(parent, width, label, db, key, onUpdate, opts)
             onEnter = function(value) db[targetKey] = value or ""; EmitUpdate() end,
             onEditFocusLost = function(value) db[targetKey] = value or ""; EmitUpdate() end,
         })
-        target:SetPoint("TOPLEFT", 142, -50)
+        target:SetPoint("TOPLEFT", 142, -10)
         RegisterCompositeControl(group, target, targetKey, "edit")
 
         picker = EXUI:CreateButton(group, 108, 28, L["锚点选择器"], function()
@@ -8044,23 +7773,19 @@ function EXUI:CreateAnchorGroup(parent, width, label, db, key, onUpdate, opts)
                 group._exCompositeOpts.onPickFrame(group._exCompositeDb)
             end
         end)
-        picker:SetPoint("TOPRIGHT", -16, -50)
+        picker:SetPoint("TOPRIGHT", -16, -10)
         picker:SetShown(type(opts.onPickFrame) == "function")
     end
 
     group._anchorDb = proxy
     group._exCompositeReflow = function(self, nextWidth, nextHeight)
-        local bodyOnly = self._exCompositeOpts and self._exCompositeOpts.bodyOnly == true
-        local bodyOffset = bodyOnly and 40 or 0
-        accent:SetShown(not bodyOnly)
-        title:SetShown(not bodyOnly)
-        if bodyOnly then EXUI:ClearControlSurface(self) end
+        EXUI:ClearControlSurface(self)
         if not supportsCustomAttach then return end
         local nextTargetWidth = math.max(180, nextWidth - 330)
         target:SetWidth(nextTargetWidth)
-        attach:ClearAllPoints(); attach:SetPoint("TOPLEFT", self, "TOPLEFT", 16, -55 + bodyOffset)
-        target:ClearAllPoints(); target:SetPoint("TOPLEFT", self, "TOPLEFT", 142, -50 + bodyOffset)
-        picker:ClearAllPoints(); picker:SetPoint("TOPRIGHT", self, "TOPRIGHT", -16, -50 + bodyOffset)
+        attach:ClearAllPoints(); attach:SetPoint("TOPLEFT", self, "TOPLEFT", 16, -15)
+        target:ClearAllPoints(); target:SetPoint("TOPLEFT", self, "TOPLEFT", 142, -10)
+        picker:ClearAllPoints(); picker:SetPoint("TOPRIGHT", self, "TOPRIGHT", -16, -10)
     end
     group:_exCompositeReflow(groupWidth, groupHeight)
     AttachCompositeRelease(group)
@@ -8334,33 +8059,27 @@ end
 -- 标准组合控件的无副作用 Grid 测量。数值与各 Create*Group 的实际 SetSize
 -- 完全一致；将来修改控件高度时，必须同时改这里或改成共享常量，不能让 schema
 -- 猜测内部控件树的高度。
-local function FixedGridMeasure(height, bodyOnlyHeight)
-    return function(_, opts)
-        local measured = height
-        if bodyOnlyHeight and type(opts) == "table" and opts.bodyOnly == true then
-            measured = bodyOnlyHeight
-        end
-        return { minHeight = measured, preferredHeight = measured }
+local function FixedGridMeasure(height)
+    return function()
+        return { minHeight = height, preferredHeight = height }
     end
 end
 
 EXUI:RegisterGridComponentMeasure("slider", FixedGridMeasure(EXUI.GridSliderHeight))
-EXUI:RegisterGridComponentMeasure("fontgroup", function(width, opts)
-    local bodyOnly = type(opts) == "table" and opts.bodyOnly == true
+EXUI:RegisterGridComponentMeasure("fontgroup", function(width)
     local narrow = (tonumber(width) or 750) < 720
-    local height = narrow and (bodyOnly and 420 or 460) or (bodyOnly and 204 or 220)
+    local height = narrow and 420 or 204
     return { minHeight = height, preferredHeight = height }
 end)
-EXUI:RegisterGridComponentMeasure("icongroup", function(width, opts)
-    local bodyOnly = type(opts) == "table" and opts.bodyOnly == true
+EXUI:RegisterGridComponentMeasure("icongroup", function(width)
     local narrow = (tonumber(width) or 750) < 720
-    local height = narrow and (bodyOnly and 296 or 336) or (bodyOnly and 150 or 220)
+    local height = narrow and 296 or 150
     return { minHeight = height, preferredHeight = height }
 end)
-EXUI:RegisterGridComponentMeasure("timerbargroup", FixedGridMeasure(282, 242))
+EXUI:RegisterGridComponentMeasure("timerbargroup", FixedGridMeasure(242))
 EXUI:RegisterGridComponentMeasure("texturegroup", FixedGridMeasure(250))
-EXUI:RegisterGridComponentMeasure("anchorgroup", FixedGridMeasure(92, 52))
-EXUI:RegisterGridComponentMeasure("glow_settings", FixedGridMeasure(292, 250))
+EXUI:RegisterGridComponentMeasure("anchorgroup", FixedGridMeasure(52))
+EXUI:RegisterGridComponentMeasure("glow_settings", FixedGridMeasure(250))
 EXUI:RegisterGridComponentMeasure("soundgroup", function(width, opts)
     local height = EXUI:BuildSoundGroupLayout(width, opts).height
     return { minHeight = height, preferredHeight = height }
@@ -8368,12 +8087,8 @@ end)
 EXUI:RegisterGridComponentMeasure("widgetlayout", function(_, opts)
     opts = type(opts) == "table" and opts or {}
     local tall = opts.includeMaxPerRow ~= false or opts.includeWrapDirection == true
-    -- Must exactly match CreateWidgetLayoutGroup's real 134/88 card height.
-    -- The stale 118/72 measurement let the following Grid card overlap the
-    -- bottom controls, so direction/spacing/maxVisible could appear clickable
-    -- while their mouse input was intercepted by another component.
-    local height = tall and 134 or 88
-    if opts.bodyOnly == true then height = height - 22 end
+    -- Must exactly match CreateWidgetLayoutGroup's shell-free 112/66 height.
+    local height = tall and 112 or 66
     return { minHeight = height, preferredHeight = height }
 end)
 EXUI:RegisterGridComponentMeasure("modulecommonsettings", function(width, opts)

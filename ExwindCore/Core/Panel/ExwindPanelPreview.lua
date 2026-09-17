@@ -14,6 +14,8 @@ local L = (ExwindTools and ExwindTools.L)
 
 if not ExwindTools or not ExwindTools.UI then return end
 local EXUI = ExwindTools.UI
+local GC = ExwindTools.GUIColors
+if not GC then error("ExwindGUIColor.lua must load before ExwindPanelPreview.lua") end
 
 -- GUI 修改 ModuleDB 后的唯一刷新注册表。注册项只能重套已经存在的
 -- presentation；创建、释放与完整 Render 仍只属于各自正常的生命周期入口。
@@ -905,61 +907,16 @@ local function CreatePanelPresetButton(parent, width, textValue)
     return EXUI:CreateButton(parent, width, 24, textValue)
 end
 
-local function AcquirePanelPresetSidebarTexture(button, key, r, g, b, a)
-    button.__ExwindPanelPresetSidebarTextures = button.__ExwindPanelPresetSidebarTextures or {}
-    local textures = button.__ExwindPanelPresetSidebarTextures
-    local texture = textures[key]
-    if not texture then
-        texture = EXUI:CreateVisualTexture(button, _G.EXBASEFRAME)
-        texture:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
-        texture:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
-        textures[key] = texture
-    end
-    texture:SetColorTexture(r, g, b, a)
-    return texture
-end
-
 local function SetPanelPresetButtonPresentation(button, sidebar, role)
     if not button then return end
-    local fontString = button.GetFontString and button:GetFontString() or nil
-    if sidebar then
-        local normal = AcquirePanelPresetSidebarTexture(button, "normal", 0.055, 0.086, 0.122, 1)
-        local pushed = AcquirePanelPresetSidebarTexture(button, "pushed", 0.102, 0.153, 0.204, 1)
-        local disabled = AcquirePanelPresetSidebarTexture(button, "disabled", 0.039, 0.063, 0.090, 0.75)
-        local highlight = AcquirePanelPresetSidebarTexture(button, "highlight", 0.306, 0.835, 0.914, 0.18)
-        button:SetNormalTexture(normal)
-        button:SetPushedTexture(pushed)
-        button:SetDisabledTexture(disabled)
-        button:SetHighlightTexture(highlight, "ADD")
-        if not button.__ExwindPanelPresetSidebarBorder then
-            local border = CreateFrame("Frame", nil, button, "BackdropTemplate")
-            border:SetAllPoints()
-            border:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-            border:EnableMouse(false)
-            button.__ExwindPanelPresetSidebarBorder = border
-        end
-        local border = button.__ExwindPanelPresetSidebarBorder
-        border:SetBackdropBorderColor(0.141, 0.216, 0.278, 1)
-        border:Show()
-        if fontString then
-            if role == "delete" then
-                fontString:SetTextColor(0.929, 0.349, 0.392, 1)
-            elseif role == "add" then
-                fontString:SetTextColor(0.306, 0.835, 0.914, 1)
-            else
-                fontString:SetTextColor(0.906, 0.941, 0.969, 1)
-            end
-        end
-    else
-        if button.__ExwindPanelPresetSidebarBorder then
-            button.__ExwindPanelPresetSidebarBorder:Hide()
-        end
-        if button.SetNormalAtlas then button:SetNormalAtlas("common-button-tertiary-normal") end
-        if button.SetPushedAtlas then button:SetPushedAtlas("common-button-tertiary-pressed") end
-        if button.SetDisabledAtlas then button:SetDisabledAtlas("common-button-tertiary-disabled") end
-        if button.SetHighlightAtlas then button:SetHighlightAtlas("common-button-tertiary-normal", "ADD") end
-        if fontString then fontString:SetTextColor(1, 0.82, 0, 1) end
+    -- These are settings controls in both placements. Reuse the one EXUI
+    -- button painter instead of reviving a second sidebar/native-atlas skin.
+    button._exButtonVariant = role == "delete" and "danger"
+        or (role == "add" and "primary" or "secondary")
+    if button.__ExwindPanelPresetSidebarBorder then
+        button.__ExwindPanelPresetSidebarBorder:Hide()
     end
+    EXUI:ApplyControlAppearance(button)
 end
 
 local ReleasePanelPresetThumbnail
@@ -968,8 +925,8 @@ local function CreatePanelPresetThumbnail(parent, width, height)
     local view = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     view:SetSize(width, height)
     view:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-    view:SetBackdropColor(0.20, 0.23, 0.29, 1)
-    view:SetBackdropBorderColor(0.75, 0.82, 0.94, 0.70)
+    view:SetBackdropColor(unpack(GC.card))
+    view:SetBackdropBorderColor(unpack(GC.panelBorder))
     if type(view.SetClipsChildren) == "function" then view:SetClipsChildren(true) end
     local host = CreateFrame("Frame", nil, view)
     host:SetPoint("CENTER", view, "CENTER", 0, 0)
@@ -1197,8 +1154,8 @@ local function AcquirePanelStylePresetControls(dock)
         edgeFile = "Interface\\Buttons\\WHITE8X8",
         edgeSize = 1,
     })
-    confirm:SetBackdropColor(0.10, 0.12, 0.17, 1)
-    confirm:SetBackdropBorderColor(0.35, 0.72, 1.00, 1)
+    confirm:SetBackdropColor(unpack(GC.popup))
+    confirm:SetBackdropBorderColor(unpack(GC.popupBorder))
     confirm:SetFrameStrata("TOOLTIP")
     confirm:SetToplevel(true)
     confirm:EnableMouse(true)
@@ -1220,27 +1177,28 @@ local function AcquirePanelStylePresetControls(dock)
 
     local title = confirm:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
     title:SetPoint("TOP", confirm, "TOP", 0, -14)
+    title:SetTextColor(unpack(GC.text))
     controls.title = title
     local description = confirm:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     description:SetPoint("TOP", title, "BOTTOM", 0, -7)
     description:SetText(L["一次性覆盖当前外观；本体位置与业务设置不会改变。"])
+    description:SetTextColor(unpack(GC.textDim))
     controls.description = description
 
     local confirmPreview = CreatePanelPresetThumbnail(confirm, 390, 120)
     confirmPreview:SetPoint("TOP", confirm, "TOP", 0, -54)
     controls.confirmPreview = confirmPreview
 
-    local fontCheck = CreateFrame("CheckButton", nil, confirm, "UICheckButtonTemplate")
-    fontCheck:SetSize(24, 24)
-    fontCheck:SetPoint("BOTTOMLEFT", confirm, "BOTTOMLEFT", 112, 47)
-    fontCheck:SetScript("OnClick", function()
+    local fontControl = EXUI:CreateCheckbox(confirm, L["同时覆盖字体（LSM）"], false, function()
         local owner = controls.owner
         if owner then owner:RefreshStylePresetConfirmationPreview() end
     end)
+    fontControl:SetSize(230, 28)
+    fontControl:SetPoint("BOTTOMLEFT", confirm, "BOTTOMLEFT", 112, 45)
+    local fontCheck = fontControl.checkbox
     controls.fontCheck = fontCheck
-    local fontLabel = confirm:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    fontLabel:SetPoint("LEFT", fontCheck, "RIGHT", 4, 0)
-    fontLabel:SetText(L["同时覆盖字体（LSM）"])
+    controls.fontControl = fontControl
+    local fontLabel = fontControl.label
     controls.fontLabel = fontLabel
 
     local applyButton = CreatePanelPresetButton(confirm, 92, L["确认应用"])
@@ -1261,8 +1219,8 @@ local function AcquirePanelStylePresetControls(dock)
     local tooltip = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     tooltip:SetSize(360, 154)
     tooltip:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-    tooltip:SetBackdropColor(0.10, 0.12, 0.17, 1)
-    tooltip:SetBackdropBorderColor(0.35, 0.72, 1.00, 1)
+    tooltip:SetBackdropColor(unpack(GC.popup))
+    tooltip:SetBackdropBorderColor(unpack(GC.popupBorder))
     tooltip:SetFrameStrata("TOOLTIP")
     tooltip:SetToplevel(true)
     tooltip:EnableMouse(false)
@@ -1270,6 +1228,7 @@ local function AcquirePanelStylePresetControls(dock)
     controls.tooltip = tooltip
     local tooltipTitle = tooltip:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     tooltipTitle:SetPoint("TOP", tooltip, "TOP", 0, -10)
+    tooltipTitle:SetTextColor(unpack(GC.text))
     controls.tooltipTitle = tooltipTitle
     local tooltipPreview = CreatePanelPresetThumbnail(tooltip, 330, 110)
     tooltipPreview:SetPoint("BOTTOM", tooltip, "BOTTOM", 0, 8)

@@ -1028,7 +1028,7 @@ function EXUI:CreateSidebar(parent, options)
 
     scrollFrame = CreateFrame("ScrollFrame", "ExwindSidebarScroll", sidebar, "ScrollFrameTemplate")
     scrollFrame:SetPoint("TOPLEFT", 0, -38)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -22, 5)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -18, 5)
     ApplyModernScrollBarSkin(scrollFrame)
 
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
@@ -1044,7 +1044,7 @@ end
 -- =========================================================
 -- [v4.6] Sidebar Redesign (Modern Tree View)
 -- =========================================================
--- 侧边栏折叠状态与对象池
+-- 分类标题保留轻量复用；Items 只追踪当前租用的共享 GridButton，重建时归还公共池。
 EXUI.SidebarState = { Expanded = { true, true, true, true, true }, SearchText = "" }
 EXUI.SidebarPool = { Headers = {}, Items = {} }
 
@@ -1060,7 +1060,7 @@ local function ApplySidebarModuleButtonState(btn, isActive, isEnabled)
     EXUI:SetSidebarNavigationButtonState(btn, btn.isActive, btn.isEnabledState)
 end
 
--- 对象池获取
+-- 标题从本地 Frame 列表复用；可点击项始终从公共 GridButton 池取得。
 function EXUI:GetSidebarObj(type, parent)
     local pool = EXUI.SidebarPool[type]
     if type == "Headers" then
@@ -1240,13 +1240,14 @@ function EXUI:BuildNavigationTree(parent)
         local emptyItem = EXUI:GetSidebarObj("Items", parent)
         emptyItem.page = nil
         emptyItem.moduleKey = nil
-        emptyItem.isLoaded = true
+        emptyItem.isLoaded = false
         ApplySidebarItemLayout(emptyItem, "module")
         emptyItem.label:SetText(GC.markup.textDisabled .. L["没有匹配的模块"] .. "|r")
         emptyItem:SetPoint("TOPLEFT", 10, yOffset)
         emptyItem:SetPoint("RIGHT", parent, "RIGHT", -8, 0)
         emptyItem:SetScript("OnClick", nil)
         UpdateSidebarItemBadge(emptyItem, nil)
+        ApplySidebarModuleButtonState(emptyItem, false, false)
         yOffset = yOffset - 26
     end
 
@@ -1285,7 +1286,7 @@ function EXUI:CreateRightPanel(parent, options)
     -- [New] 通用滚动容器 (为所有普通页面提供滚动支持)
     local sf = CreateFrame("ScrollFrame", "ExwindCommonScroll", panel, "ScrollFrameTemplate")
     sf:SetPoint("TOPLEFT", 10, -12)
-    sf:SetPoint("BOTTOMRIGHT", -15, 10)
+    sf:SetPoint("BOTTOMRIGHT", -18, 10)
     ApplyModernScrollBarSkin(sf)
 
     local sc = CreateFrame("Frame", nil, sf)
@@ -2366,7 +2367,7 @@ function EXUI:ShowModuleSettingsPage()
             -- 顶部固定预览区：不参与滚动，未注册渲染器的模块保持 1px 收起，不占布局空间
             local dock = CreateFrame("Frame", "ExwindModulePreviewDock", EXUI.RightPanel, "BackdropTemplate")
             dock:SetPoint("TOPLEFT", EXUI.RightPanel, "TOPLEFT", 0, -5)
-            dock:SetPoint("TOPRIGHT", EXUI.RightPanel, "TOPRIGHT", -25, -5)
+            dock:SetPoint("TOPRIGHT", EXUI.RightPanel, "TOPRIGHT", -18, -5)
             dock:SetHeight(1)
             dock:SetBackdrop(BACKDROP_SIMPLE)
             EXUI.ModulePreviewDock = dock
@@ -2380,7 +2381,7 @@ function EXUI:ShowModuleSettingsPage()
             -- 这样预览区高度变化（0 或 ModulePreviewDockHeight）会自动带动 Grid 区域跟着收缩/展开。
             EXUI.ModuleScrollFrame:SetPoint("TOPLEFT", EXUI.ModulePreviewDock, "BOTTOMLEFT", 0, 0)
             EXUI.ModuleScrollFrame:SetPoint("TOPRIGHT", EXUI.ModulePreviewDock, "BOTTOMRIGHT", 0, 0)
-            EXUI.ModuleScrollFrame:SetPoint("BOTTOMRIGHT", -25, 5)
+            EXUI.ModuleScrollFrame:SetPoint("BOTTOMRIGHT", -18, 5)
             ApplyModernScrollBarSkin(EXUI.ModuleScrollFrame)
 
             local child = CreateFrame("Frame", nil, EXUI.ModuleScrollFrame)
@@ -3372,7 +3373,7 @@ function EXUI:ShowExportResultPopup(exportString, profileName)
 
         local scrollFrame = CreateFrame("ScrollFrame", nil, editFrame, "ScrollFrameTemplate")
         scrollFrame:SetPoint("TOPLEFT", 5, -5)
-        scrollFrame:SetPoint("BOTTOMRIGHT", -25, 5)
+        scrollFrame:SetPoint("BOTTOMRIGHT", -18, 5)
         ApplyModernScrollBarSkin(scrollFrame)
 
         local editBox = CreateFrame("EditBox", nil, scrollFrame)

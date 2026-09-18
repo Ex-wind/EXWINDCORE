@@ -296,6 +296,7 @@ L["层数条（原生 Aura Application Bar）"] = "Barre de pile (barre d’appl
 L["锚点设置"] = "Paramètres de l’ancre"
 L["启用锚点"] = "Activer l’ancre"
 L["锚点选择器"] = "Sélecteur d’ancre"
+L["选择框架"] = "Sélectionner un cadre"
 L["FileDataID / 路径"] = "FileDataID / Chemin"
 L["透明度"] = "Opacité"
 L["缩放"] = "Échelle"

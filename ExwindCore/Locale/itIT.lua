@@ -296,6 +296,7 @@ L["层数条（原生 Aura Application Bar）"] = "Barra dello stack (barra dell
 L["锚点设置"] = "Impostazioni di ancoraggio"
 L["启用锚点"] = "Abilita ancoraggio"
 L["锚点选择器"] = "Selettore di ancoraggio"
+L["选择框架"] = "Seleziona riquadro"
 L["FileDataID / 路径"] = "ID dati file/percorso"
 L["透明度"] = "Opacità"
 L["缩放"] = "Scala"

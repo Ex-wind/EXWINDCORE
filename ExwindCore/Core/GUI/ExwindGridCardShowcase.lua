@@ -379,7 +379,7 @@ local function EnsureShowcaseWindow()
 
     local scroll = EXUI:CreateScrollFrame(window)
     scroll:SetPoint("TOPLEFT", 20, -78)
-    scroll:SetPoint("BOTTOMRIGHT", -38, 20)
+    scroll:SetPoint("BOTTOMRIGHT", -18, 20)
     scroll:SetScript("OnMouseWheel", function(self, delta)
         local range = self:GetVerticalScrollRange() or 0
         self:SetVerticalScroll(math.max(0, math.min(range, self:GetVerticalScroll() - delta * 44)))

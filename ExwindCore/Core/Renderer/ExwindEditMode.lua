@@ -1294,7 +1294,7 @@ local function EnsurePanel()
 
     local scrollFrame = EXUI:CreateScrollFrame(panel)
     scrollFrame:SetPoint("TOPLEFT", 12, -58)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 50)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -18, 50)
     local content = CreateFrame("Frame", nil, scrollFrame)
     content:SetSize(470, 1)
     scrollFrame:SetScrollChild(content)

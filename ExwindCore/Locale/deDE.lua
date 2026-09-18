@@ -296,6 +296,7 @@ L["层数条（原生 Aura Application Bar）"] = "Stapelleiste (Native Aura-Anw
 L["锚点设置"] = "Ankereinstellungen"
 L["启用锚点"] = "Anker aktivieren"
 L["锚点选择器"] = "Ankerauswahl"
+L["选择框架"] = "Frame auswählen"
 L["FileDataID / 路径"] = "FileDataID / Pfad"
 L["透明度"] = "Deckkraft"
 L["缩放"] = "Skala"

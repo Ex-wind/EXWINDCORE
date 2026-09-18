@@ -466,6 +466,7 @@ L["层数条（原生 Aura Application Bar）"] = "Barra de acumulaciones (Aura 
 L["锚点设置"] = "Configuración de anclaje"
 L["启用锚点"] = "Activar anclaje"
 L["锚点选择器"] = "Selector de anclaje"
+L["选择框架"] = "Seleccionar marco"
 L["FileDataID / 路径"] = "FileDataID / Ruta"
 L["透明度"] = "Opacidad"
 L["旋转"] = "Rotación"

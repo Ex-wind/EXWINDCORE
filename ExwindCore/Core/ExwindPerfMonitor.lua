@@ -345,7 +345,7 @@ local function CreateCopyBox()
 
     local scroll = EXUI:CreateScrollFrame(f)
     scroll:SetPoint("TOPLEFT", 10, -30)
-    scroll:SetPoint("BOTTOMRIGHT", -28, 10)
+    scroll:SetPoint("BOTTOMRIGHT", -18, 10)
 
     local editBox = CreateFrame("EditBox", nil, scroll)
     editBox:SetMultiLine(true)

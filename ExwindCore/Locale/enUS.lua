@@ -398,6 +398,7 @@ L["层数条（原生 Aura Application Bar）"] = "Stack Bar (Native Aura Applic
 L["锚点设置"] = "Anchor Settings"
 L["启用锚点"] = "Enable Anchor"
 L["锚点选择器"] = "Anchor Selector"
+L["选择框架"] = "Select Frame"
 L["FileDataID / 路径"] = "FileDataID / Path"
 L["透明度"] = "Opacity"
 L["旋转"] = "Rotation"

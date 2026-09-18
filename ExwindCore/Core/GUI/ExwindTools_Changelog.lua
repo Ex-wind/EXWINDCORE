@@ -277,7 +277,7 @@ local function EnsureViewerFrame()
 
     local scrollFrame = EXUI:CreateScrollFrame(viewerFrame)
     scrollFrame:SetPoint("TOPLEFT", 18, -82)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -34, 18)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -18, 18)
     viewerFrame.ScrollFrame = scrollFrame
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
     scrollChild:SetSize(1, 1)

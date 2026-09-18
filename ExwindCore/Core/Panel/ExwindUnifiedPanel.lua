@@ -587,7 +587,7 @@ function SettingsProvider:Mount(hosts)
 
     local scrollFrame = EXUI:CreateScrollFrame(root)
     scrollFrame:SetPoint("TOPLEFT", root, "TOPLEFT", 4, -4)
-    scrollFrame:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", -24, 4)
+    scrollFrame:SetPoint("BOTTOMRIGHT", root, "BOTTOMRIGHT", -18, 4)
     local scrollChild = CreateFrame("Frame", nil, scrollFrame)
     scrollChild:SetHeight(1)
     scrollFrame:SetScrollChild(scrollChild)

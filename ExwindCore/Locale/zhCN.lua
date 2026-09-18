@@ -1809,6 +1809,7 @@ L["层数条（原生 Aura Application Bar）"] = true
 L["锚点设置"] = true
 L["启用锚点"] = true
 L["锚点选择器"] = true
+L["选择框架"] = true
 L["FileDataID / 路径"] = true
 L["透明度"] = true
 L["缩放"] = true

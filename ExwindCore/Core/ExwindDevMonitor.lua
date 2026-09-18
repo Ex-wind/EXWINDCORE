@@ -397,7 +397,7 @@ local function CreatePoolRow(content)
         -- 滚动区域
         local sf = EXUI:CreateScrollFrame(popup)
         sf:SetPoint("TOPLEFT", 6, -24)
-        sf:SetPoint("BOTTOMRIGHT", -24, 4)
+        sf:SetPoint("BOTTOMRIGHT", -18, 4)
         local sc = CreateFrame("Frame", nil, sf)
         sc:SetSize(sf:GetWidth(), 1)
         sf:SetScrollChild(sc)
@@ -434,7 +434,7 @@ local function CreatePoolMonitor(parent)
     -- 滚动框架
     local scrollFrame = EXUI:CreateScrollFrame(monitor)
     scrollFrame:SetPoint("TOPLEFT", 10, -28)
-    scrollFrame:SetPoint("BOTTOMRIGHT", -30, 8)
+    scrollFrame:SetPoint("BOTTOMRIGHT", -18, 8)
 
     local content = CreateFrame("Frame", nil, scrollFrame)
     content:SetSize(scrollFrame:GetWidth(), 1)

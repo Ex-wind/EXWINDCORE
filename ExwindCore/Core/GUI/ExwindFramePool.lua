@@ -158,8 +158,12 @@ local function StandardReset(pool, frame)
     frame._formatter = nil
     frame._exModernHover = nil
     frame._exModernPressed = nil
-    if frame._exButtonPresentation == "sidebar" and frame.GetFontString
-        and frame.label == frame:GetFontString() then
+    if frame._exSidebarLabel then
+        frame._exSidebarLabel:SetText("")
+        frame._exSidebarLabel:ClearAllPoints()
+        frame._exSidebarLabel:Hide()
+    end
+    if frame._exButtonPresentation == "sidebar" then
         frame.label = nil
     end
     frame._exButtonPresentation = nil

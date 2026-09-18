@@ -2258,6 +2258,7 @@ do
 
     function SettingsListMixin:Relayout(width, pillVisualReflow)
         if self.released then return self.height or 1 end
+        if self.visualLayoutBusy then return self.height or 1 end
         if self.busy then
             if pillVisualReflow then
                 self.relayoutPending = true
@@ -2280,12 +2281,26 @@ do
             if not pending or self.released then break end
             width = pendingWidth or width
         end
+        -- Optional owner geometry runs synchronously after the standard rows.
+        -- Keep the layout guard held: sizing an existing frame may invoke its
+        -- size handler, but must never start another list layout from here.
+        if not self.released and type(self.onVisualLayout) == "function" then
+            self.busy, self.visualLayoutBusy = true, true
+            local ok, height = pcall(self.onVisualLayout, self, width, result)
+            self.busy, self.visualLayoutBusy = nil, nil
+            if not ok then error(height, 0) end
+            if not self.released and type(height) == "number" and height == height
+                and height > 0 and height < math.huge then
+                self.height, result = height, height
+            end
+        end
         return result
     end
 
     function SettingsListMixin:Release()
         if self.released then return end
         self.released = true
+        self.onVisualLayout, self.visualLayoutBusy = nil, nil
         local function ReleaseVisibilityOwner(widget)
             if widget and widget._exSettingsListVisibilityOwner == self then
                 widget._exSettingsListVisibilityOwner = nil
@@ -2609,6 +2624,7 @@ do
                             EXUI:PrepareSettingsListControl(control, {
                                 presentation = spec.presentation,
                                 cardIcon = spec.cardIcon,
+                                cardCheckSize = spec.cardCheckSize, cardTextSize = spec.cardTextSize,
                                 width = spec.width,
                                 role = spec.role,
                                 hideLabel = spec.hideLabel == true,
@@ -2632,6 +2648,7 @@ do
                             presentation = row.presentation,
                             cardDescription = row.presentation == "card" and row.descriptionWidget ~= nil,
                             cardIcon = row.cardIcon,
+                            cardCheckSize = row.cardCheckSize, cardTextSize = row.cardTextSize,
                             valuePosition = entry.valuePosition,
                         })
                         WatchVisibility(widget)
@@ -2835,6 +2852,7 @@ do
                         controlsLayout = row.controlsLayout,
                         fullWidth = row.fullWidth, presentation = row.presentation,
                         cardIcon = row.cardIcon,
+                        cardCheckSize = row.cardCheckSize, cardTextSize = row.cardTextSize,
                         controlWidth = row.controlWidth,
                         inputWidthPercent = row.inputWidthPercent,
                         valuePosition = row.valuePosition,
@@ -2875,6 +2893,7 @@ do
                                 resolved.controls[#resolved.controls + 1] = {
                                     widget = widget, width = spec.width, presentation = spec.presentation,
                                     cardIcon = spec.cardIcon,
+                                    cardCheckSize = spec.cardCheckSize, cardTextSize = spec.cardTextSize,
                                     role = spec.role,
                                     align = spec.align, hideLabel = spec.hideLabel,
                                 }
@@ -3191,6 +3210,10 @@ function Grid:ValidateCardDeclaration(declaration, context)
         end
         if ids[definition.id] then return nil, base .. ": duplicate card.id" end
         ids[definition.id] = true
+        if definition.equalHeightGroup ~= nil and (type(definition.equalHeightGroup) ~= "string"
+            or definition.equalHeightGroup == "") then
+            return nil, base .. ": equalHeightGroup must be a non-empty string"
+        end
         local presentation = definition.settingsList
         if type(presentation) == "table" and presentation.cardPresentation ~= nil then
             local region = context.regionId
@@ -3781,6 +3804,7 @@ end
 
 local function MeasureSessionCards(session, availableWidth)
     local grid = session.grid
+    local equalHeightGroups = {}
     for _, cardState in ipairs(session.cards) do
         local group = cardState.settingsGroup
         local placement = (group and group.tableColumns and group.anchorMember or cardState).definition.placement
@@ -3817,7 +3841,18 @@ local function MeasureSessionCards(session, availableWidth)
         cardState.outerHeight = preferred
         cardState.layoutHeight = cardState.visible and not cardState.pageDescriptionOnly
             and not cardState.emptySharedTableMember and not cardState.summaryEnabled and preferred or 0
-        SetCardHeight(cardState.card, preferred)
+        local heightGroup = cardState.definition.equalHeightGroup
+        if heightGroup and cardState.layoutHeight > 0 then
+            local equal = equalHeightGroups[heightGroup]
+            if not equal then
+                equal = { height = 0, members = {} }
+                equalHeightGroups[heightGroup] = equal
+            end
+            equal.height = math.max(equal.height, preferred)
+            equal.members[#equal.members + 1] = cardState
+        else
+            SetCardHeight(cardState.card, preferred)
+        end
         if cardState.settingsSection then
             cardState.settingsSectionHeight = EXUI:UpdateSettingsSectionLayout(
                 cardState.settingsSection, cardState.width)
@@ -5538,6 +5573,14 @@ do
             end
         end
         return session
+    end
+    for _, equal in pairs(equalHeightGroups) do
+        for _, cardState in ipairs(equal.members) do
+            local extraHeight = cardState.layoutHeight - cardState.outerHeight
+            cardState.outerHeight = equal.height
+            cardState.layoutHeight = equal.height + extraHeight
+            SetCardHeight(cardState.card, equal.height)
+        end
     end
 end
 

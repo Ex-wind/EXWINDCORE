@@ -723,8 +723,29 @@ local function EnsureSidebarNavigationParts(frame)
 end
 
 local function EnsureTextButtonFontString(frame)
+    if frame._exButtonPresentation == "sidebar" then
+        local label = frame._exSidebarLabel
+        if not label then
+            label = EXUI:CreateVisualFontString(frame, EXFONTFRAME)
+            frame._exSidebarLabel = label
+        end
+        local nativeLabel = frame.GetFontString and frame:GetFontString()
+        if nativeLabel and nativeLabel ~= label then
+            nativeLabel:SetText("")
+            nativeLabel:Hide()
+        end
+        label:Show()
+        return label
+    end
+    if frame._exSidebarLabel then
+        frame._exSidebarLabel:SetText("")
+        frame._exSidebarLabel:Hide()
+    end
     local label = frame.GetFontString and frame:GetFontString()
-    if label then return label end
+    if label then
+        label:Show()
+        return label
+    end
     label = EXUI:CreateVisualFontString(frame, EXFONTFRAME)
     label:SetFontObject(MODERN.buttonFont)
     frame:SetFontString(label)
@@ -741,6 +762,11 @@ local function LayoutSidebarNavigationButton(frame)
     frame:SetNormalFontObject(MODERN.menuFonts.control)
     frame:SetHighlightFontObject(MODERN.menuFonts.control)
     frame:SetDisabledFontObject(MODERN.menuFonts.control)
+    local nativeLabel = frame.GetFontString and frame:GetFontString()
+    if nativeLabel and nativeLabel ~= label then
+        nativeLabel:SetText("")
+        nativeLabel:Hide()
+    end
     label:ClearAllPoints()
     label:SetPoint("LEFT", frame, "LEFT", level > 0 and 18 or 10, 0)
     label:SetPoint("RIGHT", frame, "RIGHT", -10, 0)
@@ -784,7 +810,7 @@ local function PaintSidebarNavigationButton(frame, enabled)
         frame._exSidebarAccent:SetAlpha(0)
         frame._exSidebarAccent:Hide()
     end
-    local label = frame:GetFontString()
+    local label = frame.label or EnsureTextButtonFontString(frame)
     if label then SetButtonRegionColor(label, text, animate, true) end
     if frame._exButtonFocusSurface then frame._exButtonFocusSurface:Hide() end
     frame._exButtonPainted = true
@@ -925,7 +951,7 @@ local function ApplyModernButton(frame)
             for _, piece in ipairs(skin and skin.pieces or {}) do
                 if piece.texture._exButtonColor then piece.texture._exButtonColor.group:Stop() end
             end
-            local label = self:GetFontString()
+            local label = self._exSidebarLabel or self:GetFontString()
             if label and label._exButtonColor then label._exButtonColor.group:Stop() end
         end)
     end
@@ -1199,10 +1225,13 @@ local function PaintModernCheckbox(container, skipPillMeasure)
         EXUI:SetControlSurface(card, 4, cardFill,
             not enabled and MC.disabledBorder or (selected and MC.focus or (hover and MC.inputHoverBorder or MC.border)))
         local hasDescription = container._exSettingsCardDescription == true
+        local checkSize = container._exSettingsCardCheckSize or 20
+        box._exModernCheckSurface:SetSize(checkSize, checkSize)
         box._exModernCheckSurface:ClearAllPoints()
         box._exModernCheckSurface:SetPoint(hasDescription and "TOPLEFT" or "LEFT", box,
             hasDescription and "TOPLEFT" or "LEFT", 10, hasDescription and -10 or 0)
         card.Icon:ClearAllPoints()
+        card.Icon:SetSize(math.min(16, checkSize), math.min(16, checkSize))
         card.Icon:SetPoint("LEFT", box._exModernCheckSurface, "RIGHT", 8, 0)
         card.Icon:SetTexture(container._exSettingsCardIcon)
         card.Icon:SetShown(container._exSettingsCardIcon ~= nil)
@@ -1211,9 +1240,13 @@ local function PaintModernCheckbox(container, skipPillMeasure)
         card.Title:SetPoint("LEFT", container._exSettingsCardIcon and card.Icon or box._exModernCheckSurface,
             "RIGHT", 8, 0)
         card.Title:SetPoint("RIGHT", card, hasDescription and "TOPRIGHT" or "RIGHT",
-            -10, hasDescription and -20 or 0)
+            -10, hasDescription and -(10 + checkSize / 2) or 0)
         card.Title:SetText(container.label and container.label:GetText() or "")
         MODERN.ApplyTextRole(card.Title, "title", enabled and MC.text or MC.disabledText)
+        if container._exSettingsCardTextSize then
+            local font, _, flags = card.Title:GetFont()
+            card.Title:SetFont(font, container._exSettingsCardTextSize, flags)
+        end
         card:Show()
     end
     box._exModernCheckMark:ClearAllPoints()
@@ -3151,7 +3184,7 @@ function EXUI:CreateButton(parent, width, height, text, onClick, options)
     btn._exSidebarSelected = nil
     btn._exSidebarLevel = type(options) == "table" and tonumber(options.level) or nil
     local label = EnsureTextButtonFontString(btn)
-    if btn._exButtonPresentation ~= "sidebar" and btn.label == label then
+    if btn._exButtonPresentation ~= "sidebar" then
         btn.label = nil
     end
     btn._exButtonCompact = type(options) == "table" and options.compact == true
@@ -3177,6 +3210,9 @@ function EXUI:CreateButton(parent, width, height, text, onClick, options)
     end
 
     btn:SetText(text or "")
+    if btn._exButtonPresentation == "sidebar" then
+        label:SetText(text or "")
+    end
     self:ApplyControlAppearance(btn)
     label = EnsureTextButtonFontString(btn)
     if label then
@@ -3240,6 +3276,11 @@ end
 
 function EXUI:ReleaseSidebarNavigationButton(button)
     if not button or button._exButtonPresentation ~= "sidebar" then return false end
+    if button._exSidebarLabel then
+        button._exSidebarLabel:SetText("")
+        button._exSidebarLabel:ClearAllPoints()
+        button._exSidebarLabel:Hide()
+    end
     button:SetScript("OnClick", nil)
     button:SetScript("PreClick", nil)
     button:SetScript("PostClick", nil)
@@ -6232,6 +6273,8 @@ function EXUI:RestoreSettingsListControl(widget)
         widget._exSettingsPresentation = state.presentation
         widget._exSettingsCardDescription = state.cardDescription
         widget._exSettingsCardIcon = state.cardIcon
+        widget._exSettingsCardCheckSize = state.cardCheckSize
+        widget._exSettingsCardTextSize = state.cardTextSize
         widget._exSettingsPillNaturalWidth = state.pillNaturalWidth
         widget._exSettingsPillVisualPending = nil
         box:SetSize(state.checkbox.width, state.checkbox.height)
@@ -6350,6 +6393,8 @@ function EXUI:PrepareSettingsListControl(widget, options)
         presentation = widget._exSettingsPresentation,
         cardDescription = widget._exSettingsCardDescription,
         cardIcon = widget._exSettingsCardIcon,
+        cardCheckSize = widget._exSettingsCardCheckSize,
+        cardTextSize = widget._exSettingsCardTextSize,
         pillNaturalWidth = widget._exSettingsPillNaturalWidth,
         ordinaryControl = widget._exSettingsOrdinaryControl,
         textRole = widget._exSettingsTextRole,
@@ -6518,6 +6563,8 @@ function EXUI:PrepareSettingsListControl(widget, options)
         if options.presentation == "card" then
             widget._exSettingsCardDescription = options.cardDescription == true
             widget._exSettingsCardIcon = options.cardIcon
+            widget._exSettingsCardCheckSize = tonumber(options.cardCheckSize)
+            widget._exSettingsCardTextSize = tonumber(options.cardTextSize)
             box:SetAllPoints(widget)
             if widget.label then widget.label:Hide() end
         elseif options.presentation == "pill" then

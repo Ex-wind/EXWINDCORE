@@ -2380,7 +2380,8 @@ function EXUI:ShowModuleSettingsPage()
             -- [Fix] 顶部锚点改挂在 ModulePreviewDock 的底部，而不是直接贴 RightPanel 顶部，
             -- 这样预览区高度变化（0 或 ModulePreviewDockHeight）会自动带动 Grid 区域跟着收缩/展开。
             EXUI.ModuleScrollFrame:SetPoint("TOPLEFT", EXUI.ModulePreviewDock, "BOTTOMLEFT", 0, 0)
-            EXUI.ModuleScrollFrame:SetPoint("TOPRIGHT", EXUI.ModulePreviewDock, "BOTTOMRIGHT", 0, 0)
+            -- 右边只交给 BOTTOMRIGHT 定义；若再用 TOPRIGHT=0 重复定义同一条边，
+            -- 模板滚动条会按未内缩的右边向外展开，使 BOTTOMRIGHT 的内距实际失效。
             EXUI.ModuleScrollFrame:SetPoint("BOTTOMRIGHT", -18, 5)
             ApplyModernScrollBarSkin(EXUI.ModuleScrollFrame)
 

@@ -79,6 +79,8 @@ Core\Renderer\ExwindIconTemplate.lua
 Core\Panel\ExwindUnifiedPanel.lua
 Core\Panel\ExwindToolsPanelProvider.lua
 Core\Panel\ExwindPanelRouter.lua
+# Temporary in-game theme comparison; remove after selection.
+Core\GUI\ExwindThemePreviewTemp.lua
 
 # 4. 配置/队伍专精
 # [临时排查内存增长]

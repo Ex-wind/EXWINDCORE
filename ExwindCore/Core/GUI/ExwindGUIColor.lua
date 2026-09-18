@@ -70,6 +70,7 @@ ExwindTools.GUIColors = {
     -- escapes here prevents those pages from reintroducing their own fixed palette.
     markup = {
         accent = "|cffa8d8ff",
+        selectedText = "|cffcbe7ff",
         text = "|cffeceef1",
         textDim = "|cffa7adb5",
         placeholder = "|cff6f7680",

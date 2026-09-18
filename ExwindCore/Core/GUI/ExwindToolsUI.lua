@@ -2469,9 +2469,9 @@ function EXUI:ShowModuleSettingsPage()
             or ExwindTools.RegisteredLayouts[EXUI.CurrentModule])
     local usesCardDeclaration = type(layoutData) == "table"
         and layoutData.version == 1
-        and type(layoutData.cards) == "table"
+        and (type(layoutData.cards) == "table" or type(layoutData.sections) == "table")
     local declaresCards = type(layoutData) == "table"
-        and (layoutData.version ~= nil or layoutData.cards ~= nil)
+        and (layoutData.version ~= nil or layoutData.cards ~= nil or layoutData.sections ~= nil)
     if declaresCards and not usesCardDeclaration then
         error("unsupported settings page declaration for " .. tostring(EXUI.CurrentModule), 2)
     end

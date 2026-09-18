@@ -51,28 +51,15 @@ local function getPath(root, path)
 end
 local function validateGUI(gui, moduleKey)
     if type(gui) ~= "table" then error("MODULE_SPEC.gui is required", 3) end
-    if gui.version == nil then
-        if gui.cards ~= nil then error("legacy MODULE_SPEC.gui cannot declare cards", 3) end
-        if type(gui.static) ~= "table" or type(gui.fields) ~= "table" then
-            error("legacy MODULE_SPEC.gui.static/gui.fields are required", 3)
-        end
-        for _, item in ipairs(gui.static) do geometry(item, "MODULE_SPEC.gui.static") end
-        for _, item in ipairs(gui.fields) do
-            requireString(item.key, "MODULE_SPEC.gui.fields key", 3)
-            requireString(item.type, "MODULE_SPEC.gui.fields type", 3)
-            geometry(item, "MODULE_SPEC.gui.fields")
-        end
-        return
-    end
-    if gui.version ~= 1 then error("MODULE_SPEC.gui has unsupported version: " .. tostring(gui.version), 3) end
-    if gui.static ~= nil or gui.fields ~= nil or gui.groups ~= nil then
-        error("MODULE_SPEC.gui version 1 cannot contain legacy static/fields/groups", 3)
+    if gui.version ~= 1 or type(gui.sections) ~= "table" or gui.cards ~= nil
+        or gui.static ~= nil or gui.fields ~= nil or gui.groups ~= nil then
+        error("MODULE_SPEC.gui accepts only version=1 sections; special cards are not a central-module settings entry", 3)
     end
     local grid = _G.ExwindGrid
-    if not grid or type(grid.ValidateCardDeclaration) ~= "function" then
-        error("MODULE_SPEC.gui version 1 requires ExwindGrid card validation", 3)
+    if not grid or type(grid.ValidateSettingsDeclaration) ~= "function" then
+        error("MODULE_SPEC.gui version 1 requires ExwindGrid typed settings validation", 3)
     end
-    local ok, reason = grid:ValidateCardDeclaration(gui, {
+    local ok, reason = grid:ValidateSettingsDeclaration(gui, {
         pageId = moduleKey,
         regionId = "central-text-registration",
     })
@@ -160,21 +147,13 @@ end
 function Controller:BuildSettingsDeclaration()
     if self.spec.gui.version ~= 1 then return self:BuildGridLayout() end
     local declaration = copy(self.spec.gui)
-    for _, card in ipairs(declaration.cards) do
-        local content = card.content
-        if content.kind == "grid" then
-            local items = {}
-            for index, item in ipairs(content.items) do
-                items[index] = self:CompileGUIItem(item, true)
-            end
-            content.items = items
-        elseif content.kind == "composite" then
+    for _, section in ipairs(declaration.sections) do
+        if section.kind == "composite" then
             local item = self:CompileGUIItem({
-                type = string.lower(content.component),
-                opts = content.opts,
-                options = content.options,
+                type = string.lower(section.component),
+                opts = section.opts,
             }, true)
-            content.opts, content.options = item.opts, nil
+            section.opts = item.opts
         end
     end
     return declaration

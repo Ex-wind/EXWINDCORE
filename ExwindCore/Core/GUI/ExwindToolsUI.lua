@@ -80,6 +80,7 @@ EXUI.ShellPanel = nil
 EXUI.CurrentPage = "Home"
 EXUI.CurrentModule = nil
 EXUI.ActivePageFrame = nil           -- 当前页面的 Frame (公开 API，EXBoss 等外部 addon 可写入)
+EXUI.ActivePageScrollFrame = nil     -- 当前页面的滚动 owner；不覆盖 Tools 自己的稳定 ModuleScrollFrame
 EXUI._InternalPageFrame = nil        -- ExwindTools 内部专用，跟踪自身页面帧，不被外部覆写
 EXUI.PendingRightScrollRestore = nil -- 通用右侧滚动容器刷新后需要恢复的滚动位置
 
@@ -125,10 +126,14 @@ function EXUI:RegisterSettingsPage(pageId, guiDeclaration)
     end
     ValidatePureSettingsDeclaration(guiDeclaration)
     local grid = _G.ExwindGrid
-    if not grid or type(grid.ValidateCardDeclaration) ~= "function" then
-        error("RegisterSettingsPage requires ExwindGrid card validation", 2)
+    if not grid or type(grid.ValidateSettingsDeclaration) ~= "function" then
+        error("RegisterSettingsPage requires ExwindGrid typed settings validation", 2)
     end
-    local ok, reason = grid:ValidateCardDeclaration(guiDeclaration, {
+    if type(guiDeclaration) ~= "table" or guiDeclaration.version ~= 1
+        or type(guiDeclaration.sections) ~= "table" or guiDeclaration.cards ~= nil then
+        error("RegisterSettingsPage accepts only version=1 sections declarations; special cards use their owning page", 2)
+    end
+    local ok, reason = grid:ValidateSettingsDeclaration(guiDeclaration, {
         pageId = pageId,
         regionId = "registration",
     })
@@ -153,6 +158,7 @@ ExwindTools.ModulePreviewRenderers = ExwindTools.ModulePreviewRenderers or {}
 -- ExwindTools 的模块设置页预览画布唯一使用 #94A5FC。Unified Shell 的 Dock 也会
 -- 被 EXAura/EXBoss 借用，因此只在 Tools 预览可见期间覆盖，并在释放时恢复宿主原色。
 local MODULE_PREVIEW_DOCK_BACKGROUND = { 148 / 255, 165 / 255, 252 / 255, 1 }
+local MODULE_PREVIEW_WHEEL_OWNER = {}
 
 local function SetToolsPreviewDockBackground(dock, useToolsBackground)
     if not dock or not dock.SetBackdropColor then return end
@@ -192,6 +198,8 @@ end
 function EXUI:SetModulePreviewDockVisible(visible, height)
     local dock = EXUI.ModulePreviewDock
     if not dock then return end
+    EXUI:SetPreviewDockScrollOwner(dock, MODULE_PREVIEW_WHEEL_OWNER,
+        visible == true and EXUI.ModuleScrollFrame or nil)
 
     if EXUI.ShellPanel and EXUI.ShellHosts then
         -- Unified Shell may supply a new hosts table when its workspace is reused.
@@ -515,7 +523,8 @@ end
 --- ScrollFrame 与 Grid container；模块不允许猜 WidgetMap，也无需保存页面私有 Frame。
 function EXUI:FocusCurrentModuleGridKey(moduleKey, gridKey)
     if moduleKey ~= self.CurrentModule then return false end
-    return self:FocusModuleGridKey(moduleKey, gridKey, self.ModuleScrollFrame, self.ActivePageFrame)
+    local scrollFrame = self.ActivePageScrollFrame or self.ModuleScrollFrame
+    return self:FocusModuleGridKey(moduleKey, gridKey, scrollFrame, self.ActivePageFrame)
 end
 
 --- 通用预览控制器：把"游戏内编辑模式预览 + 设置面板内嵌预览"这套调度逻辑收进框架，
@@ -1039,98 +1048,28 @@ end
 EXUI.SidebarState = { Expanded = { true, true, true, true, true }, SearchText = "" }
 EXUI.SidebarPool = { Headers = {}, Items = {} }
 
-local function GetTopNavColor(_)
-    return GC.accent[1], GC.accent[2], GC.accent[3]
-end
-
 local function ApplySidebarItemLayout(btn, variant)
     btn.variant = variant or "module"
-    if btn.variant == "topnav" then
-        btn:SetHeight(28)
-        btn.rail:Hide()
-        btn.accent:Hide()
-        btn.dot:Hide()
-    else
-        btn:SetHeight(24)
-        btn.rail:Show()
-        btn.accent:Show()
-        btn.dot:Show()
-    end
-    btn.topnavAccent:Hide()
-    btn.label:ClearAllPoints()
-    if btn.variant == "topnav" then
-        -- 快捷页不是模块树的子项：与分类标题共用左边线，并用整行轻底色
-        -- 表达 hover/active，不能再伪装成带缩进的模块条目。
-        btn.label:SetPoint("LEFT", 0, 0)
-        btn.label:SetPoint("RIGHT", 0, 0)
-    else
-        btn.label:SetPoint("LEFT", 26, 0)
-        btn.label:SetPoint("RIGHT", -10, 0)
-    end
-    btn.label:SetJustifyH("LEFT")
-    btn.label:SetFont(defaultFontPath, btn.variant == "topnav" and 18 or 15, btn.variant == "topnav" and "OUTLINE" or "")
+    EXUI:SetSidebarNavigationButtonLevel(btn, btn.variant == "topnav" and 0 or 1)
 end
 
--- EXBOSS 左侧条目的唯一状态皮肤：无整行底色，仅保留轨道与蓝色选中线。
 local function ApplySidebarModuleButtonState(btn, isActive, isEnabled)
     if not btn then return end
     btn.isActive = isActive == true
     btn.isEnabledState = (isEnabled ~= false)
-    if btn.activeBg then btn.activeBg:SetAlpha(0) end
-    if btn.topnavAccent then btn.topnavAccent:SetAlpha(0) end
-
-    if btn.variant == "topnav" then
-        if btn.isActive then
-            btn.label:SetTextColor(unpack(GC.white))
-            btn.activeBg:SetColorTexture(unpack(GC.menuSelected))
-            btn.activeBg:SetAlpha(1)
-        elseif btn._hovered then
-            btn.label:SetTextColor(unpack(GC.white))
-            btn.activeBg:SetColorTexture(unpack(GC.secondaryHoverFill))
-            btn.activeBg:SetAlpha(1)
-        else
-            btn.label:SetTextColor(unpack(GC.textDim))
-            btn.activeBg:SetColorTexture(unpack(GC.transparent))
-            btn.activeBg:SetAlpha(1)
-        end
-        return
-    end
-
-    if btn.isEnabledState == false then
-        btn.label:SetTextColor(unpack(GC.shell.sidebarDisabledText))
-        btn.rail:SetColorTexture(unpack(GC.shell.sidebarDisabledRail))
-        btn.accent:SetAlpha(0)
-        btn.dot:SetTextColor(GC.shell.sidebarAccent[1], GC.shell.sidebarAccent[2], GC.shell.sidebarAccent[3], 0)
-        return
-    end
-
-    if btn.isActive then
-        btn.label:SetTextColor(unpack(GC.shell.sidebarActiveText))
-        btn.rail:SetColorTexture(unpack(GC.shell.sidebarActiveRail))
-        btn.accent:SetAlpha(1)
-        btn.dot:SetTextColor(unpack(GC.shell.sidebarAccent))
-        return
-    end
-
-    if btn._hovered then
-        btn.label:SetTextColor(unpack(GC.shell.sidebarHoverText))
-        btn.rail:SetColorTexture(unpack(GC.shell.sidebarHoverRail))
-    else
-        btn.label:SetTextColor(unpack(GC.shell.sidebarIdleText))
-        btn.rail:SetColorTexture(unpack(GC.shell.sidebarIdleRail))
-    end
-    btn.accent:SetAlpha(0)
-    btn.dot:SetTextColor(GC.shell.sidebarAccent[1], GC.shell.sidebarAccent[2], GC.shell.sidebarAccent[3], 0)
+    EXUI:SetSidebarNavigationButtonState(btn, btn.isActive, btn.isEnabledState)
 end
 
 -- 对象池获取
 function EXUI:GetSidebarObj(type, parent)
     local pool = EXUI.SidebarPool[type]
-    for _, obj in ipairs(pool) do
-        if not obj:IsShown() then
-            obj:SetParent(parent)
-            obj:Show()
-            return obj
+    if type == "Headers" then
+        for _, obj in ipairs(pool) do
+            if not obj:IsShown() then
+                obj:SetParent(parent)
+                obj:Show()
+                return obj
+            end
         end
     end
     -- 新建对象
@@ -1146,87 +1085,18 @@ end
 
 -- 创建分类标题头
 function EXUI:CreateCategoryHeaderBase(parent)
-    local btn = CreateFrame("Button", nil, parent)
-    btn:SetHeight(22)
-
-    btn.label = EXUI:CreateVisualFontString(btn, EXFONTFRAME)
-    btn.label:SetPoint("LEFT", 0, 0)
-    btn.label:SetPoint("RIGHT", 0, 0)
-    btn.label:SetJustifyH("LEFT")
-    btn.label:SetFont(defaultFontPath, 16, "OUTLINE")
-    btn.label:SetTextColor(unpack(GC.text))
-
-    btn:SetScript("OnEnter", function(self)
-        self.label:SetTextColor(unpack(GC.white))
-    end)
-    btn:SetScript("OnLeave", function(self)
-        self.label:SetTextColor(unpack(GC.text))
-    end)
-
-    return btn
+    return EXUI:CreateSidebarNavigationHeader(parent, "", { height = 22 })
 end
 
 -- 创建子项目按钮
 function EXUI:CreateSidebarItemBase(parent)
-    local btn = CreateFrame("Button", nil, parent, "BackdropTemplate")
-    btn:SetHeight(24)
-
-    btn.activeBg = EXUI:CreateVisualTexture(btn, EXBACKGROUNDFRAME)
-    btn.activeBg:SetPoint("TOPLEFT", 0, -1)
-    btn.activeBg:SetPoint("BOTTOMRIGHT", 0, 1)
-    btn.activeBg:SetColorTexture(0, 0, 0, 0)
-    btn.activeBg:SetAlpha(0)
-
-    btn.rail = EXUI:CreateVisualTexture(btn, EXBACKGROUNDFRAME)
-    btn.rail:SetPoint("TOPLEFT", 10, -2)
-    btn.rail:SetPoint("BOTTOMLEFT", 10, 2)
-    btn.rail:SetWidth(1)
-    btn.rail:SetColorTexture(unpack(GC.shell.sidebarIdleRail))
-
-    btn.accent = EXUI:CreateVisualTexture(btn, EXBORDERFRAME)
-    btn.accent:SetPoint("TOPLEFT", 10, -2)
-    btn.accent:SetPoint("BOTTOMLEFT", 10, 2)
-    btn.accent:SetWidth(1)
-    btn.accent:SetColorTexture(unpack(GC.shell.sidebarAccent))
-    btn.accent:SetAlpha(0)
-
-    btn.dot = EXUI:CreateVisualFontString(btn, EXFONTFRAME)
-    btn.dot:SetFont(defaultFontPath, 15, "OUTLINE")
-    btn.dot:SetPoint("CENTER", btn, "LEFT", 10, 0)
-    btn.dot:SetText("")
-    btn.dot:SetTextColor(GC.shell.sidebarAccent[1], GC.shell.sidebarAccent[2], GC.shell.sidebarAccent[3], 0)
-
-    btn.topnavAccent = EXUI:CreateVisualTexture(btn, EXBASEFRAME)
-    btn.topnavAccent:SetPoint("LEFT", 0, 0)
-    btn.topnavAccent:SetSize(2, 18)
-    btn.topnavAccent:Hide()
+    local btn = EXUI:CreateSidebarNavigationButton(parent, "", nil, { level = 1 })
 
     btn.badge = EXUI:CreateVisualTexture(btn, EXBORDERFRAME)
     btn.badge:SetSize(64, 33)
     btn.badge:Hide()
 
-    btn.label = EXUI:CreateVisualFontString(btn, EXFONTFRAME)
-    btn.label:SetFont(defaultFontPath, 15, "")
-    btn.label:SetPoint("LEFT", 26, 0)
-    btn.label:SetPoint("RIGHT", -10, 0)
-    btn.label:SetJustifyH("LEFT")
-    btn.label:SetTextColor(unpack(GC.shell.sidebarIdleText))
     btn.label:SetWordWrap(false)
-
-    btn:SetBackdrop(FRAME_BACKDROP_FLAT)
-    btn:SetBackdropColor(0, 0, 0, 0)
-    btn:SetBackdropBorderColor(0, 0, 0, 0)
-
-    btn:SetScript("OnEnter", function(self)
-        if self.isLoaded == false then return end
-        self._hovered = true
-        ApplySidebarModuleButtonState(self, self.isActive, self.isLoaded)
-    end)
-    btn:SetScript("OnLeave", function(self)
-        if self.isLoaded == false then return end
-        self._hovered = false
-        ApplySidebarModuleButtonState(self, self.isActive, self.isLoaded)
-    end)
 
     ApplySidebarItemLayout(btn, "module")
     return btn
@@ -1253,7 +1123,12 @@ end
 function EXUI:BuildNavigationTree(parent)
     -- 1. 回收旧对象到池中 (Hide)
     if EXUI.SidebarPool.Headers then for _, v in ipairs(EXUI.SidebarPool.Headers) do v:Hide() end end
-    if EXUI.SidebarPool.Items then for _, v in ipairs(EXUI.SidebarPool.Items) do v:Hide() end end
+    if EXUI.SidebarPool.Items then
+        for _, v in ipairs(EXUI.SidebarPool.Items) do
+            EXUI:ReleaseSidebarNavigationButton(v)
+        end
+        wipe(EXUI.SidebarPool.Items)
+    end
 
     local searchText = string.lower(NormalizeSidebarSearchText(EXUI.SidebarState.SearchText))
     local isSearching = searchText ~= ""
@@ -1284,13 +1159,6 @@ function EXUI:BuildNavigationTree(parent)
         btn.page = page
         btn.moduleKey = key
         ApplySidebarItemLayout(btn, variant or "module")
-        if btn.variant == "topnav" then
-            local r, g, b = GetTopNavColor(page)
-            btn.topnavColor = { r, g, b }
-            btn.topnavAccent:SetColorTexture(r, g, b, 1)
-        else
-            btn.topnavColor = nil
-        end
         UpdateSidebarItemBadge(btn, meta)
 
         -- [New] 检测模块是否已载入
@@ -1356,7 +1224,6 @@ function EXUI:BuildNavigationTree(parent)
             header.label:SetText(cateName)
             header:SetPoint("TOPLEFT", 10, yOffset)
             header:SetPoint("RIGHT", parent, "RIGHT", -8, 0)
-            header:SetScript("OnClick", nil)
 
             yOffset = yOffset - 24
 
@@ -1638,6 +1505,7 @@ function EXUI:RefreshContent()
         EXUI._InternalPageFrame = nil
     end
     EXUI.ActivePageFrame = nil
+    EXUI.ActivePageScrollFrame = nil
 
     -- 默认隐藏所有专用容器
     if EXUI.ModuleScrollFrame then EXUI.ModuleScrollFrame:Hide() end
@@ -2467,12 +2335,26 @@ function EXUI:ShowModuleSettingsPage()
         or (definition and definition:GetLayout()
             or registeredSettingsPage
             or ExwindTools.RegisteredLayouts[EXUI.CurrentModule])
-    local usesCardDeclaration = type(layoutData) == "table"
-        and layoutData.version == 1
-        and (type(layoutData.cards) == "table" or type(layoutData.sections) == "table")
-    local declaresCards = type(layoutData) == "table"
+    local ordinarySettingsEntry = centralController ~= nil or definition ~= nil or registeredSettingsPage ~= nil
+    local hasSections = type(layoutData) == "table" and type(layoutData.sections) == "table"
+    local hasCards = type(layoutData) == "table" and type(layoutData.cards) == "table"
+    local pageDeclarationMode
+    if ordinarySettingsEntry then
+        if type(layoutData) ~= "table" or layoutData.version ~= 1
+            or not hasSections or hasCards then
+            error("ordinary settings modules require version=1 sections; special cards use RegisterModuleLayout with their owning page", 2)
+        end
+        pageDeclarationMode = "sections"
+    elseif type(layoutData) == "table" and layoutData.version == 1 and hasSections ~= hasCards then
+        -- RegisterModuleLayout is the retained legacy/special declaration entry.
+        -- Its owning page may choose typed sections, free cards, or the old flat
+        -- Grid path; ordinary controller/definition/registered pages cannot.
+        pageDeclarationMode = hasSections and "sections" or "cards"
+    end
+    local usesCardDeclaration = pageDeclarationMode ~= nil
+    local declaresStructuredPage = type(layoutData) == "table"
         and (layoutData.version ~= nil or layoutData.cards ~= nil or layoutData.sections ~= nil)
-    if declaresCards and not usesCardDeclaration then
+    if declaresStructuredPage and not usesCardDeclaration then
         error("unsupported settings page declaration for " .. tostring(EXUI.CurrentModule), 2)
     end
     if layoutData and _G.ExwindGrid then
@@ -2556,6 +2438,7 @@ function EXUI:ShowModuleSettingsPage()
             _G.ExwindGrid:SetContainerCols(page, metrics.splitGridCols)
         end
         EXUI.ActivePageFrame = page
+        EXUI.ActivePageScrollFrame = EXUI.ModuleScrollFrame
         EXUI._InternalPageFrame = page
 
         -- 清理页面旧内容 (防止切模块残留)
@@ -2578,7 +2461,7 @@ function EXUI:ShowModuleSettingsPage()
             local baseBottom = type(sharedCardDefaults) == "table" and sharedCardDefaults.bottom
                 or (_G.ExwindGrid.CardLayoutDefaults and _G.ExwindGrid.CardLayoutDefaults.bottom)
                 or 0
-            page._exCardSession = _G.ExwindGrid:MountCards(page, layoutData, {
+            local mountContext = {
                 pageId = currentModuleKey,
                 regionId = "module-settings",
                 binding = centralController and centralController.binding or nil,
@@ -2588,7 +2471,12 @@ function EXUI:ShowModuleSettingsPage()
                 settingsPageDescription = moduleMeta.Desc,
                 scrollFrame = EXUI.ModuleScrollFrame,
                 layoutDefaults = { bottom = (tonumber(baseBottom) or 0) + 52 },
-            })
+            }
+            if pageDeclarationMode == "sections" then
+                page._exCardSession = _G.ExwindGrid:MountSettingsDeclaration(page, layoutData, mountContext)
+            else
+                page._exCardSession = _G.ExwindGrid:MountCards(page, layoutData, mountContext)
+            end
             ExwindTools:UpdateState(currentModuleKey .. ".PanelRendered", GetTime())
         else
             page._exCardSession = nil

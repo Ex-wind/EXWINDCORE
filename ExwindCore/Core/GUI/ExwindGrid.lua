@@ -431,6 +431,17 @@ function Grid:ApplyPixelLayout(widget, container, element)
     SetPhysicalPoint(widget, "TOPLEFT", container, "TOPLEFT", px, py)
     SetPhysicalSize(widget, width, height)
 
+    -- Every composite finishes from the actual pixel-aligned host size. The
+    -- same entry is used by constructors and pooled reuse; no extra panel.
+    if type(widget._exCompositeReflow) == "function" then
+        EXUI:LayoutCompositeGroup(widget, widget:GetWidth(), widget:GetHeight())
+        -- Existing editor-created empty cards retain their declared height.
+        if widget._exCompositeOpts and widget._exCompositeOpts.gridEditableHeight == true then
+            SetPhysicalSize(widget, width, height)
+            EXUI:RefreshCompositeSurfaces(widget)
+        end
+    end
+
     -- Factory 创建的 Header/Divider 分别使用 Texture / SimpleLine；两者都以
     -- 同一个真实物理像素为粗细，且在每次最终布局时重套。
     if element.type == "divider" then
@@ -1795,12 +1806,6 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         local bindKey = (type(ele.opts) == "table" and ele.opts.bindRoot == true) and nil or ele.key
         widget = EXUI:CreateAuraChildElementsGroup(container, pw, ele.label, auraConfig, bindKey, function() NotifyCompositeWrite(moduleKey, fullPath) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
         widget._exGridWidth = pw
-    elseif ele.type == "voicegroup" or ele.type == "encounter_voice_group" then
-        local subConfig = config
-        if contextPath then
-            subConfig = GetConfigPath(config, contextPath) or config
-        end
-        widget = EXUI:CreateVoiceGroup(container, pw, ele.label, subConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end)
     end
 
     if widget then
@@ -2043,8 +2048,6 @@ do
         for _, entry in ipairs(session.entries) do
             if entry.widget then
                 entry.visible = entry.widget:IsShown()
-                if entry.omitEmpty and entry.widget.text and entry.widget.text.GetText
-                    and (entry.widget.text:GetText() or "") == "" then entry.visible = false end
             elseif entry.controls or entry.cells then
                 local hasWidget, shown = false, false
                 for _, control in ipairs(entry.controls or entry.cells) do
@@ -2194,13 +2197,37 @@ do
                 height = EXUI:UpdateSettingsSectionLayout(entry.host, rowWidth)
             elseif entry.widget then
                 local widget = entry.widget
+                if widget._exSettingsPresentation == "card" then
+                    local inset, titleHeight = 10, 38
+                    local description = entry.descriptionWidget
+                    local cardHeight = titleHeight
+                    widget:SetWidth(rowWidth)
+                    if description and description:IsShown() then
+                        local text = description.text or description.labelText
+                        local descriptionWidth = math.max(1, rowWidth - 48)
+                        description:SetWidth(descriptionWidth)
+                        text:SetWidth(descriptionWidth)
+                        local descriptionHeight = math.max(1, math.ceil(text:GetStringHeight()))
+                        description:SetSize(descriptionWidth, descriptionHeight)
+                        description:ClearAllPoints()
+                        description:SetPoint("TOPLEFT", widget, "TOPLEFT", 38, -titleHeight)
+                        description:SetFrameLevel(widget.checkbox:GetFrameLevel() + 2)
+                        cardHeight = titleHeight + descriptionHeight + inset
+                    end
+                    widget:SetHeight(cardHeight)
+                    widget:ClearAllPoints()
+                    widget:SetPoint("TOPLEFT", entry.host, "TOPLEFT", 0, -4)
+                    height = cardHeight + 8
+                    entry.host:SetSize(rowWidth, height)
+                    if entry.host._exSettingsRowDivider then entry.host._exSettingsRowDivider:Hide() end
+                else
                 local controlHeight = math.max(1, widget:GetHeight())
                 local x, controlY, controlWidth
                 height, x, controlY, controlWidth = EXUI:UpdateSettingsRowLayout(
                     entry.host, rowWidth, controlHeight, entry.descriptionWidget)
                 widget:SetWidth(controlWidth)
-                if entry.reflowFontGroup and type(widget._exCompositeReflow) == "function" then
-                    widget:_exCompositeReflow(controlWidth, controlHeight)
+                if entry.reflowComposite and type(widget._exCompositeReflow) == "function" then
+                    EXUI:LayoutCompositeGroup(widget, widget:GetWidth(), controlHeight)
                 end
                 if entry.valuePosition or entry.ordinaryControl then
                     EXUI:UpdateSettingsListControlLayout(widget, controlWidth)
@@ -2212,6 +2239,7 @@ do
                     entry.host, rowWidth, controlHeight, entry.descriptionWidget)
                 widget:ClearAllPoints()
                 widget:SetPoint("TOPLEFT", entry.host, "TOPLEFT", x, -controlY)
+                end
             else
                 height = EXUI:UpdateSettingsSectionLayout(entry.host, rowWidth)
             end
@@ -2258,6 +2286,11 @@ do
     function SettingsListMixin:Release()
         if self.released then return end
         self.released = true
+        local function ReleaseVisibilityOwner(widget)
+            if widget and widget._exSettingsListVisibilityOwner == self then
+                widget._exSettingsListVisibilityOwner = nil
+            end
+        end
         if self.summaryEnabled then
             local saved = self.summaryEnabled
             local widget = saved.widget
@@ -2276,6 +2309,7 @@ do
         for _, saved in ipairs(self.suppressedDividers or {}) do saved.widget:SetShown(saved.shown) end
         for _, saved in ipairs(self.externalDescriptions or {}) do
             local widget = saved.widget
+            ReleaseVisibilityOwner(widget)
             EXUI:RestoreSettingsListControl(widget)
             widget:ClearAllPoints()
             widget:SetSize(saved.width, saved.height)
@@ -2284,13 +2318,16 @@ do
         for _, entry in ipairs(self.entries) do
             if entry.descriptionWidget then
                 local widget = entry.descriptionWidget
+                ReleaseVisibilityOwner(widget)
                 EXUI:RestoreSettingsListControl(widget)
                 widget:ClearAllPoints()
                 widget:SetSize(entry.descriptionWidth, entry.descriptionHeight)
+                if entry.descriptionFrameLevel then widget:SetFrameLevel(entry.descriptionFrameLevel) end
                 for _, point in ipairs(entry.descriptionPoints) do widget:SetPoint(unpack(point)) end
             end
             for _, cell in ipairs(entry.cells or {}) do
                 if cell.widget then
+                    ReleaseVisibilityOwner(cell.widget)
                     EXUI:RestoreSettingsListControl(cell.widget)
                     cell.widget:ClearAllPoints()
                     cell.widget:SetSize(cell.width, cell.height)
@@ -2299,6 +2336,7 @@ do
             end
             for _, control in ipairs(entry.controls or {}) do
                 local widget = control.widget
+                ReleaseVisibilityOwner(widget)
                 EXUI:RestoreSettingsListControl(widget)
                 widget:ClearAllPoints()
                 widget:SetSize(control.width, control.height)
@@ -2306,6 +2344,7 @@ do
             end
             if entry.widget then
                 local widget = entry.widget
+                ReleaseVisibilityOwner(widget)
                 EXUI:RestoreSettingsListControl(widget)
                 widget:ClearAllPoints()
                 widget:SetSize(entry.width, entry.height)
@@ -2430,6 +2469,21 @@ do
             headerlessColumns = declaration.tableHeader == false and declaration.columns or nil },
             { __index = SettingsListMixin })
         sessions[parent] = session
+        local function WatchVisibility(widget)
+            if not widget or type(widget.HookScript) ~= "function" then return end
+            if not widget._exSettingsListVisibilityHook then
+                widget._exSettingsListVisibilityHook = true
+                local function Request(control)
+                    local owner = control._exSettingsListVisibilityOwner
+                    if owner and not owner.released and not owner.busy then
+                        if not owner.grid:RequestReflow(owner.parent) then owner:Relayout() end
+                    end
+                end
+                widget:HookScript("OnShow", Request)
+                widget:HookScript("OnHide", Request)
+            end
+            widget._exSettingsListVisibilityOwner = session
+        end
         local function AddHeading(options)
             if options.title == nil and options.description == nil then return end
             local host = EXUI:CreateSettingsSection(parent, options)
@@ -2443,6 +2497,7 @@ do
                 session.externalDescriptions[#session.externalDescriptions + 1] = saved
                 for index = 1, widget:GetNumPoints() do saved.points[index] = { widget:GetPoint(index) } end
                 EXUI:PrepareSettingsListControl(widget, { role = "description" })
+                WatchVisibility(widget)
             end
             AddHeading({ title = declaration.title, description = declaration.description,
                 descriptionWidgets = declaration.headingDescriptionWidgets, kind = "page" })
@@ -2508,10 +2563,12 @@ do
                         local description = row.descriptionWidget
                         entry.descriptionWidget, entry.descriptionPoints = description, {}
                         entry.descriptionWidth, entry.descriptionHeight = description:GetWidth(), description:GetHeight()
+                        entry.descriptionFrameLevel = description:GetFrameLevel()
                         for index = 1, description:GetNumPoints() do
                             entry.descriptionPoints[index] = { description:GetPoint(index) }
                         end
                         EXUI:PrepareSettingsListControl(description, { role = "description" })
+                        WatchVisibility(description)
                     end
                     if row.cells then
                         entry.cells = {}
@@ -2534,6 +2591,7 @@ do
                                     valuePosition = cell.valuePosition,
                                     borrowedKind = cell.borrowedKind,
                                 })
+                                WatchVisibility(control)
                             end
                         end
                     elseif row.controls then
@@ -2550,15 +2608,17 @@ do
                             entry.controls[#entry.controls + 1] = saved
                             EXUI:PrepareSettingsListControl(control, {
                                 presentation = spec.presentation,
+                                cardIcon = spec.cardIcon,
                                 width = spec.width,
                                 role = spec.role,
                                 hideLabel = spec.hideLabel == true,
                             })
+                            WatchVisibility(control)
                             saved.preparedWidth = control:GetWidth()
                         end
                     else
                         entry.widget, entry.points = widget, {}
-                        entry.reflowFontGroup = row.fullWidth == true and widget._fromPool == "CompositeFontGroup"
+                        entry.reflowComposite = row.fullWidth == true and type(widget._exCompositeReflow) == "function"
                         entry.valuePosition = row.fullWidth ~= true and widget._gridType == "GridSlider"
                             and (row.valuePosition or "right") or nil
                         entry.width, entry.height = widget:GetWidth(), widget:GetHeight()
@@ -2570,8 +2630,11 @@ do
                             role = informational and "description" or nil,
                             hideLabel = not informational and row.fullWidth ~= true and row.label ~= nil,
                             presentation = row.presentation,
+                            cardDescription = row.presentation == "card" and row.descriptionWidget ~= nil,
+                            cardIcon = row.cardIcon,
                             valuePosition = entry.valuePosition,
                         })
+                        WatchVisibility(widget)
                     end
                     end
                 end
@@ -2771,6 +2834,7 @@ do
                         label = row.label, description = row.description,
                         controlsLayout = row.controlsLayout,
                         fullWidth = row.fullWidth, presentation = row.presentation,
+                        cardIcon = row.cardIcon,
                         controlWidth = row.controlWidth,
                         inputWidthPercent = row.inputWidthPercent,
                         valuePosition = row.valuePosition,
@@ -2810,6 +2874,7 @@ do
                             elseif row.controls then
                                 resolved.controls[#resolved.controls + 1] = {
                                     widget = widget, width = spec.width, presentation = spec.presentation,
+                                    cardIcon = spec.cardIcon,
                                     role = spec.role,
                                     align = spec.align, hideLabel = spec.hideLabel,
                                 }
@@ -3509,7 +3574,6 @@ local function ReflowCardBody(grid, cardState, bodyWidth)
             if meta then meta.item = item end
             if type(widget._exCompositeReflow) == "function" then
                 widget._exGridWidth = pw
-                widget:_exCompositeReflow(pw, item._exMeasuredPixelHeight or ph)
             end
             widget._exGridCardMeasuredHeight = widget._exGridFixedHeight == nil
                 and item._exMeasuredPixelHeight or nil
@@ -3965,10 +4029,16 @@ local function PerformSessionRelayout(session)
     local availableWidth = math.max(1, parentWidth - metrics.left - metrics.right)
     if session.hasSettingsList then
         local percent = session.declaration.settingsListWidthPercent
+        if session.typedSections then percent = 75 end
+        local rawAvailableWidth = availableWidth
+        availableWidth = Grid:ResolveSettingsListWidth(rawAvailableWidth, percent)
         if session.typedSections then
-            percent = session.context.moduleKey == "ExClass.SpellEffectAlpha" and 100 or 75
+            -- Ordinary pages share one Core-owned 75% column. Centering the
+            -- unused width here keeps modules from declaring outer coordinates.
+            metrics.left = metrics.left + math.floor((rawAvailableWidth - availableWidth) * 0.5 + 0.5)
+            metrics.gap = type(EXUI.GetSettingsSectionGroupGap) == "function"
+                and EXUI:GetSettingsSectionGroupGap() or 16
         end
-        availableWidth = Grid:ResolveSettingsListWidth(availableWidth, percent)
         parentWidth = metrics.left + availableWidth + metrics.right
     end
     local breakpoint = session.declaration.settingsLayoutBreakpoint
@@ -4272,6 +4342,9 @@ function CardSessionMixin:Release()
         Capture(pcall(ReleaseCardBody, self, cardState))
         self.grid.CardSessionOwners[cardState.body] = nil
         self.grid.CardSessionOwners[cardState.card] = nil
+        if type(EXUI.RestoreSettingsListCard) == "function" then
+            Capture(pcall(EXUI.RestoreSettingsListCard, EXUI, cardState.card))
+        end
         if type(cardState.card.Release) == "function" then
             Capture(pcall(cardState.card.Release, cardState.card))
         end
@@ -4502,12 +4575,14 @@ do
         media=true, search=true, originalOptions=true }
     local ordinaryTypes = { switch=true, input=true, select=true, slider=true, color=true, button=true }
     local recordTypes = { itemenabled=true, itemidentity=true, itemquantity=true, itemdelete=true }
+    local tableInformationTypes = { description=true }
     local function Item(item, location, keys, tableCell, moduleKey)
         Fields(item, itemFields, location)
         Key(item.key, location .. ".key")
         if keys[item.key] then Fail(location, "duplicate control key " .. item.key) end
         keys[item.key] = true
-        if not ordinaryTypes[item.type] and not (tableCell and recordTypes[item.type]) then
+        if not ordinaryTypes[item.type]
+            and not (tableCell and (recordTypes[item.type] or tableInformationTypes[item.type])) then
             Fail(location, "unsupported control type " .. tostring(item.type))
         end
         String(item.label, location .. ".label", tableCell)
@@ -4606,6 +4681,12 @@ do
         elseif item.itemID ~= nil or item.canDelete ~= nil then
             Fail(location, "item metadata requires an original item-record control")
         end
+        if tableInformationTypes[item.type] then
+            if item.label == nil then Fail(location, "table description requires its original label") end
+            if item.parentKey ~= nil or item.subKey ~= nil or item.setKey ~= nil then
+                Fail(location, "table descriptions are informational and cannot bind configuration")
+            end
+        end
         if tableCell and item.description ~= nil then
             Fail(location, "table cells do not support descriptions")
         end
@@ -4624,15 +4705,19 @@ do
         end
     end
     local sectionFields = {
-        settings = { kind=true, id=true, title=true, description=true, footerDescription=true, binding=true, items=true },
+        settings = { kind=true, id=true, title=true, description=true, footerDescription=true, binding=true,
+            items=true },
         table = { kind=true, id=true, title=true, description=true, binding=true,
             columns=true, supportsAdd=true, add=true, records=true,
             controlFactory=true, key=true, parentKey=true, subKey=true, setKey=true },
         composite = { kind=true, id=true, title=true, description=true, binding=true,
             component=true, key=true, parentKey=true, subKey=true, setKey=true, opts=true },
+        custom = { kind=true, id=true, title=true, description=true, binding=true,
+            renderer=true, key=true, parentKey=true, subKey=true, setKey=true, opts=true },
     }
     local componentOptions = {
-        fontgroup = { offsetMin="number", offsetMax="number", shadowOffsetMin="number", shadowOffsetMax="number", unboundedWidth="boolean" },
+        fontgroup = { bodyOnly="boolean", offsetMin="number", offsetMax="number",
+            shadowOffsetMin="number", shadowOffsetMax="number", unboundedWidth="boolean" },
         icongroup = { bindRoot="boolean", bindValue="boolean", hideIconID="boolean", hidePositionControls="boolean",
             offsetMin="number", offsetMax="number", offsetStep="number", enableOffset="boolean" },
         timerbargroup = { bindRoot="boolean", iconOffsetMin="number", iconOffsetMax="number", fillModeOnly="boolean", applicationBar="boolean" },
@@ -4641,7 +4726,11 @@ do
         soundgroup = { sources="table", packItems="provider", secondaryCheckbox="table", testLabel="string", testButtonKey="string", onTest="function" },
         widgetlayout = { allowedDirections="table", wrapDirections="table", defaultWrapDirection="string",
             maxVisibleMin="number", maxVisibleMax="number", defaultMaxVisible="number", includeMaxPerRow="boolean", includeWrapDirection="boolean" },
-        modulecommonsettings = { bindRoot="boolean", fields="table", poolType="string", onFieldChanged="function", onStructureChanged="function" },
+        modulecommonsettings = { bindRoot="boolean", fields="table", poolType="string",
+            presentation="string", fixedLayout="table", maxColumns="number", minCellWidth="number",
+            rowHeight="number", firstRowHeight="number", rowStep="number", firstRowStep="number",
+            contentTopInset="number", heightOffset="number",
+            onFieldChanged="function", onStructureChanged="function" },
         glow_settings = {},
     }
     local function CompositeOptions(section, location)
@@ -4672,12 +4761,46 @@ do
             String(opts.secondaryCheckbox.key, location .. ".secondaryCheckbox.key")
             String(opts.secondaryCheckbox.label, location .. ".secondaryCheckbox.label")
         end
+        if string.lower(section.component) == "modulecommonsettings" then
+            if opts.presentation ~= nil and opts.presentation ~= "settings-list" then
+                Fail(location, "modulecommonsettings presentation must be settings-list")
+            end
+            if opts.fixedLayout ~= nil then
+                local fixed = opts.fixedLayout
+                Fields(fixed, { logicalWidth=true, controlW=true, controlH=true, slotX=true,
+                    firstY=true, rowStep=true, cardTopInset=true, cardBottomInset=true,
+                    visibleBottomSafety=true }, location .. ".opts.fixedLayout")
+                for _, name in ipairs({ "logicalWidth", "controlW", "controlH", "firstY", "rowStep",
+                    "cardTopInset", "cardBottomInset", "visibleBottomSafety" }) do
+                    if fixed[name] ~= nil then Finite(fixed[name], location .. ".opts.fixedLayout." .. name) end
+                end
+                for _, name in ipairs({ "logicalWidth", "controlW", "controlH", "rowStep" }) do
+                    if fixed[name] ~= nil and fixed[name] <= 0 then
+                        Fail(location, "opts.fixedLayout." .. name .. " must be positive")
+                    end
+                end
+                for _, name in ipairs({ "cardTopInset", "cardBottomInset", "visibleBottomSafety" }) do
+                    if fixed[name] ~= nil and fixed[name] < 0 then
+                        Fail(location, "opts.fixedLayout." .. name .. " cannot be negative")
+                    end
+                end
+                if fixed.slotX ~= nil then
+                    Array(fixed.slotX, location .. ".opts.fixedLayout.slotX")
+                    if #fixed.slotX == 0 then Fail(location, "opts.fixedLayout.slotX cannot be empty") end
+                    for index, value in ipairs(fixed.slotX) do
+                        Finite(value, location .. ".opts.fixedLayout.slotX[" .. index .. "]")
+                    end
+                end
+            end
+        end
         if opts.fields then
             Array(opts.fields, location .. ".fields")
             local kinds = { button=true, checkbox=true, dropdown=true, lsm_background=true,
                 lsm_border=true, lsm_texture=true, input=true, color=true, slider=true }
             local fieldNames = { key=true, path=true, type=true, label=true, description=true,
-                min=true, max=true, step=true, items=true, onClick=true }
+                min=true, max=true, step=true, items=true, onClick=true, row=true, column=true,
+                presentation=true, valuePosition=true, controlWidth=true, inputWidthPercent=true,
+                minWidth=true, preferredWidth=true, width=true, span=true, fullWidth=true, variant=true }
             for index, field in ipairs(opts.fields) do
                 local at = location .. ".fields[" .. index .. "]"
                 Fields(field, fieldNames, at)
@@ -4689,6 +4812,27 @@ do
                 if field.path ~= nil then String(field.path, at .. ".path") end
                 if field.items ~= nil and (field.type ~= "dropdown" or type(field.items) ~= "table") then Fail(at, "items require dropdown") end
                 if field.onClick ~= nil and (field.type ~= "button" or type(field.onClick) ~= "function") then Fail(at, "onClick requires an original button callback") end
+                if field.presentation ~= nil and field.presentation ~= "switch" and field.presentation ~= "pill" then
+                    Fail(at, "presentation must be switch or pill")
+                end
+                if field.valuePosition ~= nil and field.valuePosition ~= "right" and field.valuePosition ~= "top" then
+                    Fail(at, "valuePosition must be right or top")
+                end
+                if field.fullWidth ~= nil and type(field.fullWidth) ~= "boolean" then
+                    Fail(at, "fullWidth must be boolean")
+                end
+                if field.variant ~= nil and type(field.variant) ~= "string" then
+                    Fail(at, "variant must be string")
+                end
+                for _, name in ipairs({ "row", "column", "controlWidth", "inputWidthPercent",
+                    "minWidth", "preferredWidth", "width", "span" }) do
+                    if field[name] ~= nil then Finite(field[name], at .. "." .. name) end
+                end
+                for _, name in ipairs({ "row", "column", "span" }) do
+                    if field[name] ~= nil and (field[name] < 1 or field[name] % 1 ~= 0) then
+                        Fail(at, name .. " must be a positive integer")
+                    end
+                end
                 for _, name in ipairs({ "min", "max", "step" }) do
                     if field[name] ~= nil then
                         if field.type ~= "slider" then Fail(at, "numeric bounds only apply to original slider") end
@@ -4711,7 +4855,7 @@ do
             for index, section in ipairs(declaration.sections) do
                 local at = location .. "[" .. index .. "]"
                 if type(section) ~= "table" or not sectionFields[section.kind] then
-                    Fail(at, "kind must be settings, table, or composite; special pages retain their Grid declaration")
+                    Fail(at, "kind must be settings, table, composite, or custom; special pages retain their cards declaration")
                 end
                 Fields(section, sectionFields[section.kind], at)
                 String(section.id, at .. ".id")
@@ -4795,7 +4939,7 @@ do
                         TableRow(row, columns, at .. ".records[" .. ordinal .. "]", keys)
                     end
                     end
-                else
+                elseif section.kind == "composite" then
                     Key(section.key, at .. ".key")
                     String(section.component, at .. ".component")
                     local valid, why = ValidateCardContent(self, section, at)
@@ -4808,6 +4952,20 @@ do
                     end
                     if section.opts ~= nil and type(section.opts) ~= "table" then Fail(at, "opts must be original component options") end
                     CompositeOptions(section, at)
+                else
+                    String(section.renderer, at .. ".renderer")
+                    if section.key ~= nil then Key(section.key, at .. ".key") end
+                    String(section.parentKey, at .. ".parentKey", true)
+                    for _, name in ipairs({ "subKey", "setKey" }) do
+                        if section[name] ~= nil and type(section[name]) ~= "string" and type(section[name]) ~= "number" then
+                            Fail(at, name .. " must retain its original string or numeric key")
+                        end
+                    end
+                    if section.opts ~= nil and type(section.opts) ~= "table" then
+                        Fail(at, "opts must be the original custom renderer options")
+                    end
+                    local valid, why = ValidateCardContent(self, section, at)
+                    if not valid then Fail(at, why) end
                 end
             end
         end)
@@ -4890,7 +5048,8 @@ do
                 if item.text ~= nil then row.cells[index] = { text=item.text }
                 else
                     local widget, borrowedKind = resolve(item)
-                    row.cells[index] = { widget=widget, ordinaryControl=true, borrowedKind=borrowedKind,
+                    row.cells[index] = { widget=widget,
+                        ordinaryControl=not tableInformationTypes[item.type], borrowedKind=borrowedKind,
                         hideLabel=#columns > 1,
                         valuePosition=item.type == "slider" and "right" or nil,
                         presentation=add and item.type == "button" and "primary" or nil }
@@ -4906,6 +5065,11 @@ do
         for _, record in ipairs(section.records) do Row(record, false) end
         return rows, columns
     end
+    local function PrepareTypedCard(cardState)
+        local ok, why = EXUI:PrepareSettingsListCard(cardState.card, {})
+        if not ok then Fail(CardLocation(cardState.session.context, cardState.id), tostring(why)) end
+    end
+
     local function BuildTypedBody(grid, cardState)
         local section = cardState.definition
         if section.kind == "table" and section.controlFactory then
@@ -4914,13 +5078,13 @@ do
                 _tableControls=section.controlFactory, _tableSection=section,
                 x=1, y=1, w=CARD_GRID_COLS, h=1 }}
             MountCardBody(grid, cardState)
-            local ok, why = EXUI:PrepareSettingsListCard(cardState.card, {})
-            if not ok then Fail(CardLocation(cardState.session.context, cardState.id), tostring(why)) end
+            PrepareTypedCard(cardState)
             return
         end
-        if section.kind == "composite" then
+        if section.kind == "composite" or section.kind == "custom" then
             cardState.sourceItems = BuildCardContentSource(cardState, section)
             MountCardBody(grid, cardState)
+            PrepareTypedCard(cardState)
             return
         end
         local sources = {}
@@ -4989,8 +5153,7 @@ do
         else
             rows, columns = BuildTypedTable(section, Widget)
         end
-        local ok, why = EXUI:PrepareSettingsListCard(cardState.card, {})
-        if not ok then Fail(CardLocation(cardState.session.context, cardState.id), tostring(why)) end
+        PrepareTypedCard(cardState)
         local list = grid:MountSettingsList(cardState.body, { columns=columns, sections={{ rows=rows }} })
         list.card = cardState.card
     end
@@ -5210,7 +5373,8 @@ do
         local previous = cardState.definition
         local location = CardLocation(self.context, sectionId)
         -- A presentation refresh cannot quietly select a different DB or binding.
-        for _, field in ipairs({ "id", "kind", "title", "description", "binding", "component", "controlFactory", "key", "parentKey", "subKey", "setKey" }) do
+        for _, field in ipairs({ "id", "kind", "title", "description", "binding",
+            "component", "renderer", "controlFactory", "key", "parentKey", "subKey", "setKey" }) do
             if type(replacement) ~= "table" or replacement[field] ~= previous[field] then
                 Fail(location, "ReplaceSettingsSection must preserve " .. field .. "; remount the original page explicitly")
             end
@@ -5317,7 +5481,9 @@ do
             end
             local previous
             for _, section in ipairs(declaration.sections) do
-                local card = EXUI:CreateSettingsCard(parent, { id=section.id, title=section.title, collapsible=false })
+                local card = EXUI:CreateSettingsCard(parent, {
+                    id=section.id, title=section.title,
+                })
                 local cardState = { session=session, id=section.id, definition=section, content=section,
                     card=card, body=card:GetBody(), previous=previous, visible=true, widgetsByOrdinal={} }
                 session.cards[#session.cards + 1], session.byId[section.id] = cardState, cardState
@@ -5329,14 +5495,11 @@ do
                 cardState.originalBinding = cardState.binding.source
                 card:SetWidth(math.max(1, parent:GetWidth()))
                 card:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, 0)
-                if section.kind ~= "composite" then
-                    cardState.settingsSection = EXUI:CreateSettingsSection(parent,
-                        { kind="section", title=section.title,
-                            description=type(section.description) == "string" and section.description or nil })
-                elseif section.description then
-                    cardState.settingsSection = EXUI:CreateSettingsSection(parent,
-                        { kind="section", description=section.description })
-                end
+                -- Normal typed sections always use the shared flat section heading.
+                -- Special cards/settingsGroups retain their original collapse behavior.
+                cardState.settingsSection = EXUI:CreateSettingsSection(parent,
+                    { kind="section", title=section.title,
+                        description=type(section.description) == "string" and section.description or nil })
                 BuildTypedBody(self, cardState)
                 card:SetLayoutInvalidationHandler(function() self:RequestReflow(card) end)
             end

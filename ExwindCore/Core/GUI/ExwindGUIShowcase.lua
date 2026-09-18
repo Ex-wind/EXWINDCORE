@@ -51,13 +51,6 @@ local sampleDB = {
     },
     segmented = "details",
     itemConfig = { id = 6948, enabled = true, quantity = 3 },
-    voiceSample = {
-        triggers = {
-            [0] = { enabled = true, sourceType = "pack", channel = "Master", volume = 1 },
-            [1] = { enabled = true, sourceType = "lsm", channel = "SFX", volume = 0.8 },
-            [2] = { enabled = false, sourceType = "file", customPath = "", channel = "Dialog", volume = 0.6 },
-        },
-    },
     auraChildren = {
         children = {
             {
@@ -363,8 +356,6 @@ Add({ type = "header", key = "header", label = "9 · Header", h = 5 }, 2)
 Chapter("11", "11 · ColorButton")
 Add({ type = "color", key = "accentColor", label = "强调色（RGBA）", h = 5 })
 
-Chapter("12_voice", "12 附项 · VoiceGroup")
-Add({ type = "voicegroup", key = "voiceSettings", parentKey = "voiceSample", label = "语音触发设置", h = 18 })
 
 Chapter("13", "13 · EditBox")
 Add({ type = "input", key = "inputSingle", label = "单行输入", h = 3 }, 3)

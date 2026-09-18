@@ -69,7 +69,22 @@ Paint = function(button)
         or (pressed and Appearance.colors.secondaryBorder
             or (hover and Appearance.colors.focus or Appearance.colors.border))
     if disabled then fill, edge = Appearance.colors.disabledFill, Appearance.colors.disabledBorder end
-    UI:SetControlSurface(button, 4, fill, edge)
+    if host.choiceStyle == "segmented" and not button._choiceArrow then
+        if selected or hover then
+            local tint = selected and Appearance.colors.secondaryPressedFill or Appearance.colors.hover
+            local base, alpha = Appearance.colors.input, tint[4] or 1
+            fill = disabled and Appearance.colors.disabledFill or {
+                base[1] + (tint[1] - base[1]) * alpha,
+                base[2] + (tint[2] - base[2]) * alpha,
+                base[3] + (tint[3] - base[3]) * alpha, 1,
+            }
+            UI:SetControlSurface(button, 4, fill, fill)
+        else
+            UI:ClearControlSurface(button)
+        end
+    else
+        UI:SetControlSurface(button, 4, fill, edge)
+    end
     button.label:SetTextColor(unpack(disabled and Appearance.colors.disabledText
         or (selected and Appearance.colors.lightBlue
             or (pressed and Appearance.colors.secondaryPressedText
@@ -220,6 +235,8 @@ Layout = function(host, reveal)
     host.nextButton._choiceItem.disabled = host.offset >= host.maxOffset
     Paint(host.previous); Paint(host.nextButton)
     host:SetHeight(y + height + padding * 2)
+    -- A reused host/button can keep the same size under a new parent scale.
+    UI:RefreshCompositeSurfaces(host)
     host._choiceLayout = nil
 end
 

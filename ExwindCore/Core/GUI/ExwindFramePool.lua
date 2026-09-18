@@ -158,6 +158,20 @@ local function StandardReset(pool, frame)
     frame._formatter = nil
     frame._exModernHover = nil
     frame._exModernPressed = nil
+    if frame._exButtonPresentation == "sidebar" and frame.GetFontString
+        and frame.label == frame:GetFontString() then
+        frame.label = nil
+    end
+    frame._exButtonPresentation = nil
+    frame._exSidebarSelected = nil
+    frame._exSidebarLevel = nil
+    if frame._exSidebarBackground then
+        if frame._exSidebarBackground._exButtonColor then
+            frame._exSidebarBackground._exButtonColor.group:Stop()
+        end
+        frame._exSidebarBackground:Hide()
+    end
+    if frame._exSidebarAccent then frame._exSidebarAccent:Hide() end
 
     -- [v4.3.13] 清理 Multiselect 属性，防止职业切换时数据残留
     frame._options = nil

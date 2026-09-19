@@ -729,6 +729,7 @@ local function EnsureTextButtonFontString(frame)
             label = EXUI:CreateVisualFontString(frame, EXFONTFRAME)
             frame._exSidebarLabel = label
         end
+        label:SetFontObject(MODERN.menuFonts.control)
         local nativeLabel = frame.GetFontString and frame:GetFontString()
         if nativeLabel and nativeLabel ~= label then
             nativeLabel:SetText("")

@@ -1,5 +1,26 @@
 -- Fixed colors for ExwindCore settings and configuration surfaces.
 -- Dynamic/user-selected colors and runtime/business status colors do not belong here.
+--
+-- =========================================================================
+-- 基底：Radix Slate (dark) 的 12 階骨架。
+--   調校參數 {"c":10,"b":80,"l":13,"d":56,"h":261,"i":-10,"ib":-12}
+--   = 色味 0.010、色相 261、整體亮度 +1.3、卡片階距 Δ5.0、
+--     輸入框比卡片微凹 0.9、輸入框邊框比卡片邊框柔 1.2。
+--
+-- 階級用途沿用 Radix 規範：
+--   1-2 背景 / 3-5 元件三態 / 6-8 邊框 / 9-10 實心填充 / 11-12 文字
+-- 深藍 = 實心填充（上面壓白色）；淺藍 = 前景（壓在深底上）。
+-- =========================================================================
+--
+-- 實心藍的取捨。白字壓在藍底上的 WCAG 對比：
+--     #0090ff (Radix blue-9)  3.26  未過 AA
+--     #2870bd (Radix blue-8)  5.07  過 AA
+-- true  = 所有實心填充統一用 #2870bd，白字與白勾都過 AA（建議）
+-- false = 用較亮的 #0090ff，勾選框更跳，但主按鈕白字未達 AA
+local SOLID_AA = true
+--
+-- =========================================================================
+
 local ExwindTools = _G.ExwindTools
 if not ExwindTools then return end
 
@@ -7,112 +28,184 @@ local function Hex(r, g, b, a)
     return { r / 255, g / 255, b / 255, a == nil and 1 or a }
 end
 
+local function H(s, a)
+    return Hex(tonumber(s:sub(1, 2), 16), tonumber(s:sub(3, 4), 16), tonumber(s:sub(5, 6), 16), a)
+end
+
+-- =========================================================================
+-- 原始值。每個都標了 CIE L*，改動時請維持相鄰階的距離。
+-- =========================================================================
+local C = {
+    canvas    = "131518",  -- L*  6.7   最外層背景
+    panel     = "16191e",  -- L*  8.7   側欄 / 導覽 / 標題列
+    card      = "1d1f24",  -- L* 11.7   卡片，與 canvas 只差 5.0 以求融合
+    cardAlt   = "202328",  -- L* 13.4   交替底色
+    head      = "212328",  -- L* 13.7   卡片標題列 / 子卡
+    ctrl      = "1b1d22",  -- L* 10.8   輸入框，微凹 0.9，仍高於 canvas
+    ctrlHover = "212328",  -- L* 13.7
+    pop       = "2b2d33",  -- L* 18.5   彈出層，必須高於它蓋住的東西
+    popSearch = "1b1e22",  -- L* 11.1
+
+    bSubtle   = "2a2d31",  -- L* 18.3   分隔線 / 非互動邊框
+    bDef      = "3c3f45",  -- L* 26.6   卡片邊框
+    bHover    = "505359",  -- L* 35.2
+    bStrong   = "696d72",  -- L* 45.8
+    iBorder   = "393d42",  -- L* 25.6   輸入框邊框，比卡片邊框柔一階
+    iHover    = "4d5156",  -- L* 34.3
+
+    text      = "f0f2f4",  -- L* 95.4   對卡片 14.69
+    dim       = "b6b8ba",  -- L* 74.7   對卡片  8.29
+    ph        = "7b7e84",  -- L* 52.7   對卡片  4.05
+    dis       = "6e7177",  -- L* 47.6   對卡片  3.37
+
+    aFg       = "70b8ff",  -- L* 72.9   淺藍：前景、focus、圖示、裝飾條
+    aText     = "c2e6ff",  -- L* 89.5   選中文字 / 卡片標題
+    aBright   = "0090ff",  -- L* 59.1   Radix blue-9
+    aSolid    = "2870bd",  -- L* 46.6   Radix blue-8，白字 5.07
+    aHover    = "3b9eff",  -- L* 63.8
+    aDeep     = "1f5d9e",  -- 比 aSolid 再深一階，按下時用
+
+    danger    = "ff9592",
+    dangerB   = "e5484d",
+}
+
+-- 實心填充三態，由 SOLID_AA 決定
+local SOLID        = SOLID_AA and C.aSolid  or C.aBright
+local SOLID_HOVER  = SOLID_AA and "3178ce" or C.aHover
+local SOLID_ACTIVE = SOLID_AA and C.aDeep   or C.aSolid
+
+-- 疊層用中性灰 + alpha，在深底上比純白 alpha 穩定
+local function NeutralA(a) local c = H(C.dim);    return { c[1], c[2], c[3], a } end
+local function AccentA(a)  local c = H(C.aFg);    return { c[1], c[2], c[3], a } end
+local function DangerA(a)  local c = H(C.danger); return { c[1], c[2], c[3], a } end
+
 ExwindTools.GUIColors = {
-    page = Hex(0x14, 0x16, 0x1a),
-    panel = Hex(0x1b, 0x1e, 0x23),
-    panelBorder = Hex(0x34, 0x3a, 0x42),
-    header = Hex(0x21, 0x24, 0x29),
-    headerHover = Hex(0x26, 0x2a, 0x30),
-    headerDivider = Hex(0x2a, 0x2e, 0x34),
-    card = Hex(0x22, 0x26, 0x2c),
-    cardHoverBorder = Hex(0x51, 0x5a, 0x65),
+    -- ---------- 表面 ----------
+    page            = H(C.canvas),
+    panel           = H(C.panel),
+    panelBorder     = H(C.bDef),
+    header          = H(C.panel),
+    headerHover     = H(C.head),
+    headerDivider   = H(C.bSubtle),
+    card            = H(C.card),
+    cardBorder      = H(C.bDef),          -- 新增
+    cardHoverBorder = H(C.bHover),
 
-    text = Hex(0xec, 0xee, 0xf1),
-    textDim = Hex(0xa7, 0xad, 0xb5),
-    textPlaceholder = Hex(0x6f, 0x76, 0x80),
-    textDisabled = Hex(0x5f, 0x66, 0x6f),
-    white = Hex(0xff, 0xff, 0xff),
-    transparent = { 0, 0, 0, 0 },
+    -- ---------- 文字 ----------
+    text            = H(C.text),
+    textDim         = H(C.dim),
+    textPlaceholder = H(C.ph),
+    textDisabled    = H(C.dis),
+    white           = Hex(0xff, 0xff, 0xff),
+    transparent     = { 0, 0, 0, 0 },
 
-    accent = Hex(0xa8, 0xd8, 0xff),
-    accentHover = Hex(0xc2, 0xe4, 0xff),
-    accentActive = Hex(0x8c, 0xc6, 0xf5),
-    selectedText = Hex(0xcb, 0xe7, 0xff),
+    -- ---------- 強調色 ----------
+    accent       = H(C.aFg),
+    accentHover  = H(C.aText),
+    accentActive = H(C.aHover),
+    selectedText = H(C.aText),
+    focusRing    = AccentA(0.20),         -- 新增，全域唯一
 
-    input = Hex(0x17, 0x19, 0x1d),
-    inputHoverBorder = Hex(0x65, 0x71, 0x7e),
-    inputDisabled = Hex(0x1a, 0x1c, 0x20),
-    inputDisabledBorder = Hex(0x2a, 0x2e, 0x34),
+    primaryFill       = H(SOLID),
+    primaryFillHover  = H(SOLID_HOVER),
+    primaryFillActive = H(SOLID_ACTIVE),
+    primaryText       = Hex(0xff, 0xff, 0xff),
 
-    popup = Hex(0x1c, 0x20, 0x26),
-    popupBorder = Hex(0x52, 0x5a, 0x65),
-    popupSearch = Hex(0x16, 0x19, 0x1e),
-    popupSearchBorder = Hex(0x2e, 0x34, 0x3c),
-    popupDivider = Hex(0x2a, 0x2f, 0x36),
-    menuHover = { 1, 1, 1, 0.05 },
-    menuSelected = { 168 / 255, 216 / 255, 1, 0.14 },
-    menuSelectedHover = { 168 / 255, 216 / 255, 1, 0.20 },
+    -- ---------- 輸入框 ----------
+    input               = H(C.ctrl),
+    inputBorder         = H(C.iBorder),   -- 新增
+    inputHover          = H(C.ctrlHover),
+    inputHoverBorder    = H(C.iHover),
+    inputFocusBorder    = H(C.aFg),       -- 新增
+    inputDisabled       = H(C.ctrl),
+    inputDisabledBorder = H(C.bSubtle),
 
-    sliderTrack = Hex(0x36, 0x3c, 0x44),
-    sliderTrackHover = Hex(0x3d, 0x44, 0x4d),
+    -- ---------- 彈出層 ----------
+    popup             = H(C.pop),
+    popupBorder       = H(C.bStrong),
+    popupSearch       = H(C.popSearch),
+    popupSearchBorder = H(C.bSubtle),
+    popupDivider      = H(C.bSubtle),
+    menuHover         = NeutralA(0.08),
+    menuSelected      = AccentA(0.13),
+    menuSelectedHover = AccentA(0.20),
 
-    checkboxBorder = Hex(0x4a, 0x52, 0x5c),
-    checkboxHoverBorder = Hex(0x6f, 0x76, 0x80),
-    checkboxChecked = Hex(0x2a, 0x78, 0xd6),
-    checkboxCheckedHover = Hex(0x3a, 0x86, 0xe0),
-    checkboxCheckedActive = Hex(0x22, 0x66, 0xb8),
-    disabledFill = Hex(0x1f, 0x22, 0x27),
-    disabledBorder = Hex(0x30, 0x35, 0x3c),
+    -- ---------- 滑桿 ----------
+    sliderTrack      = H(C.bDef),
+    sliderTrackHover = H(C.bHover),
 
-    primaryText = Hex(0x0f, 0x1a, 0x24),
-    secondaryText = Hex(0xd5, 0xd9, 0xde),
-    secondaryBorder = Hex(0x4a, 0x52, 0x5c),
-    secondaryHoverFill = { 1, 1, 1, 0.08 },
-    secondaryHoverBorder = Hex(0x74, 0x80, 0x8d),
-    secondaryPressedFill = { 1, 1, 1, 0.09 },
-    secondaryPressedText = Hex(0xb8, 0xbe, 0xc5),
-    dangerBorder = Hex(0xf2, 0x8b, 0x8b),
-    dangerText = Hex(0xf6, 0xa5, 0xa5),
-    dangerHoverFill = { 242 / 255, 139 / 255, 139 / 255, 0.12 },
-    dangerPressedFill = { 242 / 255, 139 / 255, 139 / 255, 0.20 },
+    -- ---------- 核取方塊 ----------
+    checkboxBorder        = H(C.iHover),
+    checkboxHoverBorder   = H(C.aFg),
+    checkboxChecked       = H(SOLID),
+    checkboxCheckedHover  = H(SOLID_HOVER),
+    checkboxCheckedActive = H(SOLID_ACTIVE),
+    disabledFill          = H(C.ctrl),
+    disabledBorder        = H(C.bSubtle),
 
-    -- Inline FontString fragments used by legacy settings pages. Keeping these
-    -- escapes here prevents those pages from reintroducing their own fixed palette.
+    -- ---------- 次要 / 危險 ----------
+    secondaryFill        = H(C.ctrl),
+    secondaryText        = H(C.text),
+    secondaryBorder      = H(C.bDef),
+    secondaryHoverFill   = H(C.head),
+    secondaryHoverBorder = H(C.bHover),
+    secondaryPressedFill = H(C.bSubtle),
+    secondaryPressedText = H(C.dim),
+    dangerBorder      = H(C.dangerB),
+    dangerText        = H(C.danger),
+    dangerHoverFill   = DangerA(0.14),
+    dangerPressedFill = DangerA(0.22),
+
+    -- ---------- FontString 內嵌色 ----------
     markup = {
-        accent = "|cffa8d8ff",
-        selectedText = "|cffcbe7ff",
-        text = "|cffeceef1",
-        textDim = "|cffa7adb5",
-        placeholder = "|cff6f7680",
-        textDisabled = "|cff5f666f",
-        danger = "|cfff6a5a5",
+        accent       = "|cff" .. C.aFg,
+        selectedText = "|cff" .. C.aText,
+        text         = "|cff" .. C.text,
+        textDim      = "|cff" .. C.dim,
+        placeholder  = "|cff" .. C.ph,
+        textDisabled = "|cff" .. C.dis,
+        danger       = "|cff" .. C.danger,
     },
 
-    -- Fixed settings-shell surfaces map to the same palette as ordinary controls.
-    -- Provider identity accents remain separate because they are selected by the
-    -- active provider rather than by the shell itself.
+    -- ---------- Shell ----------
+    -- 六個原本重複的 divider 全部指向同一個 borderSoft。
     shell = {
-        rail = Hex(0x1b, 0x1e, 0x23),
-        header = Hex(0x21, 0x24, 0x29),
-        nav = Hex(0x1b, 0x1e, 0x23),
-        card = Hex(0x22, 0x26, 0x2c),
-        cardAlt = Hex(0x22, 0x26, 0x2c),
-        border = Hex(0x34, 0x3a, 0x42),
-        borderSoft = Hex(0x2a, 0x2e, 0x34),
-        text = Hex(0xec, 0xee, 0xf1),
-        muted = Hex(0xa7, 0xad, 0xb5),
-        quiet = Hex(0x6f, 0x76, 0x80),
-        cyan = { 0.28, 0.80, 0.91, 1 },
+        rail       = H(C.panel),
+        header     = H(C.panel),
+        nav        = H(C.panel),
+        card       = H(C.card),
+        cardAlt    = H(C.cardAlt),        -- 不再與 card 同值
+        border     = H(C.bDef),
+        borderSoft = H(C.bSubtle),
+        text       = H(C.text),
+        muted      = H(C.dim),
+        quiet      = H(C.ph),
+
+        -- Provider 身分色，不屬於中性階梯，維持原值
+        cyan   = { 0.28, 0.80, 0.91, 1 },
         violet = { 0.62, 0.55, 1.00, 1 },
-        gold = { 0.95, 0.77, 0.35, 1 },
-        toolsSidebar = Hex(0x1b, 0x1e, 0x23),
-        toolsSidebarBorder = Hex(0x34, 0x3a, 0x42),
-        toolsSidebarDivider = Hex(0x2a, 0x2e, 0x34),
-        toolsAmbientMask = Hex(0x14, 0x16, 0x1a),
-        toolsTopLine = Hex(0x2a, 0x2e, 0x34),
-        toolsBottomLine = Hex(0x2a, 0x2e, 0x34),
-        toolsRightPanel = { 0, 0, 0, 0 },
-        sidebarDisabledText = Hex(0x5f, 0x66, 0x6f),
-        sidebarDisabledRail = Hex(0x30, 0x35, 0x3c),
-        sidebarActiveText = Hex(0xff, 0xff, 0xff),
-        sidebarActiveRail = { 168 / 255, 216 / 255, 1, 0.14 },
-        sidebarHoverText = Hex(0xec, 0xee, 0xf1),
-        sidebarHoverRail = Hex(0x3d, 0x44, 0x4d),
-        sidebarIdleText = Hex(0xa7, 0xad, 0xb5),
-        sidebarIdleRail = Hex(0x34, 0x3a, 0x42),
-        sidebarAccent = Hex(0xa8, 0xd8, 0xff),
-        railActive = { 168 / 255, 216 / 255, 1, 0.14 },
+        gold   = { 0.95, 0.77, 0.35, 1 },
+
+        toolsSidebar        = H(C.panel),
+        toolsSidebarBorder  = H(C.bDef),
+        toolsSidebarDivider = H(C.bSubtle),
+        toolsAmbientMask    = H(C.canvas),
+        toolsTopLine        = H(C.bSubtle),
+        toolsBottomLine     = H(C.bSubtle),
+        toolsRightPanel     = { 0, 0, 0, 0 },
+
+        sidebarDisabledText = H(C.dis),
+        sidebarDisabledRail = H(C.bSubtle),
+        sidebarActiveText   = H(C.aText),
+        sidebarActiveRail   = AccentA(0.13),
+        sidebarHoverText    = H(C.text),
+        sidebarHoverRail    = H(C.bHover),
+        sidebarIdleText     = H(C.dim),
+        sidebarIdleRail     = H(C.bDef),
+        sidebarAccent       = H(C.aFg),
+
+        railActive      = AccentA(0.13),
         railTransparent = { 0, 0, 0, 0 },
-        railHover = { 1, 1, 1, 0.05 },
+        railHover       = NeutralA(0.08),
     },
 }

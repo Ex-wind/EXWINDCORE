@@ -1246,8 +1246,8 @@ L["使用暴雪原生倒数(较省性能)"] = "Use Blizzard Native Cooldown (low
 L["法术 ID (优先)"] = "Spell ID (Preferred)"
 L["图标路径/ID |cffff2628优先使用法术ID(如有)|r"] = "Icon Path/ID |cffff2628Spell ID takes priority if set|r"
 L["尺寸"] = "Size"
-L["|cff97a393示例: Interface\\AddOns\\ExwindTools\\Textures\\EJ-UI\\EX1.PNG|r"] =
-"|cff97a393Example: Interface\\AddOns\\ExwindTools\\Textures\\EJ-UI\\EX1.PNG|r"
+L["|cff97a393示例: Interface\\AddOns\\ExwindCore\\Textures\\Images\\ExwindTools\\EJ-UI\\EX1.PNG|r"] =
+"|cff97a393Example: Interface\\AddOns\\ExwindCore\\Textures\\Images\\ExwindTools\\EJ-UI\\EX1.PNG|r"
 L["内置音效"] = "Built-in Sound"
 L["使用自定义路径 (下方 1-6)"] = "Use Custom Paths (1-6 below)"
 L["使用自定义路径 (下方可持续新增)"] = "Use Custom Paths (add more below)"

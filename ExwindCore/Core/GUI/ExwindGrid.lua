@@ -3861,6 +3861,14 @@ local function MeasureSessionCards(session, availableWidth)
             end
         end
     end
+    for _, equal in pairs(equalHeightGroups) do
+        for _, cardState in ipairs(equal.members) do
+            local extraHeight = cardState.layoutHeight - cardState.outerHeight
+            cardState.outerHeight = equal.height
+            cardState.layoutHeight = equal.height + extraHeight
+            SetCardHeight(cardState.card, equal.height)
+        end
+    end
 end
 
 local function SetRelativeCardAnchor(cardState, target, placement, gap, parent, rowBottom)
@@ -5573,14 +5581,6 @@ do
             end
         end
         return session
-    end
-    for _, equal in pairs(equalHeightGroups) do
-        for _, cardState in ipairs(equal.members) do
-            local extraHeight = cardState.layoutHeight - cardState.outerHeight
-            cardState.outerHeight = equal.height
-            cardState.layoutHeight = equal.height + extraHeight
-            SetCardHeight(cardState.card, equal.height)
-        end
     end
 end
 

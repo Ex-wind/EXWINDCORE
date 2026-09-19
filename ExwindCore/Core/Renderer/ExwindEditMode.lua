@@ -217,8 +217,10 @@ local function RestoreSemanticRootHostBounds(module)
     module.__editWorldPreviewOriginalSize = nil
 end
 
--- 世界预览必须在配置面板（HIGH）之上。层级的临时改写只由唯一 Core
--- 生命周期持有；无论全局编辑模块还是 Provider session 实体都走同一对函数。
+-- 世界预览必须在编辑控制面板（FULLSCREEN_DIALOG:200）之上。除提升 strata 外还要
+-- 提升同 strata 下的 level：固定 strata 的 Anchor 与池化子 Frame 可能继续保留
+-- FULLSCREEN_DIALOG，只有显式跨过控制面板的 level 才能保证正文不被面板遮挡。
+-- 临时改写只由唯一 Core 生命周期持有，退出时统一恢复原值。
 local function ElevateWorldPreviewHost(module, host)
     if module.__editWorldPreviewHost then
         if module.__editWorldPreviewHost ~= host then
@@ -231,6 +233,7 @@ local function ElevateWorldPreviewHost(module, host)
     module.__editWorldPreviewOriginalStrata = host:GetFrameStrata()
     module.__editWorldPreviewOriginalLevel = host:GetFrameLevel()
     host:SetFrameStrata("TOOLTIP")
+    host:SetFrameLevel(math.max(300, module.__editWorldPreviewOriginalLevel or 0))
 end
 
 local function RestoreWorldPreviewHost(module)

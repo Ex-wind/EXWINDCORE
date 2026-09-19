@@ -187,12 +187,19 @@ local MODERN = {
         header = GC.header,
         headerHover = GC.headerHover,
         headerDivider = GC.headerDivider,
+        subcard = GC.subcard,
+        subcardBorder = GC.subcardBorder,
+        subcardHoverBorder = GC.subcardHoverBorder,
         input = GC.input,
+        inputBorder = GC.inputBorder,
         inputHoverBorder = GC.inputHoverBorder,
+        inputFocusBorder = GC.inputFocusBorder,
         inputDisabled = GC.inputDisabled,
         inputDisabledBorder = GC.inputDisabledBorder,
         raised = GC.card,
-        hover = GC.headerHover,
+        cardBorder = GC.cardBorder,
+        hover = GC.rowHover,
+        rowHover = GC.rowHover,
         cardHoverBorder = GC.cardHoverBorder,
         border = GC.panelBorder,
         text = GC.text,
@@ -201,14 +208,20 @@ local MODERN = {
         disabled = GC.textDisabled,
         blue = GC.accent,
         blueHover = GC.accentHover,
-        primaryHover = GC.accentHover,
-        primaryPressed = GC.accentActive,
+        accentActive = GC.accentActive,
+        primaryHover = GC.primaryFillHover,
+        primaryPressed = GC.primaryFillActive,
         lightBlue = GC.selectedText,
         blueSoft = GC.menuSelected,
-        focus = GC.accent,
+        focus = GC.inputFocusBorder,
+        focusRing = GC.focusRing,
+        modifiedBorder = GC.modifiedBorder,
         accent = GC.accent,
         sliderTrack = GC.sliderTrack,
         sliderTrackHover = GC.sliderTrackHover,
+        sliderThumb = GC.sliderThumb,
+        sliderThumbHover = GC.sliderThumbHover,
+        sliderThumbActive = GC.sliderThumbActive,
         popup = GC.popup,
         popupBorder = GC.popupBorder,
         popupSearch = GC.popupSearch,
@@ -217,8 +230,9 @@ local MODERN = {
         menuSelected = GC.menuSelected,
         menuSelectedHover = GC.menuSelectedHover,
         menuHover = GC.menuHover,
-        primaryFill = GC.accent,
+        primaryFill = GC.primaryFill,
         primaryText = GC.primaryText,
+        secondaryFill = GC.secondaryFill,
         secondaryBorder = GC.secondaryBorder,
         secondaryText = GC.secondaryText,
         secondaryHoverFill = GC.secondaryHoverFill,
@@ -239,6 +253,25 @@ local MODERN = {
         checkboxChecked = GC.checkboxChecked,
         checkboxCheckedHover = GC.checkboxCheckedHover,
         checkboxCheckedActive = GC.checkboxCheckedActive,
+        switchOn = GC.switchOn,
+        switchOnHover = GC.switchOnHover,
+        switchOff = GC.switchOff,
+        switchOffHover = GC.switchOffHover,
+        switchKnobOn = GC.switchKnobOn,
+        switchKnobOff = GC.switchKnobOff,
+        tagBorder = GC.tagBorder,
+        tagText = GC.tagText,
+        tagHoverBorder = GC.tagHoverBorder,
+        tagHoverText = GC.tagHoverText,
+        tagSelected = GC.tagSelected,
+        tagSelectedBorder = GC.tagSelectedBorder,
+        tagSelectedText = GC.tagSelectedText,
+        tagSelectedHover = GC.tagSelectedHover,
+        segmentSelected = GC.segmentSelected,
+        segmentText = GC.segmentText,
+        toolHover = GC.toolHover,
+        toolActive = GC.toolActive,
+        toolOn = GC.toolOn,
         transparent = GC.transparent,
         white = GC.white,
         neutral = { 0.584, 0.616, 0.667, 1 },
@@ -272,8 +305,11 @@ local function CompositeThemeColor(base, overlay, alphaOverride)
     }
 end
 
-local SETTINGS_PILL_SELECTED_FILL = CompositeThemeColor(MC.input, MC.menuSelected)
-local SETTINGS_PILL_SELECTED_HOVER_FILL = CompositeThemeColor(MC.input, MC.menuSelectedHover)
+MODERN.checkboxPressedFill = CompositeThemeColor(MC.input, MC.toolActive)
+MODERN.settingsCardHoverFill = CompositeThemeColor(MC.subcard, MC.rowHover)
+MODERN.settingsCardPressedFill = CompositeThemeColor(MC.subcard, MC.toolActive)
+MODERN.settingsCardSelectedFill = CompositeThemeColor(MC.subcard, MC.tagSelected)
+MODERN.settingsCardSelectedHoverFill = CompositeThemeColor(MC.subcard, MC.tagSelectedHover)
 
 -- Blizzard_Menu compositor proxies deliberately disallow FontString:SetFont.
 -- Build the two menu typography roles while this file is loading, then menu
@@ -298,17 +334,17 @@ MODERN.DungeonAura = {
     text = MC.text, muted = MC.muted, title = MC.lightBlue, fact = MC.lightBlue,
     value = MC.text, focus = MC.focus, success = MC.lightBlue,
     warning = { .97, .72, .38, 1 }, danger = { .97, .45, .47, 1 },
-    input = MC.input, inputBorder = MC.border, inputFocus = MC.raised,
-    header = MC.panel, panel = MC.panel, panelDeep = MC.input,
-    line = MC.border, lineStrong = MC.border, button = MC.raised,
+    input = MC.input, inputBorder = MC.inputBorder, inputFocus = MC.inputFocusBorder,
+    header = MC.header, panel = MC.panel, panelDeep = MC.input,
+    line = MC.headerDivider, lineStrong = MC.border, button = MC.raised,
     hover = MC.hover, gold = MC.lightBlue,
 }
 MODERN.LoadCard = setmetatable({
     id = "load-card", row = 52, buttonHeight = 26, buttonWidth = 88,
     text = MC.text, value = MC.text, title = MC.text, muted = MC.muted,
     fact = MC.lightBlue, focus = MC.focus, background = MC.background,
-    header = MC.panel, panelDeep = MC.input, panel = MC.panel,
-    input = MC.input, inputFocus = MC.raised, inputBorder = MC.border,
+    header = MC.header, panelDeep = MC.input, panel = MC.panel,
+    input = MC.input, inputFocus = MC.inputFocusBorder, inputBorder = MC.inputBorder,
     button = MC.raised, hover = MC.hover, line = MC.border,
     lineStrong = MC.border, gold = MC.lightBlue,
     choiceFill = MC.lightBlue, choiceText = MC.background,
@@ -489,6 +525,71 @@ local function TrackModernSurfaceFrame(frame)
     end)
 end
 
+MODERN.surfaceAtlas = {
+    file = MODERN_MEDIA .. "SurfaceBorderAtlas.tga",
+    width = 512,
+    height = 256,
+    cell = 34,
+    columns = 15,
+    maxRadius = 32,
+}
+
+function MODERN.surfaceAtlas:GetPixel(frame)
+    local effectiveScale = frame and frame.GetEffectiveScale and frame:GetEffectiveScale() or 1
+    effectiveScale = type(effectiveScale) == "number" and effectiveScale > 0 and effectiveScale or 1
+    local pixelUtil = _G.PixelUtil
+    local pixel = pixelUtil and pixelUtil.GetNearestPixelSize
+        and pixelUtil.GetNearestPixelSize(0, effectiveScale, 1)
+        or (1 / effectiveScale)
+    return type(pixel) == "number" and pixel > 0 and pixel or (1 / effectiveScale)
+end
+
+function MODERN.surfaceAtlas:GetMetrics(frame, radius, borderPixels)
+    local width, height = frame:GetWidth(), frame:GetHeight()
+    if not width or not height or width <= 0 or height <= 0 then return nil end
+    local pixel = self:GetPixel(frame)
+    local widthPixels = math.max(1, math.floor(width / pixel + .5))
+    local heightPixels = math.max(1, math.floor(height / pixel + .5))
+    local radiusPixels = math.max(0, math.min(self.maxRadius,
+        math.floor((tonumber(radius) or 0) / pixel + .5),
+        math.floor(widthPixels / 2), math.floor(heightPixels / 2)))
+    local strokePixels = math.max(1, math.min(2, math.floor((tonumber(borderPixels) or 1) + .5)))
+    local left, top = frame.GetLeft and frame:GetLeft(), frame.GetTop and frame:GetTop()
+    local offsetX, offsetY = 0, 0
+    if type(left) == "number" then offsetX = math.floor(left / pixel + .5) * pixel - left end
+    if type(top) == "number" then offsetY = math.floor(top / pixel + .5) * pixel - top end
+    return {
+        pixel = pixel,
+        widthPixels = widthPixels,
+        heightPixels = heightPixels,
+        radiusPixels = radiusPixels,
+        strokePixels = strokePixels,
+        offsetX = offsetX,
+        offsetY = offsetY,
+    }
+end
+
+function MODERN.surfaceAtlas:ConfigureTexture(texture)
+    texture:SetTexture(self.file, "CLAMP", "CLAMP", "NEAREST")
+    if texture.SetSnapToPixelGrid then texture:SetSnapToPixelGrid(false) end
+    if texture.SetTexelSnappingBias then texture:SetTexelSnappingBias(0) end
+end
+
+function MODERN.surfaceAtlas:SetSolidTexCoord(texture)
+    texture:SetTexCoord((self.width - 1) / self.width, 1, (self.height - 1) / self.height, 1)
+end
+
+function MODERN.surfaceAtlas:SetCornerTexCoord(texture, radiusPixels, band, row, col)
+    local index = band * self.maxRadius + radiusPixels - 1
+    local x = (index % self.columns) * self.cell + 1
+    local y = math.floor(index / self.columns) * self.cell + 1
+    local left, right = x / self.width, (x + radiusPixels) / self.width
+    local top, bottom = y / self.height, (y + radiusPixels) / self.height
+    if col == 3 then left, right = right, left end
+    if row == 3 then top, bottom = bottom, top end
+    texture:SetTexCoord(left, right, top, bottom)
+end
+
 local function GetModernSurface(frame, radius)
     frame._exModernSurfaces = frame._exModernSurfaces or {}
     local skin = frame._exModernSurfaces[radius]
@@ -497,25 +598,34 @@ local function GetModernSurface(frame, radius)
         return skin
     end
 
-    local fillFile = "FillR" .. radius .. ".tga"
-    local u = { 0, (6 + radius) / 256, (250 - radius) / 256, 1 }
-    local v = { 0, (23 + radius) / 128, (105 - radius) / 128, 1 }
     skin = { pieces = {}, radius = radius, active = false }
     frame._exModernSurfaces[radius] = skin
     TrackModernSurfaceFrame(frame)
-    for layer = 1, 2 do
-        for row = 1, 3 do
-            for col = 1, 3 do
-                -- 外层画边框色，内层缩进一个物理像素后画填充色。
-                -- 两层共用圆角填充蒙版，避免旧 BorderR 贴图自带的粗边。
-                local texture = frame:CreateTexture(nil, layer == 1 and "BACKGROUND" or "BORDER")
-                texture:SetTexture(MODERN_MEDIA .. fillFile, "CLAMP", "CLAMP", "LINEAR")
-                texture:SetTexCoord(u[col], u[col + 1], v[row], v[row + 1])
-                if texture.SetSnapToPixelGrid then texture:SetSnapToPixelGrid(false) end
-                if texture.SetTexelSnappingBias then texture:SetTexelSnappingBias(0) end
-                skin.pieces[#skin.pieces + 1] = { texture = texture, row = row, col = col, layer = layer }
-            end
+    for row = 1, 3 do
+        for col = 1, 3 do
+            local texture = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+            MODERN.surfaceAtlas:ConfigureTexture(texture)
+            skin.pieces[#skin.pieces + 1] = {
+                texture = texture, row = row, col = col, layer = 2,
+                kind = (row ~= 2 and col ~= 2) and "fillCorner" or "fillSolid",
+            }
         end
+    end
+    for _, corner in ipairs({ { 1, 1 }, { 1, 3 }, { 3, 1 }, { 3, 3 } }) do
+        local row, col = corner[1], corner[2]
+        local texture = frame:CreateTexture(nil, "BORDER", nil, 0)
+        MODERN.surfaceAtlas:ConfigureTexture(texture)
+        skin.pieces[#skin.pieces + 1] = {
+            texture = texture, row = row, col = col, layer = 1, kind = "borderCorner",
+        }
+    end
+    for _, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
+        local texture = frame:CreateTexture(nil, "BORDER", nil, 1)
+        MODERN.surfaceAtlas:ConfigureTexture(texture)
+        MODERN.surfaceAtlas:SetSolidTexCoord(texture)
+        skin.pieces[#skin.pieces + 1] = {
+            texture = texture, layer = 1, kind = "borderEdge", side = side,
+        }
     end
     skin.Layout = function()
         -- OnSizeChanged / OnShow hooks live for the frame lifetime.  A surface
@@ -525,44 +635,78 @@ local function GetModernSurface(frame, radius)
             for _, piece in ipairs(skin.pieces) do piece.texture:Hide() end
             return
         end
-        local width, height = frame:GetWidth(), frame:GetHeight()
-        if not width or not height or width <= 0 or height <= 0 then return end
-        local effectiveScale = frame.GetEffectiveScale and frame:GetEffectiveScale() or 1
-        effectiveScale = type(effectiveScale) == "number" and effectiveScale > 0 and effectiveScale or 1
-        local pixelUtil = _G.PixelUtil
-        local pixel = pixelUtil and pixelUtil.GetNearestPixelSize
-            and pixelUtil.GetNearestPixelSize(1, effectiveScale, 1)
-            or (1 / effectiveScale)
-        pixel = type(pixel) == "number" and pixel > 0 and pixel or (1 / effectiveScale)
+        local metrics = MODERN.surfaceAtlas:GetMetrics(frame, radius, skin.borderPixels)
+        if not metrics then return end
+        local pixel = metrics.pixel
+        local width = metrics.widthPixels * pixel
+        local height = metrics.heightPixels * pixel
+        local corner = metrics.radiusPixels * pixel
+        local thickness = metrics.strokePixels * pixel
+        local xs = {
+            metrics.offsetX,
+            metrics.offsetX + corner,
+            metrics.offsetX + width - corner,
+            metrics.offsetX + width,
+        }
+        local ys = { 0, corner, height - corner, height }
+        local degenerateBorder = metrics.widthPixels <= metrics.strokePixels * 2
+            or metrics.heightPixels <= metrics.strokePixels * 2
         for _, piece in ipairs(skin.pieces) do
-            local inset = piece.layer == 2 and math.min(pixel * (skin.borderPixels or 1), width / 2, height / 2) or 0
-            local innerWidth, innerHeight = width - inset * 2, height - inset * 2
-            local targetRadius = math.max(0, radius - inset)
-            local scale = math.min(
-                1,
-                targetRadius / radius,
-                innerWidth / (radius * 2),
-                innerHeight / (radius * 2)
-            )
-            local corner = radius * scale
-            local xs = {
-                inset - 6 * scale,
-                inset + corner,
-                width - inset - corner,
-                width - inset + 6 * scale,
-            }
-            local ys = {
-                inset - 23 * scale,
-                inset + corner,
-                height - inset - corner,
-                height - inset + 23 * scale,
-            }
-            local pieceWidth = xs[piece.col + 1] - xs[piece.col]
-            local pieceHeight = ys[piece.row + 1] - ys[piece.row]
             piece.texture:ClearAllPoints()
-            piece.texture:SetPoint("TOPLEFT", frame, "TOPLEFT", xs[piece.col], -ys[piece.row])
-            piece.texture:SetSize(math.max(.001, pieceWidth), math.max(.001, pieceHeight))
-            piece.texture:SetShown(pieceWidth > 0 and pieceHeight > 0)
+            if metrics.radiusPixels == 0 and piece.layer == 2 then
+                if piece.row == 2 and piece.col == 2 then
+                    MODERN.surfaceAtlas:SetSolidTexCoord(piece.texture)
+                    piece.texture:SetPoint("TOPLEFT", frame, "TOPLEFT", metrics.offsetX, metrics.offsetY)
+                    piece.texture:SetSize(width, height)
+                    piece.texture:Show()
+                else
+                    piece.texture:Hide()
+                end
+            elseif degenerateBorder and piece.layer == 1 then
+                if piece.kind == "borderEdge" and piece.side == "TOP" then
+                    MODERN.surfaceAtlas:SetSolidTexCoord(piece.texture)
+                    piece.texture:SetPoint("TOPLEFT", frame, "TOPLEFT", metrics.offsetX, metrics.offsetY)
+                    piece.texture:SetSize(width, height)
+                    piece.texture:Show()
+                else
+                    piece.texture:Hide()
+                end
+            elseif piece.kind == "borderEdge" then
+                MODERN.surfaceAtlas:SetSolidTexCoord(piece.texture)
+                piece.texture:ClearAllPoints()
+                if piece.side == "TOP" then
+                    piece.texture:SetPoint("TOPLEFT", frame, "TOPLEFT", xs[2], metrics.offsetY)
+                    piece.texture:SetSize(math.max(.001, width - corner * 2), thickness)
+                    piece.texture:SetShown(width > corner * 2)
+                elseif piece.side == "BOTTOM" then
+                    piece.texture:SetPoint("TOPLEFT", frame, "TOPLEFT", xs[2], metrics.offsetY - height + thickness)
+                    piece.texture:SetSize(math.max(.001, width - corner * 2), thickness)
+                    piece.texture:SetShown(width > corner * 2)
+                elseif piece.side == "LEFT" then
+                    piece.texture:SetPoint("TOPLEFT", frame, "TOPLEFT", metrics.offsetX, metrics.offsetY - corner)
+                    piece.texture:SetSize(thickness, math.max(.001, height - corner * 2))
+                    piece.texture:SetShown(height > corner * 2)
+                else
+                    piece.texture:SetPoint("TOPLEFT", frame, "TOPLEFT", metrics.offsetX + width - thickness, metrics.offsetY - corner)
+                    piece.texture:SetSize(thickness, math.max(.001, height - corner * 2))
+                    piece.texture:SetShown(height > corner * 2)
+                end
+            else
+                local pieceWidth = xs[piece.col + 1] - xs[piece.col]
+                local pieceHeight = ys[piece.row + 1] - ys[piece.row]
+                if piece.kind == "fillCorner" then
+                    MODERN.surfaceAtlas:SetCornerTexCoord(piece.texture,
+                        metrics.radiusPixels, 0, piece.row, piece.col)
+                elseif piece.kind == "borderCorner" then
+                    MODERN.surfaceAtlas:SetCornerTexCoord(piece.texture,
+                        metrics.radiusPixels, metrics.strokePixels, piece.row, piece.col)
+                else
+                    MODERN.surfaceAtlas:SetSolidTexCoord(piece.texture)
+                end
+                piece.texture:SetPoint("TOPLEFT", frame, "TOPLEFT", xs[piece.col], metrics.offsetY - ys[piece.row])
+                piece.texture:SetSize(math.max(.001, pieceWidth), math.max(.001, pieceHeight))
+                piece.texture:SetShown(pieceWidth > 0 and pieceHeight > 0)
+            end
         end
     end
     frame:HookScript("OnSizeChanged", skin.Layout)
@@ -582,7 +726,10 @@ function EXUI:SetControlSurface(frame, radius, fill, border)
     skin.active = true
     skin.fill = fill or MC.input
     for _, piece in ipairs(skin.pieces) do
-        piece.texture:SetVertexColor(unpack(piece.layer == 1 and (border or MC.border) or (fill or MC.input)))
+        local color = piece.layer == 1 and (border or MC.border) or (fill or MC.input)
+        -- Solid pieces stay white so button transitions and settings-list
+        -- capture/restore can continue treating vertex color as surface RGBA.
+        piece.texture:SetVertexColor(unpack(color))
         piece.texture:Show()
     end
     skin.Layout()
@@ -694,7 +841,7 @@ local function PaintTextButtonSurface(frame, fill, edge, text, enabled)
         focus:SetPoint("TOPLEFT", frame, "TOPLEFT", -4 * pixel, 4 * pixel)
         focus:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 4 * pixel, -4 * pixel)
         GetModernSurface(focus, BUTTON_STYLE.radius).borderPixels = 2
-        EXUI:SetControlSurface(focus, BUTTON_STYLE.radius, background, MC.primaryFill)
+        EXUI:SetControlSurface(focus, BUTTON_STYLE.radius, background, MC.focusRing)
         focus:Show()
     elseif focus then
         focus:Hide()
@@ -835,7 +982,7 @@ local function PaintModernButton(frame)
     local fill, edge, text
 
     if isColorButton then
-        fill, edge, text = MC.input, MC.border, MC.text
+        fill, edge, text = MC.input, MC.inputBorder, MC.text
         if frame._exModernPressed and enabled then
             fill, edge = MC.input, MC.blue
         elseif frame._exModernHover and enabled then
@@ -856,7 +1003,7 @@ local function PaintModernButton(frame)
             fill, edge, text = MC.dangerHoverFill, MC.dangerHover, MC.dangerHover
         end
     else
-        fill, edge, text = MC.transparent, MC.secondaryBorder, MC.secondaryText
+        fill, edge, text = MC.secondaryFill, MC.secondaryBorder, MC.secondaryText
         if frame._exModernPressed and enabled then
             fill, edge, text = MC.secondaryPressedFill, MC.secondaryBorder, MC.secondaryPressedText
         elseif frame._exModernHover and enabled then
@@ -884,7 +1031,7 @@ local function PaintModernButton(frame)
         elseif frame._exModernHover then
             frame.swatchBorder:SetBackdropBorderColor(unpack(MC.inputHoverBorder))
         else
-            frame.swatchBorder:SetBackdropBorderColor(unpack(MC.border))
+            frame.swatchBorder:SetBackdropBorderColor(unpack(MC.inputBorder))
         end
     end
 end
@@ -975,14 +1122,21 @@ local function PaintModernInput(surface, editBox)
     local enabled = not editBox or not editBox.IsEnabled or editBox:IsEnabled()
     local focus = enabled and editBox and editBox.HasFocus and editBox:HasFocus()
     local hover = enabled and editBox and editBox._exModernHover
-    local focusBorder = surface and surface._exModernInputFocusBorder or MC.focus
+    local focusBorder = surface and surface._exModernInputFocusBorder or MC.inputFocusBorder
     local idleFill = surface and surface._exModernInputIdleFill or MC.input
     local activeFill = surface and surface._exModernInputActiveFill or idleFill
     local hoverBorder = surface and surface._exModernInputHoverBorder or MC.inputHoverBorder
     local fill = enabled and ((focus or hover) and activeFill or idleFill) or MC.inputDisabled
-    local edge = enabled and (focus and focusBorder or (hover and hoverBorder or MC.border))
+    local idleBorder = surface and surface._exModernInputIdleBorder or MC.inputBorder
+    local edge = enabled and (focus and focusBorder or (hover and hoverBorder or idleBorder))
         or MC.inputDisabledBorder
     EXUI:SetControlSurface(surface, 4, fill, edge)
+    -- The input's own focus border above is the complete focus treatment.
+    -- Hide a ring left by an earlier hot-reloaded lease instead of drawing a
+    -- second translucent outline outside the control.
+    if surface and surface._exModernInputFocusRing then
+        surface._exModernInputFocusRing:Hide()
+    end
     if editBox and editBox.SetTextColor then
         editBox:SetTextColor(unpack(enabled and MC.text or MC.disabledText))
     end
@@ -1022,7 +1176,7 @@ local function PaintModernDropdown(frame)
     local menuOpen = enabled and frame.IsMenuOpen and frame:IsMenuOpen()
     local active = enabled and (frame._exModernHover or menuOpen)
     EXUI:SetControlSurface(frame, 4, enabled and MC.input or MC.inputDisabled,
-        enabled and (menuOpen and MC.blue or (active and MC.inputHoverBorder or MC.border))
+        enabled and (menuOpen and MC.inputFocusBorder or (active and MC.inputHoverBorder or MC.inputBorder))
             or MC.inputDisabledBorder)
     if frame.Text then frame.Text:SetTextColor(unpack(enabled and MC.text or MC.disabledText)) end
     if frame._exModernChevron then
@@ -1134,27 +1288,30 @@ local function PaintModernCheckbox(container, skipPillMeasure)
         surface:SetAllPoints(box)
         if not enabled then
             fill, edge = MC.disabledFill, MC.disabledBorder
+        elseif pressed then
+            fill = MC.toolActive
+            edge = selected and MC.tagSelectedBorder or MC.tagHoverBorder
         elseif selected then
-            fill = hover and SETTINGS_PILL_SELECTED_HOVER_FILL or SETTINGS_PILL_SELECTED_FILL
-            edge = hover and MC.primaryHover or MC.focus
+            fill = hover and MC.tagSelectedHover or MC.tagSelected
+            edge = MC.tagSelectedBorder
         else
-            fill = hover and MC.hover or MC.input
-            edge = hover and MC.inputHoverBorder or MC.border
+            fill = MC.transparent
+            edge = hover and MC.tagHoverBorder or MC.tagBorder
         end
         EXUI:SetControlSurface(surface, 10, fill, edge)
         box._exModernCheckMark:ClearAllPoints()
         box._exModernCheckMark:SetPoint("LEFT", surface, "LEFT", 12, 0)
         box._exModernCheckMark:SetSize(14, 14)
         box._exModernCheckMark:SetShown(selected)
-        box._exModernCheckMark:SetVertexColor(unpack(enabled and MC.lightBlue or MC.disabledText))
+        box._exModernCheckMark:SetVertexColor(unpack(enabled and MC.tagSelectedText or MC.disabledText))
         surface:SetAlpha(1)
         if container.label then
-            container.label:SetTextColor(unpack(enabled and (selected and MC.lightBlue or MC.text)
-                or MC.disabledText))
+            container.label:SetTextColor(unpack(enabled and (selected and MC.tagSelectedText
+                or (hover and MC.tagHoverText or MC.tagText)) or MC.disabledText))
         end
         if visualLabel then
-            visualLabel:SetTextColor(unpack(enabled and (selected and MC.lightBlue or MC.text)
-                or MC.disabledText))
+            visualLabel:SetTextColor(unpack(enabled and (selected and MC.tagSelectedText
+                or (hover and MC.tagHoverText or MC.tagText)) or MC.disabledText))
             visualLabel:ClearAllPoints()
             visualLabel:SetPoint("LEFT", surface, "LEFT", selected and 32 or 12, 0)
             visualLabel:SetPoint("RIGHT", surface, "RIGHT", -12, 0)
@@ -1170,11 +1327,11 @@ local function PaintModernCheckbox(container, skipPillMeasure)
         if not enabled then
             fill, edge = MC.disabledFill, MC.disabledBorder
         elseif selected then
-            fill = pressed and MC.checkboxCheckedActive or (hover and MC.checkboxCheckedHover or MC.checkboxChecked)
+            fill = pressed and MC.checkboxCheckedActive or (hover and MC.switchOnHover or MC.switchOn)
             edge = fill
         else
-            fill = MC.input
-            edge = hover and MC.checkboxHoverBorder or MC.checkboxBorder
+            fill = pressed and MC.checkboxHoverBorder or (hover and MC.switchOffHover or MC.switchOff)
+            edge = MC.secondaryFill
         end
         local surface = box._exModernCheckSurface
         surface:ClearAllPoints()
@@ -1187,8 +1344,8 @@ local function PaintModernCheckbox(container, skipPillMeasure)
         knob:SetPoint(selected and "RIGHT" or "LEFT", surface,
             selected and "RIGHT" or "LEFT", selected and -3 or 3, 0)
         EXUI:SetControlSurface(knob, 10,
-            enabled and (selected and MC.white or MC.muted) or MC.disabledText,
-            enabled and (selected and MC.white or MC.muted) or MC.disabledText)
+            enabled and (selected and MC.switchKnobOn or MC.switchKnobOff) or MC.disabledText,
+            enabled and (selected and MC.switchKnobOn or MC.switchKnobOff) or MC.disabledText)
         knob:Show()
         surface:SetAlpha(1)
         if container.label then
@@ -1215,16 +1372,22 @@ local function PaintModernCheckbox(container, skipPillMeasure)
         end
         card:SetFrameLevel(box:GetFrameLevel())
         box._exModernCheckSurface:SetFrameLevel(box:GetFrameLevel() + 1)
-        local base = MC.input
-        local tint = selected and MC.blueSoft or (hover and MC.hover or base)
-        local alpha = tint[4] or 1
-        local cardFill = enabled and {
-            base[1] + (tint[1] - base[1]) * alpha,
-            base[2] + (tint[2] - base[2]) * alpha,
-            base[3] + (tint[3] - base[3]) * alpha, 1,
-        } or MC.disabledFill
+        local cardFill
+        if not enabled then
+            cardFill = MC.disabledFill
+        elseif pressed then
+            cardFill = MODERN.settingsCardPressedFill
+        elseif selected then
+            cardFill = hover and MODERN.settingsCardSelectedHoverFill or MODERN.settingsCardSelectedFill
+        elseif hover then
+            cardFill = MODERN.settingsCardHoverFill
+        else
+            cardFill = MC.subcard
+        end
         EXUI:SetControlSurface(card, 4, cardFill,
-            not enabled and MC.disabledBorder or (selected and MC.focus or (hover and MC.inputHoverBorder or MC.border)))
+            not enabled and MC.disabledBorder
+                or (selected and MC.modifiedBorder
+                    or (hover and MC.subcardHoverBorder or MC.subcardBorder)))
         local hasDescription = container._exSettingsCardDescription == true
         local checkSize = container._exSettingsCardCheckSize or 20
         box._exModernCheckSurface:SetSize(checkSize, checkSize)
@@ -1258,7 +1421,7 @@ local function PaintModernCheckbox(container, skipPillMeasure)
         fill = pressed and MC.checkboxCheckedActive or (hover and MC.checkboxCheckedHover or MC.checkboxChecked)
         edge = fill
     else
-        fill = MC.input
+        fill = pressed and MODERN.checkboxPressedFill or MC.input
         edge = hover and MC.checkboxHoverBorder or MC.checkboxBorder
     end
     EXUI:SetControlSurface(box._exModernCheckSurface, 4, fill, edge)
@@ -1419,8 +1582,8 @@ local function PaintModernSlider(frame)
     frame._exModernSliderTrack:SetColorTexture(unpack(hover and MC.sliderTrackHover or MC.sliderTrack))
     local thumb = interactive.GetThumbTexture and interactive:GetThumbTexture()
     if thumb then
-        thumb:SetVertexColor(unpack(enabled and (pressed and MC.primaryPressed
-            or (hover and MC.primaryHover or MC.blue)) or MC.disabledText))
+        thumb:SetVertexColor(unpack(enabled and (pressed and MC.sliderThumbActive
+            or (hover and MC.sliderThumbHover or MC.sliderThumb)) or MC.disabledText))
     end
     if frame.numberInput then
         if enabled and frame.numberInput.Enable then frame.numberInput:Enable()
@@ -1539,8 +1702,8 @@ local function PaintModernScrollBar(scrollBar)
 
     EXUI:SetControlSurface(track, 4, MC.transparent, MC.transparent)
     EXUI:SetControlSurface(thumb, 4,
-        thumbEnabled and (thumbActive and MC.primaryFill or MC.secondaryBorder) or MC.disabled,
-        thumbEnabled and (thumbActive and MC.primaryFill or MC.secondaryBorder) or MC.disabled)
+        thumbEnabled and (thumbActive and MC.blue or MC.inputHoverBorder) or MC.disabled,
+        thumbEnabled and (thumbActive and MC.blue or MC.inputHoverBorder) or MC.disabled)
 end
 
 -- The current Blizzard ScrollFrameTemplate creates one MinimalScrollBar and
@@ -1689,41 +1852,14 @@ end
 
 local function PaintModernGridCard(frame)
     EXUI:SetControlSurface(frame, 10, MC.raised,
-        frame._exModernHover and MC.cardHoverBorder or MC.border)
+        frame._exModernHover and MC.cardHoverBorder or MC.cardBorder)
 end
 
 if _G.MenuStyleMixin and _G.CreateFromMixins then
     EXUI.ModernMenuStyleMixin = CreateFromMixins(MenuStyleMixin)
     function EXUI.ModernMenuStyleMixin:Generate()
         local radius = 6
-        local u = { 0, (6 + radius) / 256, (250 - radius) / 256, 1 }
-        local v = { 0, (23 + radius) / 128, (105 - radius) / 128, 1 }
-        local effectiveScale = _G.UIParent and UIParent.GetEffectiveScale and UIParent:GetEffectiveScale() or 1
-        effectiveScale = type(effectiveScale) == "number" and effectiveScale > 0 and effectiveScale or 1
-        local pixelUtil = _G.PixelUtil
-        local physicalPixel = pixelUtil and pixelUtil.GetNearestPixelSize
-            and pixelUtil.GetNearestPixelSize(1, effectiveScale, 1)
-            or (1 / effectiveScale)
-        physicalPixel = type(physicalPixel) == "number" and physicalPixel > 0
-            and physicalPixel or (1 / effectiveScale)
-        local function Anchor(texture, row, col, inset)
-            local targetRadius = math.max(0, radius - inset)
-            local scale = targetRadius / radius
-            local padX, padY = 6 * scale, 23 * scale
-            local outsideX = inset - padX
-            local outsideY = inset - padY
-            local inside = inset + targetRadius
-            local pieceWidth, pieceHeight = targetRadius + padX, targetRadius + padY
-            if row == 1 and col == 1 then texture:SetPoint("TOPLEFT", outsideX, -outsideY); texture:SetSize(pieceWidth, pieceHeight)
-            elseif row == 1 and col == 2 then texture:SetPoint("TOPLEFT", inside, -outsideY); texture:SetPoint("TOPRIGHT", -inside, -outsideY); texture:SetHeight(pieceHeight)
-            elseif row == 1 and col == 3 then texture:SetPoint("TOPRIGHT", -outsideX, -outsideY); texture:SetSize(pieceWidth, pieceHeight)
-            elseif row == 2 and col == 1 then texture:SetPoint("TOPLEFT", outsideX, -inside); texture:SetPoint("BOTTOMLEFT", outsideX, inside); texture:SetWidth(pieceWidth)
-            elseif row == 2 and col == 2 then texture:SetPoint("TOPLEFT", inside, -inside); texture:SetPoint("BOTTOMRIGHT", -inside, inside)
-            elseif row == 2 and col == 3 then texture:SetPoint("TOPRIGHT", -outsideX, -inside); texture:SetPoint("BOTTOMRIGHT", -outsideX, inside); texture:SetWidth(pieceWidth)
-            elseif row == 3 and col == 1 then texture:SetPoint("BOTTOMLEFT", outsideX, outsideY); texture:SetSize(pieceWidth, pieceHeight)
-            elseif row == 3 and col == 2 then texture:SetPoint("BOTTOMLEFT", inside, outsideY); texture:SetPoint("BOTTOMRIGHT", -inside, outsideY); texture:SetHeight(pieceHeight)
-            else texture:SetPoint("BOTTOMRIGHT", -outsideX, outsideY); texture:SetSize(pieceWidth, pieceHeight) end
-        end
+        local fillPieces, borderCorners, borderEdges = {}, {}, {}
         -- WoW 没有 CSS blur。三层向下扩散的低透明黑底近似
         -- 0 10px 28px rgba(0,0,0,.55)，只在菜单生成时创建，没有 OnUpdate。
         for shadowIndex, shadow in ipairs({
@@ -1739,17 +1875,124 @@ if _G.MenuStyleMixin and _G.CreateFromMixins then
             texture:SetDrawLayer("BACKGROUND", -8 + shadowIndex)
         end
 
-        for layer = 1, 2 do
-            for row = 1, 3 do
-                for col = 1, 3 do
-                    local texture = self:AttachTexture()
-                    texture:SetTexture(MODERN_MEDIA .. "FillR10.tga", "CLAMP", "CLAMP", "LINEAR")
-                    texture:SetTexCoord(u[col], u[col + 1], v[row], v[row + 1])
-                    texture:SetVertexColor(unpack(layer == 1 and MC.popupBorder or MC.popup))
-                    Anchor(texture, row, col, layer == 2 and physicalPixel or 0)
+        for row = 1, 3 do
+            for col = 1, 3 do
+                local texture = self:AttachTexture()
+                MODERN.surfaceAtlas:ConfigureTexture(texture)
+                texture:SetVertexColor(unpack(MC.popup))
+                texture:SetDrawLayer("BACKGROUND", 0)
+                fillPieces[#fillPieces + 1] = { texture = texture, row = row, col = col }
+            end
+        end
+        for _, corner in ipairs({ { 1, 1 }, { 1, 3 }, { 3, 1 }, { 3, 3 } }) do
+            local row, col = corner[1], corner[2]
+            local texture = self:AttachTexture()
+            MODERN.surfaceAtlas:ConfigureTexture(texture)
+            texture:SetVertexColor(unpack(MC.popupBorder))
+            texture:SetDrawLayer("BORDER", 0)
+            borderCorners[#borderCorners + 1] = { texture = texture, row = row, col = col }
+        end
+        for _, side in ipairs({ "TOP", "BOTTOM", "LEFT", "RIGHT" }) do
+            local texture = self:AttachTexture()
+            MODERN.surfaceAtlas:ConfigureTexture(texture)
+            MODERN.surfaceAtlas:SetSolidTexCoord(texture)
+            texture:SetVertexColor(unpack(MC.popupBorder))
+            texture:SetDrawLayer("BORDER", 1)
+            borderEdges[#borderEdges + 1] = { texture = texture, side = side }
+        end
+        local function RefreshSurface()
+            local metrics = MODERN.surfaceAtlas:GetMetrics(self, radius, 1)
+            if not metrics then return end
+            local pixel = metrics.pixel
+            local width = metrics.widthPixels * pixel
+            local height = metrics.heightPixels * pixel
+            local corner = metrics.radiusPixels * pixel
+            local thickness = metrics.strokePixels * pixel
+            local xs = {
+                metrics.offsetX,
+                metrics.offsetX + corner,
+                metrics.offsetX + width - corner,
+                metrics.offsetX + width,
+            }
+            local ys = { 0, corner, height - corner, height }
+            for _, piece in ipairs(fillPieces) do
+                local texture = piece.texture
+                texture:ClearAllPoints()
+                if metrics.radiusPixels == 0 then
+                    if piece.row == 2 and piece.col == 2 then
+                        MODERN.surfaceAtlas:SetSolidTexCoord(texture)
+                        texture:SetPoint("TOPLEFT", self, "TOPLEFT", metrics.offsetX, metrics.offsetY)
+                        texture:SetSize(width, height)
+                        texture:Show()
+                    else
+                        texture:Hide()
+                    end
+                else
+                    local pieceWidth = xs[piece.col + 1] - xs[piece.col]
+                    local pieceHeight = ys[piece.row + 1] - ys[piece.row]
+                    if piece.row ~= 2 and piece.col ~= 2 then
+                        MODERN.surfaceAtlas:SetCornerTexCoord(texture,
+                            metrics.radiusPixels, 0, piece.row, piece.col)
+                    else
+                        MODERN.surfaceAtlas:SetSolidTexCoord(texture)
+                    end
+                    texture:SetPoint("TOPLEFT", self, "TOPLEFT", xs[piece.col], metrics.offsetY - ys[piece.row])
+                    texture:SetSize(math.max(.001, pieceWidth), math.max(.001, pieceHeight))
+                    texture:SetShown(pieceWidth > 0 and pieceHeight > 0)
+                end
+            end
+            local degenerateBorder = metrics.widthPixels <= metrics.strokePixels * 2
+                or metrics.heightPixels <= metrics.strokePixels * 2
+            for _, piece in ipairs(borderCorners) do
+                local texture = piece.texture
+                texture:ClearAllPoints()
+                if metrics.radiusPixels > 0 and not degenerateBorder then
+                    MODERN.surfaceAtlas:SetCornerTexCoord(texture,
+                        metrics.radiusPixels, metrics.strokePixels, piece.row, piece.col)
+                    texture:SetPoint("TOPLEFT", self, "TOPLEFT", xs[piece.col], metrics.offsetY - ys[piece.row])
+                    texture:SetSize(corner, corner)
+                    texture:Show()
+                else
+                    texture:Hide()
+                end
+            end
+            for _, piece in ipairs(borderEdges) do
+                local texture = piece.texture
+                MODERN.surfaceAtlas:SetSolidTexCoord(texture)
+                texture:ClearAllPoints()
+                if degenerateBorder then
+                    if piece.side == "TOP" then
+                        texture:SetPoint("TOPLEFT", self, "TOPLEFT", metrics.offsetX, metrics.offsetY)
+                        texture:SetSize(width, height)
+                        texture:Show()
+                    else
+                        texture:Hide()
+                    end
+                elseif piece.side == "TOP" then
+                    texture:SetPoint("TOPLEFT", self, "TOPLEFT", xs[2], metrics.offsetY)
+                    texture:SetSize(math.max(.001, width - corner * 2), thickness)
+                    texture:SetShown(width > corner * 2)
+                elseif piece.side == "BOTTOM" then
+                    texture:SetPoint("TOPLEFT", self, "TOPLEFT", xs[2], metrics.offsetY - height + thickness)
+                    texture:SetSize(math.max(.001, width - corner * 2), thickness)
+                    texture:SetShown(width > corner * 2)
+                elseif piece.side == "LEFT" then
+                    texture:SetPoint("TOPLEFT", self, "TOPLEFT", metrics.offsetX, metrics.offsetY - corner)
+                    texture:SetSize(thickness, math.max(.001, height - corner * 2))
+                    texture:SetShown(height > corner * 2)
+                else
+                    texture:SetPoint("TOPLEFT", self, "TOPLEFT", metrics.offsetX + width - thickness, metrics.offsetY - corner)
+                    texture:SetSize(thickness, math.max(.001, height - corner * 2))
+                    texture:SetShown(height > corner * 2)
                 end
             end
         end
+        self:HookScript("OnSizeChanged", RefreshSurface)
+        self:HookScript("OnShow", RefreshSurface)
+        self:RegisterEvent("UI_SCALE_CHANGED")
+        self:RegisterEvent("DISPLAY_SIZE_CHANGED")
+        self:HookScript("OnEvent", RefreshSurface)
+        RefreshSurface()
     end
     function EXUI.ModernMenuStyleMixin:GetInset()
         return { left = 6, top = 6, right = 6, bottom = 6 }
@@ -2080,7 +2323,7 @@ local function PaintModernMenuRow(frame)
     if fontString then
         local textColor = not frame._exModernMenuEnabled and MC.disabledText
             or (useSelectedVisual and MC.lightBlue)
-            or (frame._exModernMenuHover and MC.white)
+            or (frame._exModernMenuHover and MC.text)
             or MC.text
         fontString:SetTextColor(unpack(textColor))
     end
@@ -2173,7 +2416,7 @@ local function StyleModernMenuDescription(description, role)
             AttachModernMenuSelectionMark(frame, enabled, selected)
         end
         AttachModernMenuSubmenuArrow(frame, enabled, selected)
-        if frame.divider then frame.divider:SetVertexColor(unpack(MC.border)) end
+        if frame.divider then frame.divider:SetVertexColor(unpack(MC.headerDivider)) end
     end)
     return description
 end
@@ -4465,7 +4708,7 @@ function EXUI:CreateSettingsCard(parent, options)
     if isNew then
         local initialWidth = parent and parent.GetWidth and tonumber(parent:GetWidth()) or nil
         card:SetSize(math.max(64, initialWidth or 320), SETTINGS_CARD_HEADER_HEIGHT)
-        EXUI:SetControlSurface(card, 10, MC.panel, MC.border)
+        EXUI:SetControlSurface(card, 10, MC.raised, MC.cardBorder)
 
         local header = CreateFrame("Frame", nil, card)
         header:SetPoint("TOPLEFT", card, "TOPLEFT", 1, -1)
@@ -4668,7 +4911,7 @@ function EXUI:CreateSettingsCard(parent, options)
             card._exSettingsCardMaxBodyHeight ~= nil or card._exSettingsCardOwnsScroll
         )
     end
-    EXUI:SetControlSurface(card, 10, MC.panel, MC.border)
+    EXUI:SetControlSurface(card, 10, MC.raised, MC.cardBorder)
     card._exSettingsCardHeader._exModernHover = nil
     card._exSettingsCardPaintHeader()
     card:SetCollapsed(options.collapsed == true, true)
@@ -4719,8 +4962,8 @@ local SETTINGS_LIST_EXBOSS_PILL_GAP = 7
 local SETTINGS_LIST_EXBOSS_PILL_STACK_BREAKPOINT = 365
 -- The screenshots define structure and rhythm, not a replacement palette.
 -- Settings lists stay on the project's existing shared visual theme.
-local SETTINGS_LIST_CARD_FILL = MC.panel
-local SETTINGS_LIST_CARD_BORDER = MC.border
+local SETTINGS_LIST_CARD_FILL = MC.raised
+local SETTINGS_LIST_CARD_BORDER = MC.cardBorder
 local SETTINGS_LIST_TITLE = MC.text
 local SETTINGS_LIST_DESCRIPTION = MC.muted
 
@@ -10865,6 +11108,146 @@ local function ApplyStandardModulePreviewDockStyle(dock)
     EXUI:ApplyModernPanel(dock, true)
 end
 
+MODERN.standardPreview = {
+    toolbarHeight = 32,
+    shellTop = 6,
+    canvasGap = 6,
+    shellBottom = 8,
+    shellInset = 10,
+    backgroundPresets = {
+        { 0.22, 0.25, 0.29 },
+        { 0.16, 0.18, 0.21 },
+        { 0.11, 0.13, 0.16 },
+        { 0.18, 0.21, 0.20 },
+    },
+}
+
+function MODERN.standardPreview.RefreshBackgroundButtons(canvas)
+    local controls = canvas and canvas._exPreviewBackgroundControls
+    if not controls then return end
+    local selected = tonumber(canvas._exPreviewBackgroundSelection) or 1
+    for index, button in ipairs(controls.buttons) do
+        if button.selection then button.selection:SetShown(index == selected) end
+    end
+    local current = canvas._exPreviewBackgroundColor
+    if current and controls.customSwatch then
+        controls.customSwatch:SetVertexColor(current.r, current.g, current.b, 1)
+    end
+end
+
+function MODERN.standardPreview.SetBackground(canvas, r, g, b, selection)
+    if not canvas then return end
+    canvas._exPreviewBackgroundColor = { r = r, g = g, b = b }
+    canvas._exPreviewBackgroundSelection = selection
+    canvas:SetBackdropColor(r, g, b, 1)
+    MODERN.standardPreview.RefreshBackgroundButtons(canvas)
+end
+
+function MODERN.standardPreview.OpenBackgroundPicker(canvas)
+    local picker = _G.ColorPickerFrame
+    if not canvas or not picker or type(picker.SetupColorPickerAndShow) ~= "function" then return end
+    local current = canvas._exPreviewBackgroundColor or { r = 0.16, g = 0.18, b = 0.21 }
+    local original = { r = current.r, g = current.g, b = current.b }
+    local originalSelection = tonumber(canvas._exPreviewBackgroundSelection) or 1
+    local function ApplyPickerColor()
+        local r, g, b = picker:GetColorRGB()
+        MODERN.standardPreview.SetBackground(canvas, r, g, b, 5)
+    end
+    picker:SetupColorPickerAndShow({
+        r = current.r,
+        g = current.g,
+        b = current.b,
+        hasOpacity = false,
+        swatchFunc = ApplyPickerColor,
+        cancelFunc = function(previous)
+            MODERN.standardPreview.SetBackground(canvas,
+                previous and previous.r or original.r,
+                previous and previous.g or original.g,
+                previous and previous.b or original.b,
+                originalSelection)
+        end,
+    })
+end
+
+function MODERN.standardPreview.ApplyCanvasStyle(canvas)
+    canvas:SetBackdrop({
+        bgFile = "Interface\\Buttons\\WHITE8X8",
+        edgeFile = "Interface\\Buttons\\WHITE8X8",
+        edgeSize = 1,
+    })
+    canvas:SetBackdropBorderColor(0.30, 0.34, 0.39, 1)
+    if not canvas._exPreviewBackgroundColor then
+        local preset = MODERN.standardPreview.backgroundPresets[1]
+        MODERN.standardPreview.SetBackground(canvas, preset[1], preset[2], preset[3], 1)
+    else
+        local color = canvas._exPreviewBackgroundColor
+        canvas:SetBackdropColor(color.r, color.g, color.b, 1)
+    end
+end
+
+function MODERN.standardPreview.CreateToolbar(shell, canvas)
+    local toolbar = CreateFrame("Frame", nil, shell)
+    toolbar:SetHeight(MODERN.standardPreview.toolbarHeight)
+    toolbar:SetPoint("TOPLEFT", shell, "TOPLEFT", MODERN.standardPreview.shellInset, -MODERN.standardPreview.shellTop)
+    toolbar:SetPoint("TOPRIGHT", shell, "TOPRIGHT", -MODERN.standardPreview.shellInset, -MODERN.standardPreview.shellTop)
+
+    local label = EXUI:CreateVisualFontString(toolbar, EXFONTFRAME, "GameFontHighlightSmall")
+    label:SetText(L["预览背景"] or "预览背景")
+    label:SetTextColor(unpack(MC.muted))
+
+    local controls = { buttons = {}, label = label }
+    canvas._exPreviewBackgroundControls = controls
+    for index = 1, 5 do
+        local button = EXUI:CreateButton(toolbar, 26, 26, "", nil, { compact = true })
+        button:ClearAllPoints()
+        button:SetPoint("RIGHT", toolbar, "RIGHT", -((5 - index) * 32), 0)
+        local swatch = EXUI:CreateVisualTexture(button, EXBORDERFRAME)
+        swatch:SetTexture("Interface\\Buttons\\WHITE8X8")
+        swatch:SetPoint("TOPLEFT", button, "TOPLEFT", 4, -4)
+        swatch:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -4, 4)
+        local selection = CreateFrame("Frame", nil, button, "BackdropTemplate")
+        selection:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
+        selection:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
+        selection:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 2 })
+        selection:SetBackdropBorderColor(0.42, 0.73, 1, 1)
+        selection:EnableMouse(false)
+        button.selection = selection
+        button.swatch = swatch
+        controls.buttons[index] = button
+        if index <= #MODERN.standardPreview.backgroundPresets then
+            local presetIndex = index
+            local preset = MODERN.standardPreview.backgroundPresets[index]
+            swatch:SetVertexColor(preset[1], preset[2], preset[3], 1)
+            button:SetScript("OnClick", function()
+                MODERN.standardPreview.SetBackground(canvas, preset[1], preset[2], preset[3], presetIndex)
+            end)
+            button:SetScript("OnEnter", function(self)
+                if GameTooltip then
+                    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                    GameTooltip:SetText((L["预览背景"] or "预览背景") .. " " .. tostring(presetIndex))
+                    GameTooltip:Show()
+                end
+            end)
+        else
+            controls.customSwatch = swatch
+            button:SetScript("OnClick", function() MODERN.standardPreview.OpenBackgroundPicker(canvas) end)
+            button:SetScript("OnEnter", function(self)
+                if GameTooltip then
+                    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                    GameTooltip:SetText(L["自定义预览背景"] or "自定义预览背景")
+                    GameTooltip:Show()
+                end
+            end)
+        end
+        button:SetScript("OnLeave", function(self)
+            if GameTooltip and GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+        end)
+    end
+    label:SetPoint("RIGHT", controls.buttons[1], "LEFT", -8, 0)
+    MODERN.standardPreview.RefreshBackgroundButtons(canvas)
+    return toolbar
+end
+
 local function ResolveStandardModulePageLayout(layout, context)
     local resolved = type(layout) == "function" and layout(context) or layout
     if type(resolved) ~= "table" then
@@ -11010,6 +11393,15 @@ function EXUI:CreateStandardModulePage(options)
         if self.previewDock then self.previewDock:SetHeight(height) end
     end
 
+    function controller:SyncInternalPreviewShellHeight()
+        if self.dockPolicy ~= "internal-top" or not self.previewDock or not self.previewShell then return end
+        local canvasHeight = math.max(1, tonumber(self.previewDock:GetHeight()) or self.dockHeight)
+        local shellHeight = MODERN.standardPreview.shellTop + MODERN.standardPreview.toolbarHeight
+            + MODERN.standardPreview.canvasGap + canvasHeight + MODERN.standardPreview.shellBottom
+        self.previewShell:SetHeight(shellHeight)
+        if self.previewRow then self.previewRow:SetHeight(shellHeight) end
+    end
+
     function controller:RefreshGridControls()
         local session = self.cardSession
         if session and not session.released and type(session.RefreshValues) == "function" then
@@ -11074,6 +11466,8 @@ function EXUI:CreateStandardModulePage(options)
             EXUI:SetPreviewDockScrollOwner(self.previewDock, self, nil)
         end)
         pcall(function()
+            if self.previewRow then self.previewRow:Hide() end
+            if self.previewShell and self.previewShell ~= self.previewDock then self.previewShell:Hide() end
             if self.previewDock then self.previewDock:Hide() end
         end)
     end
@@ -11116,6 +11510,8 @@ function EXUI:CreateStandardModulePage(options)
         self:ReleaseGrid()
         self:ClearActiveOwnership()
         EXUI:SetPreviewDockScrollOwner(self.previewDock, self, nil)
+        if self.previewRow then self.previewRow:Hide() end
+        if self.previewShell and self.previewShell ~= self.previewDock then self.previewShell:Hide() end
         if self.previewDock then self.previewDock:Hide() end
     end
 
@@ -11147,17 +11543,50 @@ function EXUI:CreateStandardModulePage(options)
         scrollChild:SetHeight(1)
         scrollFrame:SetScrollChild(scrollChild)
 
-        local dock = CreateFrame("Frame", nil, contentFrame, "BackdropTemplate")
-        ApplyStandardModulePreviewDockStyle(dock)
-        dock:SetHeight(self.dockHeight)
+        local previewRow, previewShell, dock, previewToolbar
+        if self.dockPolicy == "internal-top" then
+            previewRow = CreateFrame("Frame", nil, contentFrame)
+            previewShell = CreateFrame("Frame", nil, previewRow, "BackdropTemplate")
+            ApplyStandardModulePreviewDockStyle(previewShell)
+            dock = CreateFrame("Frame", nil, previewShell, "BackdropTemplate")
+            MODERN.standardPreview.ApplyCanvasStyle(dock)
+            previewToolbar = MODERN.standardPreview.CreateToolbar(previewShell, dock)
+            dock:SetPoint("TOPLEFT", previewToolbar, "BOTTOMLEFT", 0, -MODERN.standardPreview.canvasGap)
+            dock:SetPoint("TOPRIGHT", previewToolbar, "BOTTOMRIGHT", 0, -MODERN.standardPreview.canvasGap)
+            dock:SetHeight(self.dockHeight)
+        else
+            dock = CreateFrame("Frame", nil, contentFrame, "BackdropTemplate")
+            previewShell = dock
+            ApplyStandardModulePreviewDockStyle(dock)
+            dock:SetHeight(self.dockHeight)
+        end
 
         self.scrollFrame = scrollFrame
         self.scrollChild = scrollChild
+        self.previewRow = previewRow
+        self.previewShell = previewShell
+        self.previewToolbar = previewToolbar
         self.previewDock = dock
+        self:SyncInternalPreviewShellHeight()
+        if previewToolbar and type(EXUI.SetPanelStylePresetControlsHost) == "function" then
+            EXUI:SetPanelStylePresetControlsHost(dock, previewToolbar, "inline")
+        end
         -- 页面只保存标准宿主引用，不能保留 module private preview/session。
         self.page._scrollFrame = scrollFrame
         self.page._scrollChild = scrollChild
         self.page._previewDock = dock
+        self.page._previewShell = previewShell
+
+        if self.dockPolicy == "internal-top" then
+            dock:HookScript("OnSizeChanged", function()
+                self:SyncInternalPreviewShellHeight()
+            end)
+            contentFrame:HookScript("OnSizeChanged", function()
+                if self.contentFrame ~= contentFrame then return end
+                self:SyncScrollChildWidth(true)
+                self:PlacePreviewDock(contentFrame)
+            end)
+        end
 
         scrollFrame:HookScript("OnHide", function()
             self:Teardown()
@@ -11191,11 +11620,30 @@ function EXUI:CreateStandardModulePage(options)
             dock:SetWidth(self.externalDockWidth)
             return
         end
-        dock:SetParent(contentFrame)
-        dock:ClearAllPoints()
-        dock:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 4, -4)
-        dock:SetPoint("TOPRIGHT", contentFrame, "TOPRIGHT", -24, -4)
-        dock:SetHeight(self.dockHeight)
+        local row, shell = self.previewRow, self.previewShell
+        if not row or not shell then error("internal-top PreviewDock requires preview row and shell", 2) end
+        self:SyncScrollChildWidth(true)
+        local grid = _G.ExwindGrid
+        if not grid or type(grid.ResolveSettingsListWidth) ~= "function" then
+            error("internal-top PreviewDock requires ExwindGrid:ResolveSettingsListWidth", 2)
+        end
+        local defaults = type(grid.CardLayoutDefaults) == "table" and grid.CardLayoutDefaults or {}
+        local rawAvailableWidth = math.max(1, (tonumber(self.scrollChild:GetWidth()) or 1)
+            - math.max(0, tonumber(defaults.left) or 0)
+            - math.max(0, tonumber(defaults.right) or 0))
+        local previewWidth = grid:ResolveSettingsListWidth(rawAvailableWidth, 75)
+
+        row:SetParent(contentFrame)
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 4, -4)
+        -- ScrollChild 从 contentFrame 左侧 +4 起算且比 contentFrame 窄 16px；
+        -- row 以 -12 收口后中心与下方 75% 普通设置卡中心完全一致。
+        row:SetPoint("TOPRIGHT", contentFrame, "TOPRIGHT", -12, -4)
+        shell:SetParent(row)
+        shell:ClearAllPoints()
+        shell:SetPoint("TOP", row, "TOP", 0, 0)
+        shell:SetWidth(previewWidth)
+        self:SyncInternalPreviewShellHeight()
     end
 
     function controller:Render(contentFrame)
@@ -11210,10 +11658,12 @@ function EXUI:CreateStandardModulePage(options)
         local generation = self.renderGeneration
         local scrollFrame, scrollChild, dock = self.scrollFrame, self.scrollChild, self.previewDock
 
-        -- 每次 page show/render 都强制统一 PreviewDock 色，不能继承池化宿主旧背景。
+        -- 外壳沿公共设置卡宽度规则居中；画布背景是页面预览态，不写模块配置。
         self:PlacePreviewDock(contentFrame)
-        ApplyStandardModulePreviewDockStyle(dock)
+        ApplyStandardModulePreviewDockStyle(self.previewShell or dock)
         EXUI:SetPreviewDockScrollOwner(dock, self, scrollFrame)
+        if self.previewRow then self.previewRow:Show() end
+        if self.previewShell then self.previewShell:Show() end
         dock:Show()
 
         scrollFrame:SetParent(contentFrame)
@@ -11221,7 +11671,7 @@ function EXUI:CreateStandardModulePage(options)
         if self.dockPolicy == "external-left" then
             scrollFrame:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 4, -4)
         else
-            scrollFrame:SetPoint("TOPLEFT", dock, "BOTTOMLEFT", 0, -6)
+            scrollFrame:SetPoint("TOPLEFT", self.previewRow, "BOTTOMLEFT", 0, -6)
         end
         scrollFrame:SetPoint("BOTTOMRIGHT", contentFrame, "BOTTOMRIGHT", -18, 4)
         scrollFrame:SetVerticalScroll(0)

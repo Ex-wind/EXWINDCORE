@@ -28,6 +28,16 @@ local function Copy(value)
     return result
 end
 
+local function Composite(base, overlay)
+    local alpha = overlay[4] or 1
+    return {
+        base[1] + (overlay[1] - base[1]) * alpha,
+        base[2] + (overlay[2] - base[2]) * alpha,
+        base[3] + (overlay[3] - base[3]) * alpha,
+        1,
+    }
+end
+
 local function Normalize(host, value)
     if host.mode == "multiple" then
         local selected = {}
@@ -62,33 +72,53 @@ Paint = function(button)
     local hover = button._choiceHover and not disabled
     local pressed = button._choicePressed and not disabled
     button:SetEnabled(not disabled)
-    local fill = selected and (pressed and Appearance.colors.menuSelectedHover or Appearance.colors.blueSoft)
-        or (pressed and Appearance.colors.secondaryPressedFill
-            or (hover and Appearance.colors.hover or Appearance.colors.input))
-    local edge = selected and Appearance.colors.focus
-        or (pressed and Appearance.colors.secondaryBorder
-            or (hover and Appearance.colors.focus or Appearance.colors.border))
-    if disabled then fill, edge = Appearance.colors.disabledFill, Appearance.colors.disabledBorder end
+    local fill, edge, textColor
     if host.choiceStyle == "segmented" and not button._choiceArrow then
-        if selected or hover then
-            local tint = selected and Appearance.colors.secondaryPressedFill or Appearance.colors.hover
-            local base, alpha = Appearance.colors.input, tint[4] or 1
-            fill = disabled and Appearance.colors.disabledFill or {
-                base[1] + (tint[1] - base[1]) * alpha,
-                base[2] + (tint[2] - base[2]) * alpha,
-                base[3] + (tint[3] - base[3]) * alpha, 1,
-            }
+        if disabled then
+            fill, textColor = Appearance.colors.disabledFill, Appearance.colors.disabledText
+            UI:SetControlSurface(button, 4, fill, fill)
+        elseif pressed then
+            fill, textColor = Composite(Appearance.colors.input, Appearance.colors.toolActive),
+                Appearance.colors.accentActive
+            UI:SetControlSurface(button, 4, fill, fill)
+        elseif selected then
+            fill, textColor = Composite(Appearance.colors.input, Appearance.colors.segmentSelected),
+                Appearance.colors.white
+            UI:SetControlSurface(button, 4, fill, fill)
+        elseif hover then
+            fill, textColor = Composite(Appearance.colors.input, Appearance.colors.toolHover),
+                Appearance.colors.text
             UI:SetControlSurface(button, 4, fill, fill)
         else
             UI:ClearControlSurface(button)
+            textColor = Appearance.colors.segmentText
         end
     else
+        local base = Appearance.colors.subcard
+        if disabled then
+            fill, edge, textColor = Appearance.colors.disabledFill,
+                Appearance.colors.disabledBorder, Appearance.colors.disabledText
+        elseif pressed then
+            fill = Composite(base, Appearance.colors.toolActive)
+            edge = selected and Appearance.colors.modifiedBorder or Appearance.colors.subcardHoverBorder
+            textColor = host.variant == "tabs" and Appearance.colors.accentActive
+                or (selected and Appearance.colors.tagSelectedText or Appearance.colors.tagHoverText)
+        elseif selected then
+            fill = Composite(base, hover and Appearance.colors.tagSelectedHover
+                or Appearance.colors.tagSelected)
+            edge = Appearance.colors.modifiedBorder
+            textColor = Appearance.colors.tagSelectedText
+        elseif hover then
+            fill = Composite(base, Appearance.colors.rowHover)
+            edge = Appearance.colors.subcardHoverBorder
+            textColor = Appearance.colors.tagHoverText
+        else
+            fill, edge, textColor = base, Appearance.colors.subcardBorder,
+                Appearance.colors.tagText
+        end
         UI:SetControlSurface(button, 4, fill, edge)
     end
-    button.label:SetTextColor(unpack(disabled and Appearance.colors.disabledText
-        or (selected and Appearance.colors.lightBlue
-            or (pressed and Appearance.colors.secondaryPressedText
-                or (hover and Appearance.colors.text or Appearance.colors.muted)))))
+    button.label:SetTextColor(unpack(textColor))
     button.line:SetColorTexture(unpack(Appearance.colors.focus))
     button.line:SetShown(host.variant == "tabs" and selected and not button._choiceArrow)
     button.icon:SetAlpha(disabled and .35 or 1)
@@ -274,7 +304,7 @@ local function Create(parent, options, tabs)
     host.variant = tabs and "tabs" or "options"
     host.choiceStyle = not tabs and (options.appearance == "compact" or options.appearance == "form" or options.appearance == "dungeon-aura" or options.appearance == "load-card" or options.appearance == "segmented") and options.appearance or nil
     if host.choiceStyle == "segmented" or host.choiceStyle == "compact" or host.choiceStyle == "load-card" then
-        UI:SetControlSurface(host, 4, Appearance.colors.input, Appearance.colors.border)
+        UI:SetControlSurface(host, 4, Appearance.colors.input, Appearance.colors.inputBorder)
     else
         UI:ClearControlSurface(host)
     end

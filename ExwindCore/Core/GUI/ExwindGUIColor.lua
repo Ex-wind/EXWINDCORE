@@ -36,27 +36,27 @@ end
 -- 原始值。每個都標了 CIE L*，改動時請維持相鄰階的距離。
 -- =========================================================================
 local C = {
-    canvas    = "131518",  -- L*  6.7   最外層背景
-    panel     = "16191e",  -- L*  8.7   側欄 / 導覽 / 標題列
-    card      = "1d1f24",  -- L* 11.7   卡片，與 canvas 只差 5.0 以求融合
+    canvas    = "131619",  -- 最外層背景
+    panel     = "171a1f",  -- 側欄 / 導覽 / 面板
+    card      = "1c1f24",  -- 外卡
     cardAlt   = "202328",  -- L* 13.4   交替底色
-    head      = "212328",  -- L* 13.7   卡片標題列 / 子卡
-    ctrl      = "1b1d22",  -- L* 10.8   輸入框，微凹 0.9，仍高於 canvas
-    ctrlHover = "212328",  -- L* 13.7
-    pop       = "2b2d33",  -- L* 18.5   彈出層，必須高於它蓋住的東西
-    popSearch = "1b1e22",  -- L* 11.1
+    head      = "1f2328",  -- 卡片標題列 / 子卡
+    ctrl      = "14171c",  -- 輸入框 / 次要按鈕
+    ctrlHover = "1f2328",
+    pop       = "292e32",  -- 彈出層，必須高於它蓋住的東西
+    popSearch = "1a1e22",
 
-    bSubtle   = "2a2d31",  -- L* 18.3   分隔線 / 非互動邊框
-    bDef      = "3c3f45",  -- L* 26.6   卡片邊框
-    bHover    = "505359",  -- L* 35.2
-    bStrong   = "696d72",  -- L* 45.8
-    iBorder   = "393d42",  -- L* 25.6   輸入框邊框，比卡片邊框柔一階
-    iHover    = "4d5156",  -- L* 34.3
+    bSubtle   = "292d31",  -- 分隔線 / 子卡邊框 / 非互動邊框
+    bDef      = "3b3f44",  -- 面板 / 外卡邊框
+    bHover    = "4f5458",
+    bStrong   = "686d72",
+    iBorder   = "373b3f",  -- 輸入框邊框
+    iHover    = "4b5054",
 
-    text      = "f0f2f4",  -- L* 95.4   對卡片 14.69
-    dim       = "b6b8ba",  -- L* 74.7   對卡片  8.29
-    ph        = "7b7e84",  -- L* 52.7   對卡片  4.05
-    dis       = "6e7177",  -- L* 47.6   對卡片  3.37
+    text      = "d8dadc",
+    dim       = "96989b",
+    ph        = "6a6d71",
+    dis       = "5b5f62",
 
     aFg       = "70b8ff",  -- L* 72.9   淺藍：前景、focus、圖示、裝飾條
     aText     = "c2e6ff",  -- L* 89.5   選中文字 / 卡片標題
@@ -84,12 +84,17 @@ ExwindTools.GUIColors = {
     page            = H(C.canvas),
     panel           = H(C.panel),
     panelBorder     = H(C.bDef),
-    header          = H(C.panel),
-    headerHover     = H(C.head),
+    header          = H(C.head),
+    headerHover     = H(C.bSubtle),
     headerDivider   = H(C.bSubtle),
     card            = H(C.card),
-    cardBorder      = H(C.bDef),          -- 新增
+    cardBorder      = H(C.bDef),
     cardHoverBorder = H(C.bHover),
+    subcard         = H(C.head),
+    subcardBorder   = H(C.bSubtle),
+    subcardHoverBorder = H(C.bDef),
+    sectionDivider  = H(C.bSubtle),
+    rowHover        = NeutralA(0.08),
 
     -- ---------- 文字 ----------
     text            = H(C.text),
@@ -104,7 +109,8 @@ ExwindTools.GUIColors = {
     accentHover  = H(C.aText),
     accentActive = H(C.aHover),
     selectedText = H(C.aText),
-    focusRing    = AccentA(0.20),         -- 新增，全域唯一
+    focusRing    = AccentA(0.20),
+    modifiedBorder = AccentA(0.50),
 
     primaryFill       = H(SOLID),
     primaryFillHover  = H(SOLID_HOVER),
@@ -113,10 +119,10 @@ ExwindTools.GUIColors = {
 
     -- ---------- 輸入框 ----------
     input               = H(C.ctrl),
-    inputBorder         = H(C.iBorder),   -- 新增
+    inputBorder         = H(C.iBorder),
     inputHover          = H(C.ctrlHover),
     inputHoverBorder    = H(C.iHover),
-    inputFocusBorder    = H(C.aFg),       -- 新增
+    inputFocusBorder    = H(C.aFg),
     inputDisabled       = H(C.ctrl),
     inputDisabledBorder = H(C.bSubtle),
 
@@ -133,6 +139,9 @@ ExwindTools.GUIColors = {
     -- ---------- 滑桿 ----------
     sliderTrack      = H(C.bDef),
     sliderTrackHover = H(C.bHover),
+    sliderThumb      = H(C.aFg),
+    sliderThumbHover = H(C.aText),
+    sliderThumbActive = H(C.aHover),
 
     -- ---------- 核取方塊 ----------
     checkboxBorder        = H(C.iHover),
@@ -142,6 +151,27 @@ ExwindTools.GUIColors = {
     checkboxCheckedActive = H(SOLID_ACTIVE),
     disabledFill          = H(C.ctrl),
     disabledBorder        = H(C.bSubtle),
+    switchOn              = H(SOLID),
+    switchOnHover         = H(SOLID_HOVER),
+    switchOff             = H(C.bHover),
+    switchOffHover        = H(C.bStrong),
+    switchKnobOn          = Hex(0xff, 0xff, 0xff),
+    switchKnobOff         = H(C.dim),
+
+    -- ---------- 選項 / 分段 / 工具狀態 ----------
+    tagBorder        = H(C.bDef),
+    tagText          = H(C.dim),
+    tagHoverBorder   = H(C.bHover),
+    tagHoverText     = H(C.text),
+    tagSelected      = AccentA(0.13),
+    tagSelectedBorder = H(C.aFg),
+    tagSelectedText  = H(C.aText),
+    tagSelectedHover = AccentA(0.20),
+    segmentSelected  = NeutralA(0.16),
+    segmentText      = H(C.dim),
+    toolHover        = NeutralA(0.10),
+    toolActive       = NeutralA(0.16),
+    toolOn           = AccentA(0.13),
 
     -- ---------- 次要 / 危險 ----------
     secondaryFill        = H(C.ctrl),

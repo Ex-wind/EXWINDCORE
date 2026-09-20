@@ -306,6 +306,8 @@ local function CompositeThemeColor(base, overlay, alphaOverride)
 end
 
 MODERN.checkboxPressedFill = CompositeThemeColor(MC.input, MC.toolActive)
+MODERN.checkboxHoverFill = CompositeThemeColor(MC.input, MC.rowHover)
+MODERN.switchOffHoverFill = CompositeThemeColor(MC.switchOff, MC.switchOffHover)
 MODERN.settingsCardHoverFill = CompositeThemeColor(MC.subcard, MC.rowHover)
 MODERN.settingsCardPressedFill = CompositeThemeColor(MC.subcard, MC.toolActive)
 MODERN.settingsCardSelectedFill = CompositeThemeColor(MC.subcard, MC.tagSelected)
@@ -1295,7 +1297,7 @@ local function PaintModernCheckbox(container, skipPillMeasure)
             fill = hover and MC.tagSelectedHover or MC.tagSelected
             edge = MC.tagSelectedBorder
         else
-            fill = MC.transparent
+            fill = hover and MC.rowHover or MC.transparent
             edge = hover and MC.tagHoverBorder or MC.tagBorder
         end
         EXUI:SetControlSurface(surface, 10, fill, edge)
@@ -1328,9 +1330,12 @@ local function PaintModernCheckbox(container, skipPillMeasure)
             fill, edge = MC.disabledFill, MC.disabledBorder
         elseif selected then
             fill = pressed and MC.checkboxCheckedActive or (hover and MC.switchOnHover or MC.switchOn)
-            edge = fill
+            -- The selected track is a single-color capsule. Drawing the same
+            -- color through both fill and border masks doubles curved AA pixels.
+            edge = MC.transparent
         else
-            fill = pressed and MC.checkboxHoverBorder or (hover and MC.switchOffHover or MC.switchOff)
+            fill = pressed and MC.checkboxHoverBorder
+                or (hover and MODERN.switchOffHoverFill or MC.switchOff)
             edge = MC.secondaryFill
         end
         local surface = box._exModernCheckSurface
@@ -1343,9 +1348,10 @@ local function PaintModernCheckbox(container, skipPillMeasure)
         knob:ClearAllPoints()
         knob:SetPoint(selected and "RIGHT" or "LEFT", surface,
             selected and "RIGHT" or "LEFT", selected and -3 or 3, 0)
-        EXUI:SetControlSurface(knob, 10,
-            enabled and (selected and MC.switchKnobOn or MC.switchKnobOff) or MC.disabledText,
-            enabled and (selected and MC.switchKnobOn or MC.switchKnobOff) or MC.disabledText)
+        local knobColor = enabled and (selected and MC.switchKnobOn or MC.switchKnobOff) or MC.disabledText
+        -- One fill mask produces a clean circular edge; a same-color border
+        -- would composite the antialiased rim twice and make it look uneven.
+        EXUI:SetControlSurface(knob, 10, knobColor, MC.transparent)
         knob:Show()
         surface:SetAlpha(1)
         if container.label then
@@ -1421,7 +1427,8 @@ local function PaintModernCheckbox(container, skipPillMeasure)
         fill = pressed and MC.checkboxCheckedActive or (hover and MC.checkboxCheckedHover or MC.checkboxChecked)
         edge = fill
     else
-        fill = pressed and MODERN.checkboxPressedFill or MC.input
+        fill = pressed and MODERN.checkboxPressedFill
+            or (hover and MODERN.checkboxHoverFill or MC.input)
         edge = hover and MC.checkboxHoverBorder or MC.checkboxBorder
     end
     EXUI:SetControlSurface(box._exModernCheckSurface, 4, fill, edge)
@@ -1696,14 +1703,13 @@ local function PaintModernScrollBar(scrollBar)
     local thumbEnabled = scrollEnabled and (not thumb.IsEnabled or thumb:IsEnabled())
     -- MinimalScrollBar keeps its native drag state in `down`; retain our
     -- explicit pressed flag as the immediate fallback around MouseDown/Up.
-    -- Hover alone must not own the active color while a drag leaves the thumb.
-    local thumbActive = thumbEnabled
-        and (thumb._exModernHover or thumb._exModernPressed or thumb.down)
+    -- Idle and hover stay neutral; blue is reserved for an active press/drag.
+    local thumbPressed = thumbEnabled and (thumb._exModernPressed or thumb.down)
 
     EXUI:SetControlSurface(track, 4, MC.transparent, MC.transparent)
     EXUI:SetControlSurface(thumb, 4,
-        thumbEnabled and (thumbActive and MC.blue or MC.inputHoverBorder) or MC.disabled,
-        thumbEnabled and (thumbActive and MC.blue or MC.inputHoverBorder) or MC.disabled)
+        thumbEnabled and (thumbPressed and MC.blue or MC.secondaryBorder) or MC.disabled,
+        thumbEnabled and (thumbPressed and MC.blue or MC.secondaryBorder) or MC.disabled)
 end
 
 -- The current Blizzard ScrollFrameTemplate creates one MinimalScrollBar and
@@ -11071,14 +11077,16 @@ end))
 -- it could stop between Grid Render and preview.render.  Keep the four public
 -- lifecycle stages explicit so the game error has a stable, searchable contract
 -- instead of an anonymous delayed-callback stack.
-local STANDARD_MODULE_PAGE_STAGES = {
-    grid = "grid",
-    slider = "slider",
-    audit = "audit",
-    preview = "preview",
+MODERN.standardModulePage = {
+    stages = {
+        grid = "grid",
+        slider = "slider",
+        audit = "audit",
+        preview = "preview",
+    },
 }
 
-local function BuildStandardModulePageStageError(moduleKey, stage, original)
+function MODERN.standardModulePage.BuildStageError(moduleKey, stage, original)
     local stack
     if type(_G.debugstack) == "function" then
         stack = _G.debugstack(3, 40, 40)
@@ -11094,14 +11102,14 @@ local function BuildStandardModulePageStageError(moduleKey, stage, original)
         .. "\nstack=" .. tostring(stack)
 end
 
-local function RequireStandardModulePageFunction(value, name)
+function MODERN.standardModulePage.RequireFunction(value, name)
     if type(value) ~= "function" then
         error("CreateStandardModulePage requires " .. name .. " function", 3)
     end
     return value
 end
 
-local function ApplyStandardModulePreviewDockStyle(dock)
+function MODERN.standardModulePage.ApplyPreviewDockStyle(dock)
     if not dock then
         error("StandardModulePage requires BackdropTemplate PreviewDock", 3)
     end
@@ -11109,11 +11117,12 @@ local function ApplyStandardModulePreviewDockStyle(dock)
 end
 
 MODERN.standardPreview = {
-    toolbarHeight = 32,
     shellTop = 6,
-    canvasGap = 6,
     shellBottom = 8,
     shellInset = 10,
+    canvasGap = 8,
+    leftRailWidth = 190,
+    rightRailWidth = 54,
     backgroundPresets = {
         { 0.22, 0.25, 0.29 },
         { 0.16, 0.18, 0.21 },
@@ -11187,9 +11196,9 @@ end
 
 function MODERN.standardPreview.CreateToolbar(shell, canvas)
     local toolbar = CreateFrame("Frame", nil, shell)
-    toolbar:SetHeight(MODERN.standardPreview.toolbarHeight)
     toolbar:SetPoint("TOPLEFT", shell, "TOPLEFT", MODERN.standardPreview.shellInset, -MODERN.standardPreview.shellTop)
-    toolbar:SetPoint("TOPRIGHT", shell, "TOPRIGHT", -MODERN.standardPreview.shellInset, -MODERN.standardPreview.shellTop)
+    toolbar:SetPoint("BOTTOMRIGHT", shell, "BOTTOMRIGHT", -MODERN.standardPreview.shellInset,
+        MODERN.standardPreview.shellBottom)
 
     local label = EXUI:CreateVisualFontString(toolbar, EXFONTFRAME, "GameFontHighlightSmall")
     label:SetText(L["预览背景"] or "预览背景")
@@ -11200,7 +11209,7 @@ function MODERN.standardPreview.CreateToolbar(shell, canvas)
     for index = 1, 5 do
         local button = EXUI:CreateButton(toolbar, 26, 26, "", nil, { compact = true })
         button:ClearAllPoints()
-        button:SetPoint("RIGHT", toolbar, "RIGHT", -((5 - index) * 32), 0)
+        button:SetPoint("TOPRIGHT", toolbar, "TOPRIGHT", -14, -16 - ((index - 1) * 28))
         local swatch = EXUI:CreateVisualTexture(button, EXBORDERFRAME)
         swatch:SetTexture("Interface\\Buttons\\WHITE8X8")
         swatch:SetPoint("TOPLEFT", button, "TOPLEFT", 4, -4)
@@ -11243,12 +11252,12 @@ function MODERN.standardPreview.CreateToolbar(shell, canvas)
             if GameTooltip and GameTooltip:GetOwner() == self then GameTooltip:Hide() end
         end)
     end
-    label:SetPoint("RIGHT", controls.buttons[1], "LEFT", -8, 0)
+    label:SetPoint("TOP", toolbar, "TOPRIGHT", -(MODERN.standardPreview.rightRailWidth * 0.5), -1)
     MODERN.standardPreview.RefreshBackgroundButtons(canvas)
     return toolbar
 end
 
-local function ResolveStandardModulePageLayout(layout, context)
+function MODERN.standardModulePage.ResolveLayout(layout, context)
     local resolved = type(layout) == "function" and layout(context) or layout
     if type(resolved) ~= "table" then
         error("StandardModulePage layout must resolve to a table", 3)
@@ -11294,12 +11303,12 @@ function EXUI:CreateStandardModulePage(options)
     if type(binding) ~= "table" or binding.moduleKey ~= moduleKey then
         error("CreateStandardModulePage requires registered binding for " .. moduleKey, 2)
     end
-    RequireStandardModulePageFunction(binding.getConfig, "binding.getConfig")
+    MODERN.standardModulePage.RequireFunction(binding.getConfig, "binding.getConfig")
 
     local preview = options.preview
     if type(preview) ~= "table" then error("CreateStandardModulePage requires preview surface", 2) end
-    local previewRender = RequireStandardModulePageFunction(preview.render or preview.Render, "preview.render")
-    local previewRelease = RequireStandardModulePageFunction(preview.release or preview.Release, "preview.release")
+    local previewRender = MODERN.standardModulePage.RequireFunction(preview.render or preview.Render, "preview.render")
+    local previewRelease = MODERN.standardModulePage.RequireFunction(preview.release or preview.Release, "preview.release")
 
     local previewDockOptions = options.previewDock or {}
     if type(previewDockOptions) ~= "table" then
@@ -11396,8 +11405,7 @@ function EXUI:CreateStandardModulePage(options)
     function controller:SyncInternalPreviewShellHeight()
         if self.dockPolicy ~= "internal-top" or not self.previewDock or not self.previewShell then return end
         local canvasHeight = math.max(1, tonumber(self.previewDock:GetHeight()) or self.dockHeight)
-        local shellHeight = MODERN.standardPreview.shellTop + MODERN.standardPreview.toolbarHeight
-            + MODERN.standardPreview.canvasGap + canvasHeight + MODERN.standardPreview.shellBottom
+        local shellHeight = MODERN.standardPreview.shellTop + canvasHeight + MODERN.standardPreview.shellBottom
         self.previewShell:SetHeight(shellHeight)
         if self.previewRow then self.previewRow:SetHeight(shellHeight) end
     end
@@ -11474,7 +11482,7 @@ function EXUI:CreateStandardModulePage(options)
 
     function controller:RaiseStageFailure(generation, stage, original, isDiagnostic)
         local diagnostic = isDiagnostic and original
-            or BuildStandardModulePageStageError(self.moduleKey, stage, original)
+            or MODERN.standardModulePage.BuildStageError(self.moduleKey, stage, original)
         self.lastFailedStage = stage
         self.lastFailedError = diagnostic
         self:AbortFailedRender(generation)
@@ -11493,7 +11501,7 @@ function EXUI:CreateStandardModulePage(options)
 
     function controller:RunDelayedStage(generation, stage, callback)
         local ok, result = xpcall(callback, function(original)
-            return BuildStandardModulePageStageError(self.moduleKey, stage, original)
+            return MODERN.standardModulePage.BuildStageError(self.moduleKey, stage, original)
         end)
         if not ok then
             -- The xpcall error is already structured and includes the original
@@ -11547,17 +11555,19 @@ function EXUI:CreateStandardModulePage(options)
         if self.dockPolicy == "internal-top" then
             previewRow = CreateFrame("Frame", nil, contentFrame)
             previewShell = CreateFrame("Frame", nil, previewRow, "BackdropTemplate")
-            ApplyStandardModulePreviewDockStyle(previewShell)
+            MODERN.standardModulePage.ApplyPreviewDockStyle(previewShell)
             dock = CreateFrame("Frame", nil, previewShell, "BackdropTemplate")
             MODERN.standardPreview.ApplyCanvasStyle(dock)
             previewToolbar = MODERN.standardPreview.CreateToolbar(previewShell, dock)
-            dock:SetPoint("TOPLEFT", previewToolbar, "BOTTOMLEFT", 0, -MODERN.standardPreview.canvasGap)
-            dock:SetPoint("TOPRIGHT", previewToolbar, "BOTTOMRIGHT", 0, -MODERN.standardPreview.canvasGap)
+            dock:SetPoint("TOPLEFT", previewToolbar, "TOPLEFT",
+                MODERN.standardPreview.leftRailWidth + MODERN.standardPreview.canvasGap, 0)
+            dock:SetPoint("TOPRIGHT", previewToolbar, "TOPRIGHT",
+                -(MODERN.standardPreview.rightRailWidth + MODERN.standardPreview.canvasGap), 0)
             dock:SetHeight(self.dockHeight)
         else
             dock = CreateFrame("Frame", nil, contentFrame, "BackdropTemplate")
             previewShell = dock
-            ApplyStandardModulePreviewDockStyle(dock)
+            MODERN.standardModulePage.ApplyPreviewDockStyle(dock)
             dock:SetHeight(self.dockHeight)
         end
 
@@ -11569,7 +11579,7 @@ function EXUI:CreateStandardModulePage(options)
         self.previewDock = dock
         self:SyncInternalPreviewShellHeight()
         if previewToolbar and type(EXUI.SetPanelStylePresetControlsHost) == "function" then
-            EXUI:SetPanelStylePresetControlsHost(dock, previewToolbar, "inline")
+            EXUI:SetPanelStylePresetControlsHost(dock, previewToolbar, "preview-rail")
         end
         -- 页面只保存标准宿主引用，不能保留 module private preview/session。
         self.page._scrollFrame = scrollFrame
@@ -11660,7 +11670,7 @@ function EXUI:CreateStandardModulePage(options)
 
         -- 外壳沿公共设置卡宽度规则居中；画布背景是页面预览态，不写模块配置。
         self:PlacePreviewDock(contentFrame)
-        ApplyStandardModulePreviewDockStyle(self.previewShell or dock)
+        MODERN.standardModulePage.ApplyPreviewDockStyle(self.previewShell or dock)
         EXUI:SetPreviewDockScrollOwner(dock, self, scrollFrame)
         if self.previewRow then self.previewRow:Show() end
         if self.previewShell then self.previewShell:Show() end
@@ -11688,7 +11698,7 @@ function EXUI:CreateStandardModulePage(options)
             local grid = _G.ExwindGrid
             local config, context, columns, slider
 
-            self:RunDelayedStage(generation, STANDARD_MODULE_PAGE_STAGES.grid, function()
+            self:RunDelayedStage(generation, MODERN.standardModulePage.stages.grid, function()
                 if not grid then error("StandardModulePage requires ExwindGrid", 2) end
                 config = self.binding.getConfig()
                 if type(config) ~= "table" then error("StandardModulePage binding getConfig returned non-table", 2) end
@@ -11703,7 +11713,7 @@ function EXUI:CreateStandardModulePage(options)
                 EXUI.CurrentModule = self.moduleKey
                 context = BuildContext(self)
                 context.config = config
-                local declaration = ResolveStandardModulePageLayout(self.layout, context)
+                local declaration = MODERN.standardModulePage.ResolveLayout(self.layout, context)
                 if type(grid.MountSettingsDeclaration) ~= "function" then
                     error("StandardModulePage requires ExwindGrid:MountSettingsDeclaration", 2)
                 end
@@ -11726,13 +11736,13 @@ function EXUI:CreateStandardModulePage(options)
             -- Surface 是允许懒创建的正式声明：首次 preview mount 才会把同一个
             -- surface 写入 binding.contract.surface。故必须先 mount 当前模块，
             -- 再审计当前模块；不能为通过 audit 在模块加载期虚构 session。
-            self:RunDelayedStage(generation, STANDARD_MODULE_PAGE_STAGES.preview, function()
+            self:RunDelayedStage(generation, MODERN.standardModulePage.stages.preview, function()
                 if self.afterGridLayout then self.afterGridLayout(context) end
                 self.previewRender(dock, context)
                 self.previewMounted = true
             end)
 
-            self:RunDelayedStage(generation, STANDARD_MODULE_PAGE_STAGES.audit, function()
+            self:RunDelayedStage(generation, MODERN.standardModulePage.stages.audit, function()
                 if type(EXUI.AssertRegisteredDisplayModules) == "function" then
                     EXUI:AssertRegisteredDisplayModules({ self.moduleKey }, {
                         requireSurface = true,

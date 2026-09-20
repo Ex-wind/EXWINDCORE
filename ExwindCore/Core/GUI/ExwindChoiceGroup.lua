@@ -82,7 +82,8 @@ Paint = function(button)
                 Appearance.colors.accentActive
             UI:SetControlSurface(button, 4, fill, fill)
         elseif selected then
-            fill, textColor = Composite(Appearance.colors.input, Appearance.colors.segmentSelected),
+            fill, textColor = Composite(Appearance.colors.input,
+                    hover and Appearance.colors.tagSelectedHover or Appearance.colors.segmentSelected),
                 Appearance.colors.white
             UI:SetControlSurface(button, 4, fill, fill)
         elseif hover then

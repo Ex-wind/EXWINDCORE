@@ -1114,7 +1114,8 @@ local function PlacePanelStylePresetControls(dock, controls)
     local placement = dock.__ExwindPanelStylePresetPlacement
     local host = placement and placement.host
     if not host or type(host.SetPoint) ~= "function" then host = dock end
-    local mode = placement and placement.mode == "sidebar" and "sidebar" or "inline"
+    local mode = placement and placement.mode
+    if mode ~= "sidebar" and mode ~= "preview-rail" then mode = "inline" end
     controls.host = host
     controls.layoutMode = mode
     controls.bar:SetParent(host)
@@ -1122,6 +1123,8 @@ local function PlacePanelStylePresetControls(dock, controls)
     if mode == "sidebar" then
         controls.bar:SetPoint("TOPLEFT", host, "TOPLEFT", 9, -40)
         controls.bar:SetPoint("TOPRIGHT", host, "TOPRIGHT", -9, -40)
+    elseif mode == "preview-rail" then
+        controls.bar:SetPoint("LEFT", host, "LEFT", 0, 0)
     elseif host ~= dock then
         controls.bar:SetPoint("LEFT", host, "LEFT", 0, 0)
     else
@@ -1133,8 +1136,10 @@ local function SetPanelStylePresetDropdownSelection(controls, slot)
     local dropdown = controls and controls.presetDropdown
     if not dropdown then return end
     local entry = controls.entriesBySlot and controls.entriesBySlot[slot]
+    if controls.dropdownCustomOnly and entry and not entry.custom then entry = nil end
     dropdown._currentValue = entry and entry.slot or nil
-    local text = entry and entry.label or (L["选择样式"] or "选择样式")
+    local text = entry and entry.label or (controls.dropdownCustomOnly
+        and (L["自定义样式"] or "自定义样式") or (L["选择样式"] or "选择样式"))
     if dropdown.Text then
         dropdown.Text:SetText(text)
     elseif dropdown.SetText then
@@ -1155,6 +1160,36 @@ local function AcquirePanelStylePresetControls(dock)
     controls.bar = bar
     controls.buttons = {}
     controls.deleteButtons = {}
+    controls.builtinButtons = {}
+
+    for _, entry in ipairs({
+        { slot = "A", label = "A" },
+        { slot = "B", label = "B" },
+    }) do
+        local slot = entry.slot
+        local button = EXUI:CreateButton(bar, 38, 28, entry.label, nil, { compact = true })
+        button:SetScript("OnClick", function()
+            local owner = controls.owner
+            if not owner then return end
+            owner:HideStylePresetTooltip()
+            if controls.layoutMode == "preview-rail" then
+                owner:OpenStylePresetConfirmation(slot, "apply")
+                return
+            end
+            controls.selectedSlot = slot
+            owner:RefreshStylePresetButtons()
+        end)
+        button:HookScript("OnEnter", function(self)
+            local owner = controls.owner
+            if owner then owner:ShowStylePresetTooltip(self, slot) end
+        end)
+        button:HookScript("OnLeave", function()
+            local owner = controls.owner
+            if owner then owner:HideStylePresetTooltip() end
+        end)
+        button:Hide()
+        controls.builtinButtons[slot] = button
+    end
 
     controls.presetDropdown = EXUI:CreateDropdown(bar, 116, "", {}, nil, function(slot)
         local owner = controls.owner
@@ -1167,7 +1202,10 @@ local function AcquirePanelStylePresetControls(dock)
     if controls.presetDropdown.labelText then controls.presetDropdown.labelText:Hide() end
     controls.presetDropdown:HookScript("OnEnter", function(dropdown)
         local owner = controls.owner
-        if owner and controls.selectedSlot then owner:ShowStylePresetTooltip(dropdown, controls.selectedSlot) end
+        if owner and controls.selectedSlot
+            and (not controls.dropdownCustomOnly or ParseCustomStylePresetID(controls.selectedSlot)) then
+            owner:ShowStylePresetTooltip(dropdown, controls.selectedSlot)
+        end
     end)
     controls.presetDropdown:HookScript("OnLeave", function()
         local owner = controls.owner
@@ -1202,6 +1240,46 @@ local function AcquirePanelStylePresetControls(dock)
         end
     end)
 
+    controls.editButton = EXUI:CreateButton(bar, 46, 28, L["编辑"] or "编辑", nil, { compact = true })
+    controls.editButton:SetScript("OnClick", function()
+        local owner = controls.owner
+        if not owner then return end
+        controls.editMode = not controls.editMode
+        owner:HideStylePresetTooltip()
+        owner:RefreshStylePresetButtons()
+    end)
+    controls.editButton:Hide()
+
+    for index = 1, MAX_CUSTOM_STYLE_PRESETS do
+        local customButton = EXUI:CreateButton(bar, 180, 24, "", nil, { compact = true })
+        customButton:SetScript("OnClick", function(self)
+            local owner = controls.owner
+            local slot = self._exPresetSlot
+            if owner and slot then owner:OpenStylePresetConfirmation(slot, "apply") end
+        end)
+        customButton:HookScript("OnEnter", function(self)
+            local owner = controls.owner
+            local slot = self._exPresetSlot
+            if owner and slot then owner:ShowStylePresetTooltip(self, slot) end
+        end)
+        customButton:HookScript("OnLeave", function()
+            local owner = controls.owner
+            if owner then owner:HideStylePresetTooltip() end
+        end)
+        customButton:Hide()
+        controls.buttons[index] = customButton
+
+        local deleteButton = EXUI:CreateButton(bar, 40, 24, L["删除"] or "删除", nil,
+            { compact = true, variant = "danger" })
+        deleteButton:SetScript("OnClick", function(self)
+            local owner = controls.owner
+            local slot = self._exPresetSlot
+            if owner and slot then owner:OpenStylePresetConfirmation(slot, "delete") end
+        end)
+        deleteButton:Hide()
+        controls.deleteButtons[index] = deleteButton
+    end
+
     local confirm = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
     confirm:SetSize(430, 260)
     confirm:SetPoint("CENTER", dock, "CENTER", 0, 0)
@@ -1226,6 +1304,10 @@ local function AcquirePanelStylePresetControls(dock)
         controls.applyStyleButton:Enable()
         controls.addButton:Enable()
         controls.deleteButton:Enable()
+        controls.editButton:Enable()
+        for _, button in pairs(controls.builtinButtons) do button:Enable() end
+        for _, button in ipairs(controls.buttons) do button:Enable() end
+        for _, button in ipairs(controls.deleteButtons) do button:Enable() end
         if owner.RefreshStylePresetButtons then owner:RefreshStylePresetButtons() end
         if frame:IsShown() then frame:Hide() end
     end)
@@ -1321,7 +1403,7 @@ function EXUI:SetPanelStylePresetControlsHost(dock, host, mode)
     end
     dock.__ExwindPanelStylePresetPlacement = host and {
         host = host,
-        mode = mode == "sidebar" and "sidebar" or "inline",
+        mode = (mode == "sidebar" or mode == "preview-rail") and mode or "inline",
     } or nil
     local controls = dock.__ExwindPanelStylePresetControls
     if not controls then return true end
@@ -1360,6 +1442,7 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
 
         PlacePanelStylePresetControls(self.dock, controls)
         local sidebar = controls.layoutMode == "sidebar"
+        local previewRail = controls.layoutMode == "preview-rail"
         local entries = {
             { slot = "A", label = L["样式 A"], custom = false },
             { slot = "B", label = L["样式 B"], custom = false },
@@ -1375,10 +1458,13 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
         end
         local items, entriesBySlot = {}, {}
         for _, entry in ipairs(entries) do
-            items[#items + 1] = { entry.label, entry.slot }
             entriesBySlot[entry.slot] = entry
+            if not previewRail or entry.custom then
+                items[#items + 1] = { entry.label, entry.slot }
+            end
         end
         controls.entriesBySlot = entriesBySlot
+        controls.dropdownCustomOnly = previewRail
         controls.presetDropdown._items = items
         if controls.activeSlot and not entriesBySlot[controls.activeSlot] then controls.activeSlot = nil end
         if controls.selectedSlot and not entriesBySlot[controls.selectedSlot] then controls.selectedSlot = nil end
@@ -1388,7 +1474,58 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
         controls.applyStyleButton:ClearAllPoints()
         controls.addButton:ClearAllPoints()
         controls.deleteButton:ClearAllPoints()
-        if sidebar then
+        controls.editButton:ClearAllPoints()
+        for _, button in pairs(controls.builtinButtons) do button:ClearAllPoints() end
+        for index = 1, MAX_CUSTOM_STYLE_PRESETS do
+            controls.buttons[index]:ClearAllPoints()
+            controls.deleteButtons[index]:ClearAllPoints()
+        end
+        if previewRail then
+            controls.editMode = controls.editMode == true and #customPresets > 0
+            controls.builtinButtons.A:SetWidth(38)
+            controls.builtinButtons.B:SetWidth(38)
+            controls.addButton:SetWidth(46)
+            controls.editButton:SetWidth(46)
+            controls.builtinButtons.A:SetPoint("TOPLEFT", controls.bar, "TOPLEFT", 0, 0)
+            controls.builtinButtons.B:SetPoint("LEFT", controls.builtinButtons.A, "RIGHT", 4, 0)
+            controls.addButton:SetPoint("LEFT", controls.builtinButtons.B, "RIGHT", 4, 0)
+            controls.editButton:SetPoint("LEFT", controls.addButton, "RIGHT", 4, 0)
+
+            local rowHeight = 24
+            local customHeight = #customPresets > 0 and (6 + (#customPresets * rowHeight)
+                + ((#customPresets - 1) * 4)) or 0
+            controls.bar:SetSize(180, 28 + customHeight)
+            for index = 1, MAX_CUSTOM_STYLE_PRESETS do
+                local preset = customPresets[index]
+                local button = controls.buttons[index]
+                local deleteButton = controls.deleteButtons[index]
+                if preset then
+                    local slot = CUSTOM_STYLE_PRESET_PREFIX .. tostring(preset.id)
+                    button._exPresetSlot = slot
+                    button:SetText(L["自定义样式"] .. tostring(preset.id))
+                    button:SetWidth(controls.editMode and 136 or 180)
+                    if index == 1 then
+                        button:SetPoint("TOPLEFT", controls.builtinButtons.A, "BOTTOMLEFT", 0, -6)
+                    else
+                        button:SetPoint("TOPLEFT", controls.buttons[index - 1], "BOTTOMLEFT", 0, -4)
+                    end
+                    button._exButtonVariant = controls.activeSlot == slot and "primary" or "secondary"
+                    EXUI:ApplyControlAppearance(button)
+                    button:Show()
+
+                    deleteButton._exPresetSlot = slot
+                    deleteButton:SetPoint("LEFT", button, "RIGHT", 4, 0)
+                    deleteButton:SetShown(controls.editMode)
+                else
+                    button._exPresetSlot = nil
+                    button:Hide()
+                    deleteButton._exPresetSlot = nil
+                    deleteButton:Hide()
+                end
+            end
+        elseif sidebar then
+            controls.editMode = false
+            controls.addButton:SetWidth(82)
             controls.presetDropdown:SetPoint("TOPLEFT", controls.bar, "TOPLEFT", 0, 0)
             controls.presetDropdown:SetPoint("TOPRIGHT", controls.bar, "TOPRIGHT", 0, 0)
             controls.applyStyleButton:SetPoint("TOPLEFT", controls.presetDropdown, "BOTTOMLEFT", 0, -6)
@@ -1396,22 +1533,47 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
             controls.deleteButton:SetPoint("TOPRIGHT", controls.presetDropdown, "BOTTOMRIGHT", 0, -6)
             controls.bar:SetHeight(66)
         else
+            controls.editMode = false
+            controls.presetDropdown:SetWidth(116)
+            controls.addButton:SetWidth(82)
             controls.presetDropdown:SetPoint("LEFT", controls.bar, "LEFT", 0, 0)
             controls.applyStyleButton:SetPoint("LEFT", controls.presetDropdown, "RIGHT", 6, 0)
             controls.addButton:SetPoint("LEFT", controls.applyStyleButton, "RIGHT", 6, 0)
             controls.deleteButton:SetPoint("LEFT", controls.addButton, "RIGHT", 6, 0)
             controls.bar:SetSize(322, 30)
         end
-        controls.presetDropdown:Show()
-        controls.applyStyleButton:Show()
+        if not previewRail then
+            controls.editButton:Hide()
+            for index = 1, MAX_CUSTOM_STYLE_PRESETS do
+                controls.buttons[index]._exPresetSlot = nil
+                controls.buttons[index]:Hide()
+                controls.deleteButtons[index]._exPresetSlot = nil
+                controls.deleteButtons[index]:Hide()
+            end
+        end
+        for slot, button in pairs(controls.builtinButtons) do
+            button:SetShown(previewRail)
+            button._exButtonVariant = controls.activeSlot == slot and "primary" or "secondary"
+            EXUI:ApplyControlAppearance(button)
+        end
+        controls.presetDropdown:SetShown(not previewRail)
+        controls.applyStyleButton:SetShown(not previewRail)
         controls.addButton:Show()
-        controls.deleteButton:Show()
+        controls.addButton:SetText(previewRail and (L["新增"] or "新增")
+            or ("+ " .. (L["新增样式"] or "新增样式")))
+        controls.addButton._exButtonVariant = previewRail and "secondary" or "primary"
+        EXUI:ApplyControlAppearance(controls.addButton)
+        controls.editButton:SetShown(previewRail)
+        controls.editButton._exButtonVariant = controls.editMode and "primary" or "secondary"
+        EXUI:ApplyControlAppearance(controls.editButton)
+        controls.deleteButton:SetShown(not previewRail)
         if controls.selectedSlot then controls.applyStyleButton:Enable() else controls.applyStyleButton:Disable() end
         if #customPresets >= MAX_CUSTOM_STYLE_PRESETS then
             controls.addButton:Disable()
         else
             controls.addButton:Enable()
         end
+        if previewRail and #customPresets > 0 then controls.editButton:Enable() else controls.editButton:Disable() end
         if ParseCustomStylePresetID(controls.selectedSlot) then
             controls.deleteButton:Enable()
         else
@@ -1497,6 +1659,10 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
         controls.applyStyleButton:Enable()
         controls.addButton:Enable()
         controls.deleteButton:Enable()
+        controls.editButton:Enable()
+        for _, button in pairs(controls.builtinButtons) do button:Enable() end
+        for _, button in ipairs(controls.buttons) do button:Enable() end
+        for _, button in ipairs(controls.deleteButtons) do button:Enable() end
         controls.fontCheck:Show()
         controls.fontLabel:Show()
         self:RefreshStylePresetButtons()
@@ -1569,14 +1735,25 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
         controls.applyStyleButton:Hide()
         controls.deleteButton:Enable()
         controls.deleteButton:Hide()
+        controls.editButton:Enable()
+        controls.editButton:Hide()
+        controls.editMode = false
+        controls.dropdownCustomOnly = nil
         controls.activeSlot = nil
         controls.selectedSlot = nil
+        for _, button in pairs(controls.builtinButtons) do
+            button:Enable()
+            button:Hide()
+        end
         for _, button in ipairs(controls.buttons) do
             button:Enable()
             button:Hide()
         end
         controls.addButton:Hide()
-        for _, button in ipairs(controls.deleteButtons) do button:Hide() end
+        for _, button in ipairs(controls.deleteButtons) do
+            button:Enable()
+            button:Hide()
+        end
     end
 
     function session:BindStylePresets(descriptor)
@@ -1598,6 +1775,7 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
         self.stylePresetPending = nil
         controls.activeSlot = nil
         controls.selectedSlot = nil
+        controls.editMode = false
         controls.bar:SetFrameLevel(self.dock:GetFrameLevel() + 100)
         controls.tooltip:SetFrameLevel(self.dock:GetFrameLevel() + 180)
         controls.confirm:SetFrameLevel(self.dock:GetFrameLevel() + 200)
@@ -1652,6 +1830,10 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
         controls.applyStyleButton:Disable()
         controls.addButton:Disable()
         controls.deleteButton:Disable()
+        controls.editButton:Disable()
+        for _, button in pairs(controls.builtinButtons) do button:Disable() end
+        for _, button in ipairs(controls.buttons) do button:Disable() end
+        for _, button in ipairs(controls.deleteButtons) do button:Disable() end
         self:RefreshStylePresetConfirmationPreview()
         controls.confirm:Show()
         controls.confirm:Raise()

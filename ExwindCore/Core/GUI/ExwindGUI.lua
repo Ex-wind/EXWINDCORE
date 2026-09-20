@@ -308,6 +308,12 @@ end
 MODERN.checkboxPressedFill = CompositeThemeColor(MC.input, MC.toolActive)
 MODERN.checkboxHoverFill = CompositeThemeColor(MC.input, MC.rowHover)
 MODERN.switchOffHoverFill = CompositeThemeColor(MC.switchOff, MC.switchOffHover)
+MODERN.switchOnEdge = CompositeThemeColor(MC.switchOn, MC.white, .32)
+MODERN.switchOnHoverEdge = CompositeThemeColor(MC.switchOnHover, MC.white, .32)
+MODERN.switchOnPressedEdge = CompositeThemeColor(MC.checkboxCheckedActive, MC.white, .32)
+MODERN.switchOffEdge = CompositeThemeColor(MC.switchOff, MC.white, .12)
+MODERN.switchOffHoverEdge = CompositeThemeColor(MODERN.switchOffHoverFill, MC.white, .12)
+MODERN.switchOffPressedEdge = CompositeThemeColor(MC.checkboxHoverBorder, MC.white, .12)
 MODERN.settingsCardHoverFill = CompositeThemeColor(MC.subcard, MC.rowHover)
 MODERN.settingsCardPressedFill = CompositeThemeColor(MC.subcard, MC.toolActive)
 MODERN.settingsCardSelectedFill = CompositeThemeColor(MC.subcard, MC.tagSelected)
@@ -1243,7 +1249,74 @@ local function IsCursorInsideFrame(frame)
     return frame.IsMouseOver and frame:IsMouseOver() or false
 end
 
-local function PaintModernCheckbox(container, skipPillMeasure)
+function MODERN.PaintSwitchTrack(surface, fill, edge)
+    -- A 22-high capsule needs radius 11; the public surface presets are R4/R10.
+    -- Reuse the same atlas/layout with a Switch-only half-height radius, so the
+    -- end caps meet without the former two-unit vertical straight segment.
+    EXUI:ClearControlSurface(surface)
+    local skin = GetModernSurface(surface, surface:GetHeight() / 2)
+    skin.active, skin.fill = true, fill
+    for _, piece in ipairs(skin.pieces) do
+        piece.texture:SetVertexColor(unpack(piece.layer == 1 and edge or fill))
+    end
+    skin.Layout()
+end
+
+function MODERN.StopSwitchMotion(knob)
+    local motion = knob._exSwitchMotion
+    if not motion then return end
+    motion.generation = motion.generation + 1
+    motion.group:SetScript("OnFinished", nil)
+    motion.group:Stop()
+    motion.selected, motion.startX, motion.targetX = nil, nil, nil
+end
+
+function MODERN.PositionSwitchKnob(container, selected, snap)
+    local knob = container.checkbox._exModernSwitchKnob
+    local surface = container.checkbox._exModernCheckSurface
+    local motion = knob._exSwitchMotion
+    if not motion then
+        local group = knob:CreateAnimationGroup()
+        local translation = group:CreateAnimation("Translation")
+        translation:SetDuration(.12)
+        translation:SetSmoothing("OUT")
+        motion = { group = group, translation = translation, generation = 0 }
+        knob._exSwitchMotion = motion
+        -- This private visual child survives pool resets; hiding any ancestor
+        -- invalidates the old completion before the checkbox can be reused.
+        knob:SetScript("OnHide", MODERN.StopSwitchMotion)
+    end
+    local targetX = selected and 21 or 3
+    snap = snap or motion.selected == nil or not container:IsVisible()
+    if not snap and motion.selected == selected then return end
+    local currentX = motion.targetX or targetX
+    if not snap and motion.group:IsPlaying() then
+        -- Sample the native eased progress once on reversal, never per frame.
+        currentX = motion.startX + (motion.targetX - motion.startX)
+            * motion.translation:GetSmoothProgress()
+    end
+    MODERN.StopSwitchMotion(knob)
+    motion.selected = selected
+    motion.startX, motion.targetX = snap and targetX or currentX, targetX
+    knob:ClearAllPoints()
+    knob:SetPoint("LEFT", surface, "LEFT", motion.startX, 0)
+    if snap or currentX == targetX then return end
+    local generation = motion.generation
+    motion.translation:SetOffset(targetX - currentX, 0)
+    motion.group:SetScript("OnFinished", function(group)
+        if motion.generation ~= generation or container._exSettingsPresentation ~= "switch"
+            or not knob:IsVisible() then return end
+        group:SetScript("OnFinished", nil)
+        group:Stop()
+        -- Translation is temporary; commit its endpoint to the actual anchor.
+        knob:ClearAllPoints()
+        knob:SetPoint("LEFT", surface, "LEFT", targetX, 0)
+        motion.startX = targetX
+    end)
+    motion.group:Play()
+end
+
+local function PaintModernCheckbox(container, skipPillMeasure, snapSwitch)
     local box = container.checkbox
     if not box then return end
     HideControlSkin(box)
@@ -1330,25 +1403,23 @@ local function PaintModernCheckbox(container, skipPillMeasure)
             fill, edge = MC.disabledFill, MC.disabledBorder
         elseif selected then
             fill = pressed and MC.checkboxCheckedActive or (hover and MC.switchOnHover or MC.switchOn)
-            -- The selected track is a single-color capsule. Drawing the same
-            -- color through both fill and border masks doubles curved AA pixels.
-            edge = MC.transparent
+            edge = pressed and MODERN.switchOnPressedEdge
+                or (hover and MODERN.switchOnHoverEdge or MODERN.switchOnEdge)
         else
             fill = pressed and MC.checkboxHoverBorder
                 or (hover and MODERN.switchOffHoverFill or MC.switchOff)
-            edge = MC.secondaryFill
+            edge = pressed and MODERN.switchOffPressedEdge
+                or (hover and MODERN.switchOffHoverEdge or MODERN.switchOffEdge)
         end
         local surface = box._exModernCheckSurface
         surface:ClearAllPoints()
         surface:SetPoint("CENTER", box, "CENTER", 0, 0)
         surface:SetSize(40, 22)
-        EXUI:SetControlSurface(surface, 10, fill, edge)
+        MODERN.PaintSwitchTrack(surface, fill, edge)
         box._exModernCheckMark:Hide()
         local knob = box._exModernSwitchKnob
-        knob:ClearAllPoints()
-        knob:SetPoint(selected and "RIGHT" or "LEFT", surface,
-            selected and "RIGHT" or "LEFT", selected and -3 or 3, 0)
-        local knobColor = enabled and (selected and MC.switchKnobOn or MC.switchKnobOff) or MC.disabledText
+        MODERN.PositionSwitchKnob(container, selected, snapSwitch)
+        local knobColor = enabled and MC.switchKnobOn or MC.disabledText
         -- One fill mask produces a clean circular edge; a same-color border
         -- would composite the antialiased rim twice and make it look uneven.
         EXUI:SetControlSurface(knob, 10, knobColor, MC.transparent)
@@ -1480,6 +1551,11 @@ local function ApplyModernCheckbox(container)
             box._exModernHover = nil
         end)
         box._exModernCheckVisual = visual
+        visual:SetScript("OnShow", function()
+            if container._exSettingsPresentation == "switch" then
+                PaintModernCheckbox(container, nil, true)
+            end
+        end)
     end
     if not box._exModernCheckPointerHooks then
         box._exModernCheckPointerHooks = true
@@ -1505,7 +1581,7 @@ local function ApplyModernCheckbox(container)
         container.label:SetJustifyH("LEFT")
         MODERN.ApplyTextRole(container.label, "title")
     end
-    PaintModernCheckbox(container)
+    PaintModernCheckbox(container, nil, true)
 end
 
 -- Settings-list pill widths can change the final right-aligned geometry after
@@ -6535,7 +6611,7 @@ function EXUI:RestoreSettingsListControl(widget)
             widget.label:SetShown(state.checkbox.labelShown ~= false)
         end
         if box._exSettingsPillLabel then box._exSettingsPillLabel:Hide() end
-        PaintModernCheckbox(widget)
+        PaintModernCheckbox(widget, nil, true)
     end
     if state.buttonVariant then
         widget._exButtonVariant = state.buttonVariant
@@ -6629,6 +6705,11 @@ function EXUI:PrepareSettingsListControl(widget, options)
     if not widget then return false end
     options = type(options) == "table" and options or {}
     if widget._exSettingsListVisualState then self:RestoreSettingsListControl(widget) end
+    -- hideLabel and checkbox presentations can both act on the same FontString.
+    -- Capture its lease-entry visibility before either path hides it, so restore
+    -- never mistakes a temporary presentation state for the original state.
+    local checkboxLabelShown = widget.label and widget.label.IsShown
+        and widget.label:IsShown()
     local borrowedKind = options.borrowedKind
     if borrowedKind ~= nil then
         if SETTINGS_LIST_BORROWED_KINDS[borrowedKind] ~= true then
@@ -6806,7 +6887,7 @@ function EXUI:PrepareSettingsListControl(widget, options)
             width = box:GetWidth(), height = box:GetHeight(), points = CaptureRegionPoints(box),
             labelPoints = widget.label and CaptureRegionPoints(widget.label) or nil,
             labelJustify = widget.label and widget.label:GetJustifyH() or nil,
-            labelShown = widget.label and widget.label:IsShown(),
+            labelShown = checkboxLabelShown,
         }
         widget._exSettingsPresentation = options.presentation
         box:ClearAllPoints()
@@ -6842,7 +6923,7 @@ function EXUI:PrepareSettingsListControl(widget, options)
             box:SetPoint("RIGHT", widget, "RIGHT", 0, 0)
             box:SetSize(40, 24)
         end
-        PaintModernCheckbox(widget)
+        PaintModernCheckbox(widget, nil, true)
     end
     widget._exSettingsListVisualState = state
     return true

@@ -89,10 +89,10 @@ ExwindTools.GUIColors = {
     headerDivider   = H(C.bSubtle),
     card            = H(C.card),
     cardBorder      = H(C.bDef),
-    cardHoverBorder = H(C.aFg),
+    cardHoverBorder = H(SOLID_HOVER), -- 深蓝试色；原 H(C.aFg) / #70b8ff
     subcard         = H(C.head),
     subcardBorder   = H(C.bSubtle),
-    subcardHoverBorder = H(C.aFg),
+    subcardHoverBorder = H(SOLID_HOVER), -- 深蓝试色；原 H(C.aFg) / #70b8ff
     sectionDivider  = H(C.bSubtle),
     rowHover        = AccentA(0.08),
 
@@ -121,8 +121,8 @@ ExwindTools.GUIColors = {
     input               = H(C.ctrl),
     inputBorder         = H(C.iBorder),
     inputHover          = H(C.ctrlHover),
-    inputHoverBorder    = H(C.aFg),
-    inputFocusBorder    = H(C.aFg),
+    inputHoverBorder    = H(SOLID_HOVER), -- 深蓝试色；原 H(C.aFg) / #70b8ff
+    inputFocusBorder    = H(SOLID),       -- 深蓝试色；原 H(C.aFg) / #70b8ff
     inputDisabled       = H(C.ctrl),
     inputDisabledBorder = H(C.bSubtle),
 
@@ -139,13 +139,13 @@ ExwindTools.GUIColors = {
     -- ---------- 滑桿 ----------
     sliderTrack      = H(C.bDef),
     sliderTrackHover = H(C.bHover),
-    sliderThumb      = H(C.aFg),
-    sliderThumbHover = H(C.aText),
-    sliderThumbActive = H(C.aHover),
+    sliderThumb       = H(SOLID),        -- 深蓝试色；原 H(C.aFg) / #70b8ff
+    sliderThumbHover  = H(SOLID_HOVER),  -- 深蓝试色；原 H(C.aText) / #c2e6ff
+    sliderThumbActive = H(SOLID_ACTIVE), -- 深蓝试色；原 H(C.aHover) / #3b9eff
 
     -- ---------- 核取方塊 ----------
     checkboxBorder        = H(C.iHover),
-    checkboxHoverBorder   = H(C.aFg),
+    checkboxHoverBorder   = H(SOLID_HOVER), -- 深蓝试色；原 H(C.aFg) / #70b8ff
     checkboxChecked       = H(SOLID),
     checkboxCheckedHover  = H(SOLID_HOVER),
     checkboxCheckedActive = H(SOLID_ACTIVE),
@@ -161,7 +161,7 @@ ExwindTools.GUIColors = {
     -- ---------- 選項 / 分段 / 工具狀態 ----------
     tagBorder        = H(C.bDef),
     tagText          = H(C.dim),
-    tagHoverBorder   = H(C.aFg),
+    tagHoverBorder   = H(SOLID_HOVER), -- 深蓝试色；原 H(C.aFg) / #70b8ff
     tagHoverText     = H(C.text),
     tagSelected      = AccentA(0.13),
     tagSelectedBorder = H(C.aFg),
@@ -178,7 +178,7 @@ ExwindTools.GUIColors = {
     secondaryText        = H(C.text),
     secondaryBorder      = H(C.bDef),
     secondaryHoverFill   = AccentA(0.13),
-    secondaryHoverBorder = H(C.aFg),
+    secondaryHoverBorder = H(SOLID_HOVER), -- 深蓝试色；原 H(C.aFg) / #70b8ff
     secondaryPressedFill = H(C.bSubtle),
     secondaryPressedText = H(C.dim),
     dangerBorder      = H(C.dangerB),

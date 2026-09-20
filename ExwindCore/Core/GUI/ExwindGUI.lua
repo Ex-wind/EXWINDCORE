@@ -11122,7 +11122,7 @@ MODERN.standardPreview = {
     shellInset = 10,
     canvasGap = 8,
     leftRailWidth = 190,
-    rightRailWidth = 54,
+    rightRailWidth = 190,
     backgroundPresets = {
         { 0.22, 0.25, 0.29 },
         { 0.16, 0.18, 0.21 },
@@ -11201,7 +11201,7 @@ function MODERN.standardPreview.CreateToolbar(shell, canvas)
         MODERN.standardPreview.shellBottom)
 
     local label = EXUI:CreateVisualFontString(toolbar, EXFONTFRAME, "GameFontHighlightSmall")
-    label:SetText(L["预览背景"] or "预览背景")
+    label:SetText(L["背景"] or "背景")
     label:SetTextColor(unpack(MC.muted))
 
     local controls = { buttons = {}, label = label }
@@ -11209,16 +11209,16 @@ function MODERN.standardPreview.CreateToolbar(shell, canvas)
     for index = 1, 5 do
         local button = EXUI:CreateButton(toolbar, 26, 26, "", nil, { compact = true })
         button:ClearAllPoints()
-        button:SetPoint("TOPRIGHT", toolbar, "TOPRIGHT", -14, -16 - ((index - 1) * 28))
+        button:SetPoint("TOPRIGHT", toolbar, "TOPRIGHT",
+            -(MODERN.standardPreview.rightRailWidth * 0.5 - 13), -16 - ((index - 1) * 28))
         local swatch = EXUI:CreateVisualTexture(button, EXBORDERFRAME)
         swatch:SetTexture("Interface\\Buttons\\WHITE8X8")
         swatch:SetPoint("TOPLEFT", button, "TOPLEFT", 4, -4)
         swatch:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -4, 4)
-        local selection = CreateFrame("Frame", nil, button, "BackdropTemplate")
+        local selection = CreateFrame("Frame", nil, button)
         selection:SetPoint("TOPLEFT", button, "TOPLEFT", 1, -1)
         selection:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -1, 1)
-        selection:SetBackdrop({ edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 2 })
-        selection:SetBackdropBorderColor(0.42, 0.73, 1, 1)
+        EXUI:SetControlSurface(selection, 4, MC.transparent, { 0.42, 0.73, 1, 1 })
         selection:EnableMouse(false)
         button.selection = selection
         button.swatch = swatch

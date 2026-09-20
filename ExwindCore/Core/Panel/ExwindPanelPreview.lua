@@ -1124,7 +1124,7 @@ local function PlacePanelStylePresetControls(dock, controls)
         controls.bar:SetPoint("TOPLEFT", host, "TOPLEFT", 9, -40)
         controls.bar:SetPoint("TOPRIGHT", host, "TOPRIGHT", -9, -40)
     elseif mode == "preview-rail" then
-        controls.bar:SetPoint("LEFT", host, "LEFT", 0, 0)
+        controls.bar:SetPoint("LEFT", host, "LEFT", 5, 0)
     elseif host ~= dock then
         controls.bar:SetPoint("LEFT", host, "LEFT", 0, 0)
     else
@@ -1482,19 +1482,21 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
         end
         if previewRail then
             controls.editMode = controls.editMode == true and #customPresets > 0
-            controls.builtinButtons.A:SetWidth(38)
-            controls.builtinButtons.B:SetWidth(38)
-            controls.addButton:SetWidth(46)
-            controls.editButton:SetWidth(46)
-            controls.builtinButtons.A:SetPoint("TOPLEFT", controls.bar, "TOPLEFT", 0, 0)
-            controls.builtinButtons.B:SetPoint("LEFT", controls.builtinButtons.A, "RIGHT", 4, 0)
-            controls.addButton:SetPoint("LEFT", controls.builtinButtons.B, "RIGHT", 4, 0)
+            controls.addButton:SetWidth(88)
+            controls.editButton:SetWidth(88)
+            controls.builtinButtons.A:SetWidth(88)
+            controls.builtinButtons.B:SetWidth(88)
+            controls.addButton:SetPoint("TOPLEFT", controls.bar, "TOPLEFT", 0, 0)
             controls.editButton:SetPoint("LEFT", controls.addButton, "RIGHT", 4, 0)
+            controls.builtinButtons.A:SetPoint("TOPLEFT", controls.addButton, "BOTTOMLEFT", 0, -6)
+            controls.builtinButtons.B:SetPoint("LEFT", controls.builtinButtons.A, "RIGHT", 4, 0)
+            controls.builtinButtons.A:SetText(L["样式 A"] or "样式 A")
+            controls.builtinButtons.B:SetText(L["样式 B"] or "样式 B")
 
             local rowHeight = 24
             local customHeight = #customPresets > 0 and (6 + (#customPresets * rowHeight)
                 + ((#customPresets - 1) * 4)) or 0
-            controls.bar:SetSize(180, 28 + customHeight)
+            controls.bar:SetSize(180, 62 + customHeight)
             for index = 1, MAX_CUSTOM_STYLE_PRESETS do
                 local preset = customPresets[index]
                 local button = controls.buttons[index]

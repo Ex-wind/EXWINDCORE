@@ -87,6 +87,29 @@ EXUI.PendingRightScrollRestore = nil -- 通用右侧滚动容器刷新后需要�
 -- gui.version=1 的唯一页面声明登记表。登记只保存纯声明；中央 Controller
 -- 在实际挂载前另行注入 picker 等运行期回调，避免把函数写回模块声明。
 EXUI.SettingsPageDeclarations = EXUI.SettingsPageDeclarations or {}
+EXUI.ModuleSettingsV2Pages = EXUI.ModuleSettingsV2Pages or {}
+
+function EXUI:RegisterModuleSettingsPageV2(moduleKey, declaration, ownerFactory)
+    if type(moduleKey) ~= "string" or moduleKey == "" then
+        error("RegisterModuleSettingsPageV2 requires a moduleKey", 2)
+    end
+    if type(ownerFactory) ~= "function" then
+        error("RegisterModuleSettingsPageV2 requires an owner factory", 2)
+    end
+    if self.ModuleSettingsV2Pages[moduleKey] ~= nil then
+        error("duplicate module V2 settings page: " .. moduleKey, 2)
+    end
+    if type(self.RegisterSettingsPageV2) ~= "function" then
+        error("RegisterModuleSettingsPageV2 requires ExwindSettingsV2", 2)
+    end
+    local pageId = "ExwindTools.Module." .. moduleKey
+    self:RegisterSettingsPageV2(pageId, declaration)
+    self.ModuleSettingsV2Pages[moduleKey] = {
+        pageId = pageId,
+        ownerFactory = ownerFactory,
+    }
+    return true
+end
 
 local function CopySettingsDeclaration(value, seen)
     if type(value) ~= "table" then return value end
@@ -1422,23 +1445,28 @@ function EXUI:ReleaseModuleSettingsPage(page)
     end
 
     local grid = _G.ExwindGrid
-    if not grid then
+
+    if page._exV2Session then
+        page._exV2Session:Release()
+        page._exV2Session = nil
+        page._exV2Owner = nil
+    elseif not grid then
         return false
     end
 
     -- Grid 编辑器的工具栏/浮层并不挂在页面 root 下；先正常退出该页的编辑会话，
     -- 再归还 widget，避免隐藏页面仍保留可操作的编辑器状态。
-    if grid.IsLiveEditing and grid.LiveContainer == page then
+    if grid and grid.IsLiveEditing and grid.LiveContainer == page then
         grid:ToggleLiveEdit(page)
         grid.LiveContainer = nil
     end
 
-    local cardSession = type(grid.GetMountedCardSession) == "function"
+    local cardSession = grid and type(grid.GetMountedCardSession) == "function"
         and grid:GetMountedCardSession(page) or nil
     if cardSession then
         cardSession:Release()
         page._exCardSession = nil
-    else
+    elseif grid then
         grid:ReleaseContainerWidgets(page)
     end
 
@@ -2100,6 +2128,7 @@ function EXUI:ApplyModuleCardState(card, isEnabled)
         local ready = isEnabled and (ExwindTools.RegisteredLayouts[key] ~= nil
             or (ExwindTools.ModuleDefinitions and ExwindTools.ModuleDefinitions[key] ~= nil)
             or EXUI.SettingsPageDeclarations[key] ~= nil
+            or EXUI.ModuleSettingsV2Pages[key] ~= nil
             or controller ~= nil)
         card.SettingsBtn:SetEnabled(ready == true)
         card.SettingsBtn:SetAlpha(ready and 1 or 0.35)
@@ -2326,21 +2355,26 @@ function EXUI:ShowModuleSettingsPage()
     -- 现有 ModuleDefinition / legacy layout 与 Central basicIcon 是三条显式
     -- 路线；Central 不会被包装或回退进前两者。
     local definition = ExwindTools.ModuleDefinitions and ExwindTools.ModuleDefinitions[EXUI.CurrentModule]
+    local v2Entry = EXUI.ModuleSettingsV2Pages[EXUI.CurrentModule]
     local centralController = type(EXUI.GetCentralModuleController) == "function"
         and EXUI:GetCentralModuleController(EXUI.CurrentModule) or nil
     local registeredSettingsPage = type(EXUI.GetSettingsPage) == "function"
         and EXUI:GetSettingsPage(EXUI.CurrentModule) or nil
-    local layoutData = centralController
+    local layoutData = v2Entry and { version = 2 }
+        or centralController
         and ((type(centralController.BuildSettingsDeclaration) == "function"
             and centralController:BuildSettingsDeclaration()) or centralController:BuildGridLayout())
         or (definition and definition:GetLayout()
             or registeredSettingsPage
             or ExwindTools.RegisteredLayouts[EXUI.CurrentModule])
+    local usesV2Declaration = v2Entry ~= nil
     local ordinarySettingsEntry = centralController ~= nil or definition ~= nil or registeredSettingsPage ~= nil
     local hasSections = type(layoutData) == "table" and type(layoutData.sections) == "table"
     local hasCards = type(layoutData) == "table" and type(layoutData.cards) == "table"
     local pageDeclarationMode
-    if ordinarySettingsEntry then
+    if usesV2Declaration then
+        pageDeclarationMode = "v2"
+    elseif ordinarySettingsEntry then
         if type(layoutData) ~= "table" or layoutData.version ~= 1
             or not hasSections or hasCards then
             error("ordinary settings modules require version=1 sections; special cards use RegisterModuleLayout with their owning page", 2)
@@ -2352,10 +2386,10 @@ function EXUI:ShowModuleSettingsPage()
         -- Grid path; ordinary controller/definition/registered pages cannot.
         pageDeclarationMode = hasSections and "sections" or "cards"
     end
-    local usesCardDeclaration = pageDeclarationMode ~= nil
+    local usesCardDeclaration = pageDeclarationMode ~= nil and pageDeclarationMode ~= "v2"
     local declaresStructuredPage = type(layoutData) == "table"
         and (layoutData.version ~= nil or layoutData.cards ~= nil or layoutData.sections ~= nil)
-    if declaresStructuredPage and not usesCardDeclaration then
+    if declaresStructuredPage and not usesCardDeclaration and not usesV2Declaration then
         error("unsupported settings page declaration for " .. tostring(EXUI.CurrentModule), 2)
     end
     if layoutData and _G.ExwindGrid then
@@ -2432,6 +2466,11 @@ function EXUI:ShowModuleSettingsPage()
             and _G.ExwindGrid:GetMountedCardSession(page) or nil
         if previousCardSession then previousCardSession:Release() end
         page._exCardSession = nil
+        if page._exV2Session then
+            page._exV2Session:Release()
+            page._exV2Session = nil
+            page._exV2Owner = nil
+        end
         if usesCardDeclaration and _G.ExwindGrid.ContainerStates[page] then
             _G.ExwindGrid:ReleaseContainerWidgets(page)
         end
@@ -2457,7 +2496,34 @@ function EXUI:ShowModuleSettingsPage()
         -- 渲染布局
         local config = centralController and centralController:GetConfig() or ExwindTools:GetModuleDB(EXUI.CurrentModule)
         local currentModuleKey = EXUI.CurrentModule
-        if usesCardDeclaration then
+        if usesV2Declaration then
+            local mountContext = {
+                pageId = v2Entry.pageId,
+                moduleKey = currentModuleKey,
+                config = config,
+                settingsPageTitle = moduleMeta.Name,
+                settingsPageDescription = moduleMeta.Desc,
+                scrollFrame = EXUI.ModuleScrollFrame,
+            }
+            local owner = v2Entry.ownerFactory(mountContext)
+            if type(owner) ~= "table" then
+                error("module V2 owner factory must return a table: " .. tostring(currentModuleKey), 2)
+            end
+            local ownerHeightChanged = owner.onHeightChanged
+            owner.onHeightChanged = function(height)
+                page:SetHeight(math.max(1, height + 52))
+                if EXUI.ModuleScrollFrame.UpdateScrollChildRect then
+                    EXUI.ModuleScrollFrame:UpdateScrollChildRect()
+                end
+                if ownerHeightChanged then ownerHeightChanged(height) end
+            end
+            page._exV2Owner = owner
+            page._exV2Session = EXUI:MountSettingsPageV2(page, v2Entry.pageId, owner)
+            if type(owner.AttachSession) == "function" then
+                owner:AttachSession(page._exV2Session)
+            end
+            ExwindTools:UpdateState(currentModuleKey .. ".PanelRendered", GetTime())
+        elseif usesCardDeclaration then
             local sharedCardDefaults = type(EXUI.GetSettingsCardLayoutDefaults) == "function"
                 and EXUI:GetSettingsCardLayoutDefaults() or nil
             local baseBottom = type(sharedCardDefaults) == "table" and sharedCardDefaults.bottom
@@ -2523,12 +2589,12 @@ function EXUI:ShowModuleSettingsPage()
         resetBtn:SetPoint("BOTTOMRIGHT", page, "BOTTOMRIGHT", -20, 16)
         resetBtn:SetFrameLevel(page:GetFrameLevel() + 50)
         resetBtn._exModuleSettingsTransient = true
-        if not usesCardDeclaration then
+        if not usesCardDeclaration and not usesV2Declaration then
             page:SetHeight((page:GetHeight() or 1) + 52)
         end
 
         -- [New v4.2] 如果处于开发者模式，在右上角显示“编辑”按钮
-        if ExwindTools.State.DevMode then
+        if ExwindTools.State.DevMode and not usesV2Declaration then
             local editBtn = EXUI:CreateSmallButton(page, L["|cff00ff00编辑布局|r"], function()
                 _G.ExwindGrid:ToggleLiveEdit(page, EXUI.CurrentModule)
             end)

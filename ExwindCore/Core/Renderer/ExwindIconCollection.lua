@@ -575,6 +575,7 @@ end
 
 local function ResetInteractionOverlay(overlay, detach)
     if not overlay then return end
+    if overlay._canvasDriver then overlay._canvasDriver:CancelOverlay(overlay) end
     StopOverlayDrag(overlay, false)
     overlay:SetScript("OnClick", nil)
     overlay:SetScript("OnMouseDown", nil)
@@ -780,6 +781,41 @@ local function ConfigureInteractionOverlay(collection, item, slotID, spec)
         -- that moves the IconWidget inside its ItemRoot without moving layout.
         local movableTarget = textWidget or (slotID == "core.icon" and item.widget)
         if button ~= "LeftButton" or not movable or not movableTarget then return end
+        if collection.canvasEditor then
+            local role = ResolveTextRole(slotID, spec.textRole)
+            local snapshots = {}
+            for _, candidate in ipairs(collection.currentItems or {}) do
+                local layout = candidate.presentation and candidate.presentation.coreLayout
+                local slot = layout and layout[role]
+                local target = GetTextSlot(candidate, slotID, spec)
+                if slot and slot.anchor and target then
+                    snapshots[candidate] = { target=target, anchor=slot.anchor }
+                end
+            end
+            local function Project(position, start)
+                for _, candidate in ipairs(collection.currentItems or {}) do
+                    local saved = snapshots[candidate]
+                    if saved then
+                        local a = saved.anchor
+                        saved.target:SetAnchor(a.point, ResolveCoreLayoutSlot(candidate, a.relativeElement or "core.root"),
+                            a.relativePoint, (a.x or 0)+position.x-start.x, (a.y or 0)+position.y-start.y)
+                    else
+                        ApplyTransientPositionToItem(candidate, slotID, spec, position)
+                    end
+                    local hit = candidate.interactionOverlays and candidate.interactionOverlays[slotID]
+                    if hit then ApplyInteractionAnchor(hit, candidate, slotID, spec,
+                        ResolveSemanticBounds(candidate.presentation, slotID, spec), position) end
+                end
+            end
+            local origin
+            if not snapshots[item] then
+                local a = ResolveInteractionAnchor(spec, activeSemanticBounds)
+                origin = textWidget and not activeSemanticBounds and ResolveTextInteractionPosition(textWidget, a)
+                    or {x=a.x or 0,y=a.y or 0}
+            end
+            collection.canvasEditor:Begin(self, self._iconCollectionSlotID, Project, origin)
+            return
+        end
         local scale = (UIParent and UIParent:GetEffectiveScale()) or 1
         if scale <= 0 then scale = 1 end
         local cursorX, cursorY = GetCursorPosition()
@@ -809,6 +845,10 @@ local function ConfigureInteractionOverlay(collection, item, slotID, spec)
         end)
     end)
     overlay:SetScript("OnMouseUp", function(self, button)
+        if collection.canvasEditor then
+            if button == "LeftButton" then collection.canvasEditor:Finish(self) end
+            return
+        end
         if button == "LeftButton" then StopOverlayDrag(self, true) end
     end)
     overlay:SetScript("OnEnter", function(self)

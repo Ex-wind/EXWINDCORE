@@ -119,6 +119,7 @@ end
 
 local function ResetOverlay(overlay, detach)
     if not overlay then return end
+    if overlay._canvasDriver then overlay._canvasDriver:CancelOverlay(overlay) end
     overlay:SetScript("OnUpdate", nil)
     overlay:SetScript("OnMouseDown", nil)
     overlay:SetScript("OnMouseUp", nil)
@@ -213,6 +214,13 @@ local function ConfigurePanelInteraction(collection, item, interaction)
         -- text collections still own their locked semantic layout.
         if button ~= "LeftButton" or interaction.movable ~= true
             or item.presentation.panelAnchorLocked ~= false then return end
+        if collection.canvasEditor then
+            local a = item.anchor or ResolveAnchor(item.presentation)
+            collection.canvasEditor:Begin(self, elementID, function(position)
+                ApplyTransientTextPosition(collection, position)
+            end, {x=a.x or 0,y=a.y or 0})
+            return
+        end
         local scale = (UIParent and UIParent:GetEffectiveScale()) or 1
         if scale <= 0 then scale = 1 end
         local cursorX, cursorY = GetCursorPosition()
@@ -239,6 +247,10 @@ local function ConfigurePanelInteraction(collection, item, interaction)
         end)
     end)
     overlay:SetScript("OnMouseUp", function(self, button)
+        if collection.canvasEditor then
+            if button == "LeftButton" then collection.canvasEditor:Finish(self) end
+            return
+        end
         if button ~= "LeftButton" then return end
         local drag = self._textCollectionDrag
         self:SetScript("OnUpdate", nil)

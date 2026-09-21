@@ -71,6 +71,7 @@ Core\GUI\ExwindGrid.lua
 Core\GUI\ExwindGridCardShowcase.lua
 Core\GUI\ExwindGUIShowcase.lua
 Core\GUI\ExwindToolsUI.lua
+Core\GUI\ExwindSettingsV2.lua
 Core\Renderer\ExwindModuleDefinition.lua
 Core\Renderer\ExwindCentralRender.lua
 Core\Renderer\ExwindCentralTextRender.lua

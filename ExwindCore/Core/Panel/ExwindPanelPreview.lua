@@ -519,14 +519,16 @@ function EXUI:BindStandardPreviewInteractions(panelPreview, options)
         panelPreview:SetInteractionSchema(schema, ResolveBindingDB(options.db))
     end
 
-    panelPreview:SetIntentHandler(function(intent)
+    local canvasLease = {}
+    panelPreview._canvasCommitLease = canvasLease
+    local function HandleIntent(intent, canvasTarget)
         if EXUI.CurrentModule ~= moduleKey or EXUI.ActivePageFrame ~= container
             or type(Grid.IsMountedOwnerCurrent) ~= "function"
             or not Grid:IsMountedOwnerCurrent(container, mountedOwner) then
             error("standard icon preview interaction belongs to a stale Grid mount: " .. moduleKey, 2)
         end
         if type(intent) ~= "table" then error("standard icon preview received malformed intent", 2) end
-        local declaration = schema[intent.elementID]
+        local declaration = canvasTarget and canvasTarget.declaration or schema[intent.elementID]
         if type(declaration) ~= "table" then
             error("standard icon preview undeclared elementID: " .. tostring(intent.elementID), 2)
         end
@@ -552,7 +554,7 @@ function EXUI:BindStandardPreviewInteractions(panelPreview, options)
             if type(position) ~= "table" or type(position.x) ~= "number" or type(position.y) ~= "number" then
                 error("standard icon preview received malformed position", 2)
             end
-            local db = ResolveBindingDB(options.db)
+            local db = canvasTarget and canvasTarget.db or ResolveBindingDB(options.db)
             local stored = ResolveStoredInteractionPosition(db, declaration, position,
                 "standard icon interaction " .. intent.elementID)
             WriteDBPath(db, declaration.position.x, stored.x, "standard icon interaction " .. intent.elementID)
@@ -564,7 +566,31 @@ function EXUI:BindStandardPreviewInteractions(panelPreview, options)
             return true
         end
         error("standard icon preview unsupported intent: " .. tostring(intent.type), 2)
-    end)
+    end
+    panelPreview:SetIntentHandler(HandleIntent)
+    -- Explicit editor opt-in. Existing consumers retain the handler above.
+    function panelPreview:CaptureCanvasCommit(elementID)
+        local declaration = schema[elementID]
+        if not declaration or declaration.movable ~= true then return nil end
+        local target = { db = ResolveBindingDB(options.db), declaration = {
+            movable = true, position = { x = declaration.position.x, y = declaration.position.y,
+                toStorage = declaration.position.toStorage },
+        } }
+        local function Current()
+            return not self.released and self._canvasCommitLease == canvasLease
+                and EXUI.CurrentModule == moduleKey and EXUI.ActivePageFrame == container
+                and Grid:IsMountedOwnerCurrent(container, mountedOwner)
+        end
+        return {
+            isCurrent = Current,
+            x = ReadDBPath(target.db, declaration.position.x, "Canvas position"),
+            y = ReadDBPath(target.db, declaration.position.y, "Canvas position"),
+            commit = function(position)
+                if not Current() then return false end
+                return HandleIntent({ type="elementMoved", elementID=elementID, position=position }, target)
+            end,
+        }
+    end
     if options.resize ~= nil then
         if type(panelPreview.BindResize) ~= "function" then
             error("standard panel preview does not support resize", 2)

@@ -4,6 +4,7 @@ local Factory = _G.ExwindFactory
 local HOST, VIEW, ITEM = "EXUI.ChoiceGroup", "EXUI.ChoiceViewport", "EXUI.ChoiceItem"
 local Methods = {}
 local Appearance = UI.ControlAppearance
+local TRI_INCLUDE = { .30, .78, .48, 1 }
 local Paint, Layout
 
 Factory:InitCompositePool(HOST)
@@ -19,6 +20,12 @@ Factory:InitPool(ITEM, "Button", "BackdropTemplate", function(button)
     button.line:SetPoint("BOTTOMLEFT", 0, 0)
     button.line:SetPoint("BOTTOMRIGHT", 0, 0)
     button.line:SetHeight(2)
+    button.seam = UI:CreateVisualTexture(button, _G.EXBORDERFRAME)
+    button.seam:SetColorTexture(unpack(Appearance.colors.inputBorder))
+    button.seam:SetPoint("TOPRIGHT")
+    button.seam:SetPoint("BOTTOMRIGHT")
+    button.seam:SetWidth(1)
+    button.seam:Hide()
 end)
 
 local function Copy(value)
@@ -39,6 +46,11 @@ local function Composite(base, overlay)
 end
 
 local function Normalize(host, value)
+    if host.triStateMode then
+        assert(value == "neutral" or value == "include" or (value == "exclude" and host.allowExclude),
+            "TriStateChip expects neutral/include or an allowed exclude state")
+        return value
+    end
     if host.mode == "multiple" then
         local selected = {}
         for _, item in ipairs(host.items) do
@@ -56,6 +68,7 @@ local function Normalize(host, value)
 end
 
 local function Selected(host, id)
+    if host.triStateMode then return host.selection ~= "neutral" end
     if host.mode == "multiple" then return host.selection[id] == true end
     return host.selection == id
 end
@@ -73,26 +86,39 @@ Paint = function(button)
     local pressed = button._choicePressed and not disabled
     button:SetEnabled(not disabled)
     local fill, edge, textColor
-    if host.choiceStyle == "segmented" and not button._choiceArrow then
+    if host.triStateMode and not button._choiceArrow then
+        button.label:SetText(item.label)
+    end
+    if host.triStateMode and selected and not disabled and not button._choiceArrow then
+        local tone = host.selection == "include" and TRI_INCLUDE or Appearance.colors.exclude
+        fill = Composite(Appearance.colors.subcard,
+            {tone[1], tone[2], tone[3], pressed and .34 or (hover and .26 or .18)})
+        edge, textColor = tone, Appearance.colors.white
+        UI:SetControlSurface(button, 4, fill, edge)
+    elseif (host.choiceStyle == "segmented" or host.choiceStyle == "connected") and not button._choiceArrow then
+        local radius = host.choiceStyle == "connected" and 0 or 4
         if disabled then
             fill, textColor = Appearance.colors.disabledFill, Appearance.colors.disabledText
-            UI:SetControlSurface(button, 4, fill, fill)
+            UI:SetControlSurface(button, radius, fill, fill)
         elseif pressed then
             fill, textColor = Composite(Appearance.colors.input, Appearance.colors.toolActive),
                 Appearance.colors.accentActive
-            UI:SetControlSurface(button, 4, fill, fill)
+            UI:SetControlSurface(button, radius, fill, fill)
         elseif selected then
             fill, textColor = Composite(Appearance.colors.input,
                     hover and Appearance.colors.tagSelectedHover or Appearance.colors.segmentSelected),
                 Appearance.colors.white
-            UI:SetControlSurface(button, 4, fill, fill)
+            UI:SetControlSurface(button, radius, fill, fill)
         elseif hover then
             fill, textColor = Composite(Appearance.colors.input, Appearance.colors.toolHover),
                 Appearance.colors.text
-            UI:SetControlSurface(button, 4, fill, fill)
+            UI:SetControlSurface(button, radius, fill, fill)
         else
             UI:ClearControlSurface(button)
             textColor = Appearance.colors.segmentText
+        end
+        if host.choiceStyle == "connected" and selected and not disabled then
+            UI:SetControlSurface(button, 0, fill, Appearance.colors.modifiedBorder)
         end
     else
         local base = Appearance.colors.subcard
@@ -120,6 +146,7 @@ Paint = function(button)
         UI:SetControlSurface(button, 4, fill, edge)
     end
     button.label:SetTextColor(unpack(textColor))
+    button.seam:SetColorTexture(unpack(selected and Appearance.colors.modifiedBorder or Appearance.colors.inputBorder))
     button.line:SetColorTexture(unpack(Appearance.colors.focus))
     button.line:SetShown(host.variant == "tabs" and selected and not button._choiceArrow)
     button.icon:SetAlpha(disabled and .35 or 1)
@@ -146,7 +173,10 @@ local function Choose(button)
     local host, item = button._choiceHost, button._choiceItem
     if not host or not host._choiceLease or not host:IsVisible() or host.disabled or item.disabled then return end
     local old, value = host:GetValue(), host:GetValue()
-    if host.mode == "multiple" then
+    if host.triStateMode then
+        value = value == "neutral" and "include"
+            or (value == "include" and host.allowExclude and "exclude" or "neutral")
+    elseif host.mode == "multiple" then
         value[item.id] = not value[item.id] or nil
         if not host.allowEmpty and not next(value) then return end
     elseif value == item.id then
@@ -169,7 +199,8 @@ end
 local function AcquireButton(host, parent, item, onClick)
     local button = Factory:Acquire(ITEM, parent)
     button._choiceHost, button._choiceItem, button._choiceHover, button._choicePressed, button._choiceArrow = host, item, false, false, false
-    Appearance.ApplyTextRole(button.label, "control", nil, "GameFontNormalSmall")
+    local textRole = (host.choiceStyle == "connected" or host.triStateMode) and "fieldValue" or "control"
+    Appearance.ApplyTextRole(button.label, textRole, nil, textRole == "control" and "GameFontNormalSmall" or nil)
     button.label:ClearAllPoints()
     button.label:SetPoint("LEFT", item.icon and 26 or 6, 0)
     button.label:SetPoint("RIGHT", -6, 0)
@@ -185,6 +216,11 @@ local function AcquireButton(host, parent, item, onClick)
         if _G.GameTooltip and self._choiceItem then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(self._choiceItem.label)
+            if host.triStateMode then
+                local L = _G.ExwindTools.L
+                local state = host.selection == "include" and "包含" or (host.selection == "exclude" and "不包含" or "不限")
+                GameTooltip:AddLine(L and L[state] or state)
+            end
             if self._choiceItem.tooltip then GameTooltip:AddLine(self._choiceItem.tooltip, .8, .85, .9, true) end
             GameTooltip:Show()
         end
@@ -199,12 +235,19 @@ local function AcquireButton(host, parent, item, onClick)
     button:SetScript("OnHide", function(self) self._choicePressed = false; CloseTooltip(self) end)
     button:EnableMouseWheel(host.variant == "tabs")
     button:SetScript("OnMouseWheel", function(_, delta) host:ScrollBy(-delta * 80) end)
+    if host._choicePageScroll then
+        button:SetScript("OnMouseWheel", nil)
+        button:EnableMouseWheel(false)
+    end
+    button.seam:Hide()
     Factory:AttachPoolRelease(button, function(self)
         CloseTooltip(self)
         self._choiceHost, self._choiceItem, self._choiceHover, self._choicePressed, self._choiceArrow = nil, nil, nil, nil, nil
         self:SetScript("OnMouseWheel", nil); self:SetScript("OnMouseDown", nil)
         self:SetScript("OnMouseUp", nil); self:SetScript("OnHide", nil)
         self.line:Hide()
+        self.seam:Hide()
+        self.label:SetDrawLayer("OVERLAY", 0)
     end)
     return button
 end
@@ -215,10 +258,28 @@ function Methods:ScrollBy(delta)
     Layout(self)
 end
 
+-- Opt-in for V2 page controls. Tabs retain their existing horizontal wheel path.
+function Methods:SetPageScroll()
+    if self.variant == "tabs" then return end
+    self._choicePageScroll = true
+    self:SetScript("OnMouseWheel", nil)
+    self:EnableMouseWheel(false)
+    self.viewport:SetScript("OnMouseWheel", nil)
+    self.viewport:EnableMouseWheel(false)
+    for _, button in ipairs(self.buttons) do
+        button:SetScript("OnMouseWheel", nil)
+        button:EnableMouseWheel(false)
+    end
+    for _, button in ipairs({self.previous, self.nextButton}) do
+        button:SetScript("OnMouseWheel", nil)
+        button:EnableMouseWheel(false)
+    end
+end
+
 Layout = function(host, reveal)
     if not host._choiceLease or host._choiceLayout then return end
     host._choiceLayout = true
-    local padding = host.choiceStyle == "segmented" and 2 or 0
+    local padding = (host.choiceStyle == "segmented" or host.choiceStyle == "connected") and 2 or 0
     local width, gap, height = math.max(1, host:GetWidth() - padding * 2), host.gap, host.itemHeight - padding * 2
     local count = #host.buttons
     local columns = host.columns or (host.wrap and math.min(count, math.max(1, math.floor((width + gap) / (host.minItemWidth + gap)))) or count)
@@ -251,7 +312,7 @@ Layout = function(host, reveal)
     host.viewport:ClearAllPoints()
     host.viewport:SetPoint("TOPLEFT", inset + padding, -padding)
     host.viewport:SetSize(visibleWidth, y + height)
-    for _, button in ipairs(host.buttons) do
+    for index, button in ipairs(host.buttons) do
         button:ClearAllPoints()
         button:SetPoint("TOPLEFT", host.viewport, "TOPLEFT", button._choiceX - host.offset, -button._choiceY)
         button:SetSize(button._choiceWidth, height)
@@ -259,6 +320,12 @@ Layout = function(host, reveal)
         button.label:ClearAllPoints()
         button.label:SetPoint("LEFT", button._choiceItem.icon and 26 or padding, 0)
         button.label:SetPoint("RIGHT", -padding, 0)
+        if host.triStateMode then
+            button.label:ClearAllPoints()
+            button.label:SetPoint("TOPLEFT", button, "TOPLEFT", padding, 0)
+            button.label:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -padding, 0)
+        end
+        button.seam:Hide()
     end
     host.previous:SetShown(overflow); host.nextButton:SetShown(overflow)
     host.previous:SetSize(18, height); host.nextButton:SetSize(18, height)
@@ -266,6 +333,10 @@ Layout = function(host, reveal)
     host.nextButton._choiceItem.disabled = host.offset >= host.maxOffset
     Paint(host.previous); Paint(host.nextButton)
     host:SetHeight(y + height + padding * 2)
+    if host.choiceStyle == "connected" then
+        -- The shared outline follows the actual rows, not the available line width.
+        host:SetWidth(math.max(1, math.min(host:GetWidth(), lastRight + padding * 2)))
+    end
     -- A reused host/button can keep the same size under a new parent scale.
     UI:RefreshCompositeSurfaces(host)
     host._choiceLayout = nil
@@ -301,10 +372,11 @@ local function Create(parent, options, tabs)
     local host = Factory:AcquireCompositeHost(HOST, parent)
     for key, method in pairs(Methods) do host[key] = method end
     host._choiceLease, host._choiceRevision = {}, 0
+    host.triStateMode, host.allowExclude, host._choicePageScroll = nil, nil, nil
     host._gridType = "ChoiceGroup"
     host.variant = tabs and "tabs" or "options"
-    host.choiceStyle = not tabs and (options.appearance == "compact" or options.appearance == "form" or options.appearance == "dungeon-aura" or options.appearance == "load-card" or options.appearance == "segmented") and options.appearance or nil
-    if host.choiceStyle == "segmented" or host.choiceStyle == "compact" or host.choiceStyle == "load-card" then
+    host.choiceStyle = not tabs and (options.appearance == "compact" or options.appearance == "form" or options.appearance == "dungeon-aura" or options.appearance == "load-card" or options.appearance == "segmented" or options.appearance == "connected") and options.appearance or nil
+    if host.choiceStyle == "segmented" or host.choiceStyle == "connected" or host.choiceStyle == "compact" or host.choiceStyle == "load-card" then
         UI:SetControlSurface(host, 4, Appearance.colors.input, Appearance.colors.inputBorder)
     else
         UI:ClearControlSurface(host)
@@ -312,10 +384,12 @@ local function Create(parent, options, tabs)
     host.mode = not tabs and options.mode == "multiple" and "multiple" or "single"
     host.allowEmpty = not tabs and options.allowEmpty == true
     host.sizing = options.sizing == "content" and "content" or "equal"
+    if host.choiceStyle == "connected" then host.sizing = "content" end
     host.wrap = not tabs and options.wrap ~= false
     host.columns = options.columns and math.max(1, math.floor(options.columns)) or nil
     host.minItemWidth = math.max(16, options.minItemWidth or 44)
     host.gap = math.max(0, options.gap or (tabs and 0 or 3))
+    if host.choiceStyle == "connected" then host.gap = 0 end
     host.itemHeight = math.max(18, options.itemHeight or (tabs and 32 or 27))
     host.disabled, host.offset, host.buttons, host.items = options.disabled == true, 0, {}, {}
     host.selection = options.value
@@ -348,3 +422,24 @@ end
 -- single value = id; multiple value = { [id] = true }. onChange may return false.
 function UI:CreateTabGroup(parent, options) return Create(parent, options, true) end
 function UI:CreateOptionGroup(parent, options) return Create(parent, options, false) end
+
+-- One named chip, with explicit states; this is not boolean/multiple selection.
+function UI:CreateTriStateChip(parent, options)
+    options = options or {}
+    assert(type(options.label) == "string", "TriStateChip requires a label")
+    local host = Create(parent, {
+        items={{id="chip", label=options.label, tooltip=options.tooltip}},
+        width=options.width or 160, itemHeight=options.itemHeight or 28,
+        allowEmpty=true, sizing="content", wrap=false, disabled=options.disabled,
+        onChange=options.onChange,
+    }, false)
+    host.triStateMode, host.allowExclude = true, options.allowExclude ~= false
+    Appearance.ApplyTextRole(host.buttons[1].label, "fieldValue")
+    host.buttons[1].label:SetJustifyH("CENTER")
+    host.buttons[1].label:SetJustifyV("MIDDLE")
+    UI:ApplyVisualLayer(host.buttons[1].label, _G.EXFONTFRAME)
+    host:SetValue(options.value or "neutral")
+    host:SetWidth(options.width or math.max(64, host.buttons[1].label:GetUnboundedStringWidth() + 20))
+    host:SetPageScroll()
+    return host
+end

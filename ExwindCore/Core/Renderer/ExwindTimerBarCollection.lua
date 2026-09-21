@@ -244,6 +244,7 @@ local function StopOverlayDrag(overlay, emitMove)
 end
 
 local function ResetInteractionOverlay(overlay, detach)
+    if overlay and overlay._canvasDriver then overlay._canvasDriver:CancelOverlay(overlay) end
     if not overlay then return end
     StopOverlayDrag(overlay, false)
     overlay:SetScript("OnMouseDown", nil)
@@ -453,6 +454,16 @@ local function ConfigureInteractionOverlay(collection, item, slotID, spec)
             return
         end
         if button ~= "LeftButton" or not movable then return end
+        if collection.canvasEditor then
+            local a = ResolveInteractionAnchor(spec, activeSemanticBounds)
+            local origin = isText and not activeSemanticBounds and ResolveTextInteractionPosition(textWidget, a)
+                or {x=a.x or 0,y=a.y or 0}
+            collection.canvasEditor:Begin(self, self._timerBarSlotID, function(position)
+                ApplyTransientPosition(collection, item, slotID, spec, position)
+                ApplyInteractionAnchor(self, ResolveInteractionParent(item, slotID, spec), slotID, spec, semanticBounds, position)
+            end, origin)
+            return
+        end
 
         StopOverlayDrag(self, false)
         -- 鼠标坐标必须用稳定 UI scale 换算；overlay 的 parent 可能是缩放的
@@ -501,6 +512,10 @@ local function ConfigureInteractionOverlay(collection, item, slotID, spec)
         end)
     end)
     overlay:SetScript("OnMouseUp", function(self, button)
+        if collection.canvasEditor then
+            if button == "LeftButton" then collection.canvasEditor:Finish(self) end
+            return
+        end
         if button == "LeftButton" then StopOverlayDrag(self, true) end
     end)
     overlay:Show()

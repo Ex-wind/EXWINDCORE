@@ -10,10 +10,12 @@ local Paint, Layout
 Factory:InitCompositePool(HOST)
 Factory:InitPool(VIEW, "Frame")
 Factory:InitPool(ITEM, "Button", "BackdropTemplate", function(button)
-    button.label = button:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    button:SetFontString(button.label)
+    -- Paint owns text state. Do not register this label as Button's native
+    -- font string: native pushed/font state must not move our layout-owned text.
+    button.label = UI:CreateVisualFontString(button, _G.EXFONTFRAME, "GameFontHighlightSmall")
     button.label:SetWordWrap(false)
     button.label:SetJustifyH("CENTER")
+    button.label:SetJustifyV("MIDDLE")
     button.icon = button:CreateTexture(nil, "ARTWORK")
     button.line = button:CreateTexture(nil, "OVERLAY")
     button.line:SetColorTexture(unpack(Appearance.colors.focus))
@@ -196,15 +198,26 @@ local function Choose(button)
     end
 end
 
+local function LayoutLabel(button)
+    local padding = button:GetWidth() < 32 and 2 or 6
+    local label = button.label
+    label:ClearAllPoints()
+    label:SetPoint("TOPLEFT", button, "TOPLEFT", button._choiceItem.icon and 26 or padding, 0)
+    label:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -padding, 0)
+    label:SetJustifyH("CENTER")
+    label:SetJustifyV("MIDDLE")
+    label:SetWordWrap(false)
+    UI:ApplyVisualLayer(label, _G.EXFONTFRAME)
+end
+
 local function AcquireButton(host, parent, item, onClick)
     local button = Factory:Acquire(ITEM, parent)
     button._choiceHost, button._choiceItem, button._choiceHover, button._choicePressed, button._choiceArrow = host, item, false, false, false
     local textRole = (host.choiceStyle == "connected" or host.triStateMode) and "fieldValue" or "control"
     Appearance.ApplyTextRole(button.label, textRole, nil, textRole == "control" and "GameFontNormalSmall" or nil)
-    button.label:ClearAllPoints()
-    button.label:SetPoint("LEFT", item.icon and 26 or 6, 0)
-    button.label:SetPoint("RIGHT", -6, 0)
-    button:SetText(item.label)
+    button:SetPushedTextOffset(0, 0)
+    button.label:SetText(item.label)
+    LayoutLabel(button)
     button.icon:ClearAllPoints()
     button.icon:SetPoint("LEFT", 6, 0)
     button.icon:SetSize(16, 16)
@@ -247,7 +260,9 @@ local function AcquireButton(host, parent, item, onClick)
         self:SetScript("OnMouseUp", nil); self:SetScript("OnHide", nil)
         self.line:Hide()
         self.seam:Hide()
-        self.label:SetDrawLayer("OVERLAY", 0)
+        self.label:SetText("")
+        self.label:ClearAllPoints()
+        self:SetPushedTextOffset(0, 0)
     end)
     return button
 end
@@ -316,19 +331,12 @@ Layout = function(host, reveal)
         button:ClearAllPoints()
         button:SetPoint("TOPLEFT", host.viewport, "TOPLEFT", button._choiceX - host.offset, -button._choiceY)
         button:SetSize(button._choiceWidth, height)
-        local padding = button._choiceWidth < 32 and 2 or 6
-        button.label:ClearAllPoints()
-        button.label:SetPoint("LEFT", button._choiceItem.icon and 26 or padding, 0)
-        button.label:SetPoint("RIGHT", -padding, 0)
-        if host.triStateMode then
-            button.label:ClearAllPoints()
-            button.label:SetPoint("TOPLEFT", button, "TOPLEFT", padding, 0)
-            button.label:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -padding, 0)
-        end
+        LayoutLabel(button)
         button.seam:Hide()
     end
     host.previous:SetShown(overflow); host.nextButton:SetShown(overflow)
     host.previous:SetSize(18, height); host.nextButton:SetSize(18, height)
+    LayoutLabel(host.previous); LayoutLabel(host.nextButton)
     host.previous._choiceItem.disabled = host.offset <= 0
     host.nextButton._choiceItem.disabled = host.offset >= host.maxOffset
     Paint(host.previous); Paint(host.nextButton)

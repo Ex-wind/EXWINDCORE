@@ -1,4 +1,4 @@
--- Temporary, memory-only catalog for inspecting every shared EXUI control.
+-- Shared control catalog: /exgui. Demonstration values stay in this file only.
 -- The window host and every visible widget are created by EXUI / ExwindGrid.
 
 local ExwindTools = _G.ExwindTools
@@ -50,7 +50,6 @@ local sampleDB = {
         timer = { enabled = true, label = "计时条", x = 145, y = -28 },
     },
     segmented = "details",
-    itemConfig = { id = 6948, enabled = true, quantity = 3 },
     auraChildren = {
         children = {
             {
@@ -292,148 +291,366 @@ local function Chapter(key, title)
     Add({ type = "subheader", key = "chapter_" .. key, label = title, h = 3 }, 1)
 end
 
-Chapter("0", "0 · Dropdown")
-Add({
-    type = "dropdown", key = "dropdown", label = "通用单选下拉",
-    items = {
-        { "平衡", "balanced" },
-        { "性能", "performance" },
-        { isMenu = true, text = "更多", menu = { { "精确", "precise" }, { "实验", "experimental" } } },
-    },
-    searchable = true, h = 6,
-})
+-- Only this catalog owns these demonstration values. No module DB is borrowed.
+local chapterNumber = 0
+local function CatalogChapter(title)
+    chapterNumber = chapterNumber + 1
+    Chapter(tostring(chapterNumber), tostring(chapterNumber) .. " · " .. title)
+end
+local function Description(text)
+    Add({ type = "description", label = text, h = 4 })
+end
+local choices = { { "概览", "overview" }, { "详情", "details" }, { "高级", "advanced" } }
+local optionItems = {
+    { id = "overview", label = "概览" }, { id = "details", label = "详情" },
+    { id = "advanced", label = "高级" }, { id = "locked", label = "禁用项", disabled = true },
+}
+local modeItems = { { "平衡", "balanced" }, { "性能", "performance" }, { "精确", "precise" } }
 
-Chapter("1", "1 · LSM Font")
-Add({ type = "lsm_font", key = "lsmFont", label = "字体", searchable = true, h = 6 })
-
-Chapter("2", "2 · LSM Texture")
-AddRow(6, {
-    { type = "lsm_texture", key = "lsmStatusbar", label = "Statusbar", searchable = true, x = 1, w = 32 },
-    { type = "lsm_border", key = "lsmBorder", label = "Border", searchable = true, x = 35, w = 32 },
-    { type = "lsm_background", key = "lsmBackground", label = "Background", searchable = true, x = 69, w = 32 },
-})
-
-Chapter("3", "3 · LSM Sound")
-Add({ type = "lsm_sound", key = "lsmSound", label = "音效与试听", searchable = true, h = 6 })
-
-Chapter("4", "4 · MultiSelect")
-Add({
-    type = "multiselect", key = "multiSelect", label = "多选与清空",
-    items = { { "工具", "utility" }, { "预览", "preview" }, { "编辑", "editor" }, { "调试", "debug" } },
-    searchable = true, h = 6,
-})
-
-Chapter("5", "5 · Button")
-AddRow(5, {
-    { type = "button", key = "buttonPrimary", label = "Primary", variant = "primary", x = 1, w = 22 },
-    { type = "button", key = "buttonSecondary", label = "Secondary", variant = "secondary", x = 26, w = 22 },
-    { type = "button", key = "buttonDanger", label = "Danger", variant = "danger", x = 51, w = 22 },
-    { type = "button", key = "buttonDisabled", label = "Disabled", variant = "secondary", disabled = true, x = 76, w = 22 },
-})
-
-Chapter("5b", "5b · PicButton")
-Add({
-    type = "picbutton", key = "picButton",
-    iconNormal = "Interface\\Icons\\INV_Misc_QuestionMark",
-    iconPushed = "Interface\\Icons\\INV_Misc_QuestionMark",
-    x = 1, w = 7, h = 5,
-})
-
-Chapter("6", "6 · Checkbox")
-AddRow(4, {
-    { type = "checkbox", key = "checkbox", label = "已启用", x = 1, w = 36 },
-    { type = "checkbox", key = "checkboxDisabled", label = "禁用状态", disabled = true, x = 40, w = 36 },
-})
-
-Chapter("7", "7 · Slider")
-Add({ type = "slider", key = "slider", label = "数值 / 步进 / 输入", min = 0, max = 100, step = 1, h = 2 }, 4)
-
-Chapter("8", "8 · Separator")
-Add({ type = "divider", key = "separator", h = 2 })
-
-Add({ type = "header", key = "header", label = "9 · Header", h = 5 }, 2)
-
-Chapter("11", "11 · ColorButton")
-Add({ type = "color", key = "accentColor", label = "强调色（RGBA）", h = 5 })
-
-
-Chapter("13", "13 · EditBox")
-Add({ type = "input", key = "inputSingle", label = "单行输入", h = 3 }, 3)
-Add({ type = "input", key = "inputMulti", label = "多行输入", h = 12 })
-
-Chapter("14", "14 · PreviewCanvas")
-Add({ type = "previewcanvas", key = "preview", h = 20 })
-
-Chapter("15", "15 · SegmentedControl")
-Add({
-    type = "segmented", key = "segmented",
-    items = { { "概览", "overview" }, { "详情", "details" }, { "高级", "advanced" } },
-    h = 5,
-})
-
-Chapter("16", "16 · ItemConfig")
-Add({
-    type = "itemconfig", key = "itemConfig", canDelete = true, h = 5,
-    onDragUpdate = function(itemID) sampleDB.itemConfig.id = itemID end,
-    onDelete = function()
-        sampleDB.itemConfig.id = 0
-        sampleDB.itemConfig.enabled = false
-        RefreshShowcase()
+-- Constructors without a Grid type are still displayed through their real shared API.
+-- Native decorations stay with the pooled custom host; pooled controls are released.
+local CATALOG_RENDERER = "ExwindGUIShowcase.Catalog"
+local function ReleaseCatalog(host)
+    for index = #(host._catalogControls or {}), 1, -1 do
+        local control = host._catalogControls[index]
+        EXUI:RestoreSettingsListControl(control)
+        if control._exButtonPresentation == "sidebar" then
+            EXUI:ReleaseSidebarNavigationButton(control)
+        elseif type(control.Release) == "function" then
+            control:Release()
+        else
+            ReleaseGrid4x4Control(control)
+        end
+    end
+    host._catalogControls = nil
+    for _, control in pairs(host._catalogDecorations or {}) do control:Hide() end
+end
+Grid:RegisterCustomRenderer(CATALOG_RENDERER, {
+    measure = function(_, opts) return opts.height end,
+    release = ReleaseCatalog,
+    mount = function(host, ctx)
+        ReleaseCatalog(host)
+        host._catalogControls = {}
+        host._catalogDecorations = host._catalogDecorations or {}
+        local family = ctx.element.opts.family
+        local width = ctx._layoutWidth
+        local function Place(control, x, y, w, h)
+            control:ClearAllPoints()
+            control:SetPoint("TOPLEFT", host, "TOPLEFT", x, -y)
+            control:SetSize(w, h or control:GetHeight())
+            control:Show()
+            return control
+        end
+        local function Owned(control, x, y, w, h)
+            host._catalogControls[#host._catalogControls + 1] = control
+            return Place(control, x, y, w, h)
+        end
+        local function Decoration(key, create, x, y, w, h)
+            local control = host._catalogDecorations[key]
+            if not control then control = create(); host._catalogDecorations[key] = control end
+            return Place(control, x, y, w, h)
+        end
+        if family == "boolean" then
+            local cell = (width - 36) / 4
+            for index, presentation in ipairs({ "checkbox", "switch", "pill", "card" }) do
+                for state = 1, 3 do
+                    local key = "boolean_" .. presentation .. state
+                    local control = EXUI:CreateCheckbox(host,
+                        presentation .. ({ " · 开", " · 关", " · 禁用" })[state], sampleDB[key],
+                        function(value) sampleDB[key] = value end)
+                    Owned(control, (index - 1) * (cell + 12), (state - 1) * 50, cell, 38)
+                    if presentation ~= "checkbox" then
+                        EXUI:PrepareSettingsListControl(control, { presentation = presentation, hideLabel = false })
+                    end
+                    if state == 3 then control.checkbox:Disable() end
+                end
+            end
+        elseif family == "tristate" then
+            for index, value in ipairs({ "neutral", "include", "exclude" }) do
+                local key = "triState" .. index
+                Owned(EXUI:CreateTriStateChip(host, {
+                    label = value, value = sampleDB[key], width = 180,
+                    onChange = function(nextValue) sampleDB[key] = nextValue end,
+                }), (index - 1) * 200, 0, 180, 32)
+            end
+        elseif family == "sidebar" then
+            Decoration("sidebarHeader", function()
+                return EXUI:CreateSidebarNavigationHeader(host, "模块分类 / SidebarNavigationHeader")
+            end, 0, 0, width, 24)
+            for index, spec in ipairs({ { "普通入口", false, true, 0 },
+                { "选中入口", true, true, 0 }, { "子项入口", false, true, 1 },
+                { "禁用入口", false, false, 0 } }) do
+                Owned(EXUI:CreateSidebarNavigationButton(host, spec[1], nil,
+                    { selected = spec[2], enabled = spec[3], level = spec[4] }),
+                    (index - 1) * (width / 4), 34, width / 4 - 12, 28)
+            end
+        elseif family == "sections" then
+            for index, kind in ipairs({ "page", "section", "subsection", "information" }) do
+                local section = EXUI:CreateSettingsSection(host, {
+                    kind = kind, title = kind .. " · 标题", description = "共享标题与说明文字",
+                })
+                local w = width / 2 - 12
+                local h = EXUI:UpdateSettingsSectionLayout(section, w)
+                Owned(section, ((index - 1) % 2) * (width / 2), math.floor((index - 1) / 2) * 130, w, h)
+            end
+        elseif family == "rows" then
+            local top = 0
+            for index = 1, 3 do
+                local rowControl = EXUI:CreateSettingsRow(host, {
+                    label = "设置行 " .. index, description = index == 2 and "带补充说明的设置行" or nil,
+                    isLast = index == 3,
+                })
+                local h = EXUI:UpdateSettingsRowLayout(rowControl, width, 28)
+                Owned(rowControl, 0, top, width, h)
+                top = top + h
+            end
+        elseif family == "table" then
+            local header = EXUI:CreateSettingsTableHeader(host, { columns = {
+                { title = "名称", weight = 2 }, { title = "状态", weight = 1 }, { title = "说明", weight = 3 },
+            } })
+            local h, columns = EXUI:UpdateSettingsTableHeaderLayout(header, width)
+            Owned(header, 0, 0, width, h)
+            for index = 1, 3 do
+                local rowControl = EXUI:CreateSettingsTableRow(host, {
+                    staticCells = { "示例 " .. index, index == 2 and "关闭" or "开启", "共享表格行与分隔线" },
+                    isLast = index == 3,
+                })
+                local rowHeight = EXUI:UpdateSettingsTableRowLayout(rowControl, width, columns)
+                Owned(rowControl, 0, h, width, rowHeight)
+                h = h + rowHeight
+            end
+        elseif family == "cards" then
+            for index = 1, 2 do
+                local card = EXUI:CreateSettingsCard(host, {
+                    id = "catalog-card-" .. index, title = index == 1 and "标准卡片" or "可折叠卡片",
+                    collapsible = index == 2, minBodyHeight = 65,
+                })
+                card:SetContentHeight(65)
+                Owned(card, (index - 1) * (width / 2), 0, width / 2 - 12, card:GetHeight())
+                local text = EXUI:CreateDescription(card:GetBody(), "SettingsCard · 共享标题、边框与内容背景", width / 2 - 40)
+                host._catalogControls[#host._catalogControls + 1] = text
+                text:SetPoint("TOPLEFT", 4, -10)
+            end
+        elseif family == "group" then
+            for index = 1, 2 do
+                local surface = EXUI:CreateSettingsCardGroupSurface(host)
+                EXUI:UpdateSettingsCardGroupSurfaceLayout(surface, width / 2 - 12, 84)
+                Owned(surface, (index - 1) * (width / 2), 0, width / 2 - 12, 84)
+            end
+        elseif family == "images" then
+            for index, radius in ipairs({ 4, 10, 20 }) do
+                local image = Decoration("rounded" .. index, function()
+                    return EXUI:CreateRoundedImage(host, radius)
+                end, (index - 1) * 130, 0, 96, 96)
+                image:SetTexture("Interface\\Icons\\INV_Misc_QuestionMark")
+                image:SetCornerRadius(radius)
+            end
+        elseif family == "separators" then
+            for index = 1, 3 do
+                Decoration("separator" .. index, function()
+                    return EXUI:CreateSettingsSeparator(host, width)
+                end, 0, (index - 1) * 28, width * (1 - (index - 1) * .2), nil)
+            end
+        elseif family == "palette" then
+            local colors = ExwindTools.GUIColors
+            for index, name in ipairs({ "page", "panel", "card", "header", "input", "popup" }) do
+                local surface = EXUI:CreateCard(host, width / 3 - 12, 76)
+                Owned(surface, ((index - 1) % 3) * width / 3, math.floor((index - 1) / 3) * 88, width / 3 - 12, 76)
+                EXUI:SetControlSurface(surface, 4, colors[name], colors.cardBorder)
+                local label = EXUI:CreateDescription(surface, "GUIColors." .. name, width / 3 - 36)
+                host._catalogControls[#host._catalogControls + 1] = label
+                label:SetPoint("TOPLEFT", 12, -24)
+            end
+        end
     end,
 })
+local function Gallery(title, family, height)
+    CatalogChapter(title)
+    Add({ type = "custom", key = "catalog_" .. family, renderer = CATALOG_RENDERER,
+        opts = { family = family, height = height }, measure = true, h = 5 })
+end
 
-Chapter("20_1_aura_bars", "20.1 附项 · AuraDuration / AuraApplication")
-Add({ type = "auradurationbargroup", key = "durationBar", label = "Aura Duration Bar", measure = true, h = 24 })
-Add({ type = "auraapplicationbargroup", key = "applicationBar", label = "Aura Application Bar", measure = true, h = 20 })
+CatalogChapter("Dropdown · 单选下拉")
+for index = 1, 3 do
+    local key = "catalogDropdown" .. index
+    sampleDB[key] = index == 2 and "precise" or "balanced"
+    Add({ type = "dropdown", key = key, label = ({ "普通下拉", "可搜索下拉", "禁用下拉" })[index],
+        items = index == 2 and { { "平衡", "balanced" }, { isMenu = true, text = "更多模式",
+            menu = { { "性能", "performance" }, { "精确", "precise" } } } } or modeItems,
+        searchable = index == 2, disabled = index == 3, h = 6 })
+end
+for _, media in ipairs({ { "lsm_font", "字体" }, { "lsm_texture", "状态条材质" },
+    { "lsm_border", "边框材质" }, { "lsm_background", "背景材质" }, { "lsm_sound", "声音与试听" } }) do
+    CatalogChapter(media[1] .. " · " .. media[2])
+    for index = 1, 2 do
+        Add({ type = media[1], key = "catalog_" .. media[1] .. index,
+            label = media[2] .. (index == 1 and " · 普通" or " · 搜索"), searchable = index == 2, h = 6 })
+    end
+end
+CatalogChapter("MultiSelect · 多选下拉")
+for index = 1, 2 do
+    local key = "catalogMulti" .. index
+    sampleDB[key] = index == 1 and { utility = true, preview = true } or {}
+    Add({ type = "multiselect", key = key, label = index == 1 and "已有选项" or "空选项 / 可搜索",
+        items = { { "工具", "utility" }, { "预览", "preview" }, { "编辑", "editor" } }, searchable = true, h = 6 })
+end
+CatalogChapter("Button · 文字按钮")
+for _, disabled in ipairs({ false, true }) do
+    local items = {}
+    for index, variant in ipairs({ "primary", "secondary", "danger", "soft" }) do
+        items[#items + 1] = { type = "button", label = variant .. (disabled and " · 禁用" or ""),
+            variant = variant, disabled = disabled, x = 1 + (index - 1) * 25, w = 23 }
+    end
+    AddRow(5, items)
+end
+CatalogChapter("PicButton · 图片按钮")
+for index = 1, 2 do
+    Add({ type = "picbutton", key = "catalogPic" .. index, disabled = index == 2,
+        iconNormal = "Interface\\Icons\\INV_Misc_QuestionMark", x = 1, w = 7, h = 6 })
+end
+for _, presentation in ipairs({ "checkbox", "switch", "pill", "card" }) do
+    for state = 1, 3 do sampleDB["boolean_" .. presentation .. state] = state ~= 2 end
+end
+Gallery("Checkbox / Switch / Pill / Card · 布尔控件", "boolean", 154)
+CatalogChapter("Slider · 滑块与数字输入")
+for index, spec in ipairs({ { 0, 100, 1, 42 }, { 0, 1, .05, .65 }, { -100, 100, 5, -20 } }) do
+    local key = "catalogSlider" .. index
+    sampleDB[key] = spec[4]
+    Add({ type = "slider", key = key, label = ({ "整数", "小数", "正负数 / 禁用" })[index],
+        min = spec[1], max = spec[2], step = spec[3], disabled = index == 3, h = 6, measure = true })
+end
+CatalogChapter("Separator · 渐变分隔线")
+for _, width in ipairs({ 100, 70, 40 }) do Add({ type = "divider", w = width, h = 3 }) end
+Gallery("SettingsSeparator · 设置列表分隔线", "separators", 80)
+CatalogChapter("Header / Subheader / Description · 标题与文字")
+for _, kind in ipairs({ "header", "subheader", "description" }) do
+    Add({ type = kind, label = kind .. " · 短标题 / 短文字", h = 5 })
+    Add({ type = kind, label = kind .. " · 较长的示例文字，用来检查字号、行距、截断与内容区域的实际显示效果。", h = 6 })
+end
+CatalogChapter("ColorButton · 颜色与透明度")
+for index = 1, 3 do
+    local key = "catalogColor" .. index
+    sampleDB[key .. "R"], sampleDB[key .. "G"], sampleDB[key .. "B"], sampleDB[key .. "A"] = .2, .4, .8, index == 2 and .35 or 1
+    Add({ type = "color", key = key, label = ({ "不透明", "半透明", "禁用" })[index], disabled = index == 3, h = 5 })
+end
+CatalogChapter("EditBox · 输入框")
+for index, value in ipairs({ "普通输入", "禁用输入", "多行输入\n第二行示例\n第三行示例" }) do
+    local key = "catalogInput" .. index
+    sampleDB[key] = value
+    Add({ type = "input", key = key, label = "输入示例 " .. index, disabled = index == 2, h = index == 3 and 12 or 4 }, 3)
+end
+CatalogChapter("SegmentedControl · 分段单选")
+for index = 1, 3 do
+    local key = "catalogSegment" .. index
+    sampleDB[key] = ({ "overview", "details", "advanced" })[index]
+    Add({ type = "segmented", key = key, items = choices, disabled = index == 3, h = 5 })
+end
+CatalogChapter("TabGroup · 页签")
+for index = 1, 2 do
+    local key = "catalogTabs" .. index
+    sampleDB[key] = index == 1 and "overview" or "details"
+    Add({ type = "tabgroup", key = key, items = optionItems, disabled = index == 2, h = 5 })
+end
+CatalogChapter("OptionGroup · 单选与多选外观")
+for index, appearance in ipairs({ "connected", "segmented", "compact", "form", "dungeon-aura", "load-card" }) do
+    local key = "catalogOptions" .. index
+    sampleDB[key] = "details"
+    Description(appearance .. " · 单选")
+    Add({ type = "optiongroup", key = key, mode = "single", appearance = appearance,
+        items = optionItems, wrap = false, h = 5 })
+end
+sampleDB.catalogMultiple = { overview = true, advanced = true }
+Description("默认外观 · 多选")
+Add({ type = "optiongroup", key = "catalogMultiple", mode = "multiple", allowEmpty = true,
+    items = optionItems, wrap = true, columns = 3, h = 9 })
+for index, value in ipairs({ "neutral", "include", "exclude" }) do sampleDB["triState" .. index] = value end
+Gallery("TriStateChip · 中立 / 包含 / 排除", "tristate", 44)
+Gallery("SidebarNavigation · 侧栏导航", "sidebar", 76)
+CatalogChapter("Card · 普通内容卡片")
+for index = 1, 2 do
+    Add({ type = "card", title = "内容卡片 " .. index,
+        desc = index == 1 and "共享卡片背景与边框" or "较长的说明文字，用于检查卡片内部文字的间距与排版。", h = 12 })
+end
+Gallery("SettingsCard · 模块设置卡片", "cards", 160)
+Gallery("SettingsCardGroupSurface · 连续卡片背景", "group", 96)
+Gallery("SettingsSection · 分区标题", "sections", 270)
+Gallery("SettingsRow · 设置列表行", "rows", 240)
+Gallery("SettingsTable · 表头与表格行", "table", 200)
+Gallery("RoundedImage · 圆角图片", "images", 110)
+CatalogChapter("ItemIdentity / Enabled / Quantity / Delete · 独立物品控件")
+for index = 1, 2 do
+    local key = "catalogItem" .. index
+    sampleDB[key] = { id = index == 1 and 6948 or 0, enabled = index == 1, quantity = index * 2 }
+    AddRow(6, {
+        { type = "itemenabled", key = key, x = 1, w = 10 },
+        { type = "itemidentity", key = key, x = 12, w = 53 },
+        { type = "itemquantity", key = key, x = 68, w = 15 },
+        { type = "itemdelete", key = key, x = 88, w = 10, canDelete = true,
+            onDelete = function(record) record.enabled = false; RefreshShowcase() end },
+    })
+end
+CatalogChapter("PreviewCanvas · 预览画布")
+Add({ type = "previewcanvas", key = "preview", h = 24 })
+sampleDB.catalogPreviewEmpty = {}
+Add({ type = "previewcanvas", key = "catalogPreviewEmpty", h = 18 })
 
-Chapter("21", "21 · TextureGroup")
-Add({ type = "texturegroup", key = "texture", label = "材质设置组", measure = true, h = 27 })
-
-Chapter("21_1", "21.1 · Aura 语义设置组")
-Add({ type = "auradispelbordergroup", key = "auraBorder", label = "Aura Dispel Border", measure = true, h = 14 })
-Add({ type = "aurasortgroup", key = "auraSort", label = "Aura Sort", measure = true, h = 12 })
-Add({
-    type = "aurachildelementsgroup", key = "auraChildren", label = "Aura Child Elements", measure = true, h = 38,
-    opts = { onStructureChanged = RefreshShowcase },
-})
-
-Chapter("choice", "共享扩展 · Choice Tab / Option")
-Add({
-    type = "tabgroup", key = "choiceTabs", h = 5,
-    items = {
-        { id = "overview", label = "概览" },
-        { id = "appearance", label = "外观" },
-        { id = "behavior", label = "行为" },
-        { id = "disabled", label = "禁用页", disabled = true },
-    },
-})
-Add({
-    type = "optiongroup", key = "choiceOptions", mode = "multiple", allowEmpty = true,
-    appearance = "segmented", wrap = true, columns = 3, h = 8,
-    items = {
-        { id = "alpha", label = "Alpha" },
-        { id = "beta", label = "Beta" },
-        { id = "gamma", label = "Gamma" },
-        { id = "locked", label = "Locked", disabled = true },
-    },
-})
-
-Chapter("fixed_4x4", "四栏×四行布局预览")
-Add({
-    type = "custom", key = "fixedGrid4x4", renderer = GRID_4X4_RENDERER,
-    measure = true, h = 28,
-})
-
-Chapter("standard_page", "控制器说明 · StandardModulePage")
-Add({
-    type = "card", key = "standardModulePageNote", h = 10,
-    title = "CreateStandardModulePage 不作为普通 Grid 控件实例化",
-    desc = "它要求已登记的 module binding、preview surface 与 slider contract。本页仅核验其继续通过 Grid 与共享 EXUI 控件建立真实模块页面，不伪造业务模块。",
-})
+-- Full-width composite examples keep their real measured heights.
+for _, spec in ipairs({
+    { "fontgroup", "FontGroup · 字体组", 36 },
+    { "glow_settings", "GlowSettings · 发光组", 38 },
+    { "icongroup", "IconGroup · 图标组", 40 },
+    { "soundgroup", "SoundGroup · 声音组", 28 },
+    { "timerbargroup", "TimerBarGroup · 计时条组", 40 },
+    { "widgetlayout", "WidgetLayoutGroup · 排列与换行", 20 },
+    { "modulecommonsettings", "ModuleCommonSettings · 通用设置组", 20 },
+    { "anchorgroup", "AnchorGroup · 锚点组", 20 },
+    { "texturegroup", "TextureGroup · 材质组", 28 },
+    { "auradurationbargroup", "AuraDurationBar · 持续时间条", 28 },
+    { "auraapplicationbargroup", "AuraApplicationBar · 层数条", 28 },
+    { "auradispelbordergroup", "AuraDispelBorder · 驱散边框", 16 },
+    { "aurasortgroup", "AuraSort · 排序组", 16 },
+    { "aurachildelementsgroup", "AuraChildElements · 附属元素组", 40 },
+}) do
+    CatalogChapter(spec[2])
+    for index = 1, 2 do
+        local key = "catalog_" .. spec[1] .. index
+        sampleDB[key] = {}
+        local opts = {}
+        if spec[1] == "fontgroup" then
+            sampleDB[key] = { size = index == 1 and 14 or 20, shadow = index == 2 }
+        elseif spec[1] == "widgetlayout" then
+            opts.includeWrapDirection = index == 2
+        elseif spec[1] == "modulecommonsettings" then
+            sampleDB[key] = { enabled = index == 1, name = "演示 " .. index, amount = 50 }
+            opts.presentation = index == 2 and "settings-list" or nil
+            opts.fields = {
+                { type = "checkbox", key = "enabled", label = "启用", presentation = index == 2 and "switch" or nil },
+                { type = "input", key = "name", label = "名称" },
+                { type = "slider", key = "amount", label = "数值", min = 0, max = 100, step = 1 },
+            }
+        elseif spec[1] == "aurachildelementsgroup" then
+            sampleDB[key] = { children = index == 1 and {} or {
+                { type = "text", enabled = true, label = "示例文字", font = "默认", size = 14,
+                    r = 1, g = 1, b = 1, a = 1, x = 0, y = 0 },
+            } }
+            opts.onStructureChanged = RefreshShowcase
+        end
+        Description(index == 1 and "示例 A" or "示例 B")
+        Add({ type = spec[1], key = key, label = spec[2] .. " · " .. index,
+            opts = opts, measure = true, h = spec[3] }, 3)
+    end
+end
+Gallery("GUIColors · 共享背景色", "palette", 184)
+CatalogChapter("Grid · 四栏四行布局")
+Add({ type = "custom", key = "fixedGrid4x4", renderer = GRID_4X4_RENDERER, measure = true, h = 28 })
+CatalogChapter("ScrollFrame / ScrollBar · 滚动容器")
+Description("本窗口正在使用共享 CreateScrollFrame / CreateScrollBar；滚动长目录即可检查滚动条、滑块、悬停和拖动。")
+CatalogChapter("StandardModulePage · 页面控制器")
+Description("页面控制器需要真实模块绑定，不作为演示控件实例化。卡片布局的完整交互也可通过 /excards 查看。")
 
 window = EXUI:CreateShowcaseWindow({
-    title = "EXUI 共享控件展示",
-    subtitle = "内存样例 · ExwindGrid 声明式渲染 · /exuishowcase",
+    title = "EXUI 共享控件完整目录",
+    subtitle = tostring(chapterNumber) .. " 类 · 共享控件与共享配色 · 独立内存样例 · /exgui",
 })
 local rendered = false
 window:SetScript("OnHide", function(self)

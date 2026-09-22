@@ -119,8 +119,8 @@ Paint = function(button)
             UI:ClearControlSurface(button)
             textColor = Appearance.colors.segmentText
         end
-        if host.choiceStyle == "connected" and selected and not disabled then
-            UI:SetControlSurface(button, 0, fill, Appearance.colors.modifiedBorder)
+        if selected and (host.choiceStyle == "segmented" or not disabled) then
+            UI:SetControlSurface(button, radius, fill, Appearance.colors.modifiedBorder)
         end
     else
         local base = Appearance.colors.subcard

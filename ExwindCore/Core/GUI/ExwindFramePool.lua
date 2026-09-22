@@ -104,7 +104,7 @@ local function StandardReset(pool, frame)
 
     -- [GridCheckbox] 彻底清理子勾选框状态与脚本，避免池化残留导致“今天好明天坏”
     -- Composite hosts may expose a persistent child's checkbox as a public
-    -- compatibility field (ItemConfig does this).  That child is owned by the
+    -- compatibility field.  That child is owned by the
     -- host and rebound by its constructor; clearing it here would permanently
     -- remove the one-time hooks/callbacks on the second lease.
     if frame.checkbox and not frame._isCompositeHost then
@@ -679,7 +679,6 @@ EXFactory:InitCompositePool("CompositeWidgetLayoutGroup")
 EXFactory:InitCompositePool("CompositeWidgetLayoutGroupWithWrap")
 EXFactory:InitCompositePool("CompositeAnchorGroup")
 EXFactory:InitCompositePool("CompositeTextureGroup")
-EXFactory:InitCompositePool("CompositeItemConfig")
 EXFactory:InitCompositePool("CompositeItemIdentity")
 EXFactory:InitCompositePool("CompositePreviewCanvas")
 EXFactory:InitCompositePool("CompositeModuleCommonSettingsGroup")

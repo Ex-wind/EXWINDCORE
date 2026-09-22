@@ -1566,27 +1566,6 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
                 if type(ele.onDelete) == "function" then ele.onDelete(curVal, config) end
             end, { variant = "danger", compact = true })
         end
-    elseif ele.type == "itemconfig" then
-        local itemID = tonumber(ele.itemID) or (curVal and curVal.id) or 0
-        local widgetSize = ele.labelSize or ele.size or 18
-        local onDelete
-        if ele.canDelete == true or type(ele.onDelete) == "function" then
-            onDelete = function()
-                if type(ele.onDelete) == "function" then ele.onDelete(curVal, config) end
-            end
-        end
-        widget = EXUI:CreateItemConfig(container, pw, ph, itemID, curVal or { enabled = true, quantity = 1 },
-            function(newDB, newItemID)
-                if newItemID and ele.onDragUpdate then
-                    ele.onDragUpdate(newItemID)
-                else
-                    Setter(newDB)
-                end
-            end,
-            onDelete
-        )
-        widget.moduleKey = moduleKey
-        widget.elementKey = ele.key
     elseif ele.type == "segmented" then
         widget = EXUI:CreateSegmentedControl(container, pw, ele.items or {}, curVal, Setter)
     elseif ele.type == "previewcanvas" then

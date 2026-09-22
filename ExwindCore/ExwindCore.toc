@@ -48,6 +48,8 @@ Core\Renderer\ExwindEditMode.lua
 Core\GUI\ExwindFramePool.lua
 Core\GUI\ExwindVirtualList.lua
 Core\GUI\ExwindGUI.lua
+Core\GUI\ExwindGUISettingsList.lua
+Core\GUI\ExwindGUIComposite.lua
 Core\GUI\ExwindControlAppearance.lua
 Core\GUI\ExwindChoiceGroup.lua
 Core\GUI\ExwindTextureCatalog.lua

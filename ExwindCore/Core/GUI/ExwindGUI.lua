@@ -1788,6 +1788,16 @@ local function PaintModernScrollBar(scrollBar)
         thumbEnabled and (thumbPressed and MC.blue or MC.secondaryBorder) or MC.disabled)
 end
 
+-- ScrollFrameTemplate creates its MinimalScrollBar outside the viewport.  Keep
+-- the shared geometry explicit so every consumer reserves the same strip:
+-- 10px bar + 6px template gap + 2px panel-edge inset = 18px.
+local MODERN_SCROLL_BAR_WIDTH = 10
+local MODERN_SCROLL_BAR_TRACK_WIDTH = 8
+local MODERN_SCROLL_BAR_OFFSET_X = 6
+local MODERN_SCROLL_BAR_OFFSET_TOP = 2
+local MODERN_SCROLL_BAR_OFFSET_BOTTOM = 5
+EXUI.MODERN_SCROLL_FRAME_RIGHT_INSET = 18
+
 -- The current Blizzard ScrollFrameTemplate creates one MinimalScrollBar and
 -- binds it through ScrollUtil.InitScrollFrameWithScrollBar.  EXUI only changes
 -- that native control's geometry and appearance; wheel, page-click,
@@ -1799,12 +1809,12 @@ function EXUI:ApplyModernScrollBar(scrollBar, preserveGeometry)
     if not (track and thumb) then return scrollBar end
 
     if not preserveGeometry then
-        scrollBar:SetWidth(10)
+        scrollBar:SetWidth(MODERN_SCROLL_BAR_WIDTH)
         track:ClearAllPoints()
         track:SetPoint("TOP", scrollBar, "TOP", 0, 0)
         track:SetPoint("BOTTOM", scrollBar, "BOTTOM", 0, 0)
-        track:SetWidth(8)
-        thumb:SetWidth(8)
+        track:SetWidth(MODERN_SCROLL_BAR_TRACK_WIDTH)
+        thumb:SetWidth(MODERN_SCROLL_BAR_TRACK_WIDTH)
     end
     SuppressModernScrollBarSteppers(scrollBar)
     -- Recalculate proportional thumb extent/offset against the full-height
@@ -1874,6 +1884,12 @@ end
 
 function EXUI:ApplyModernScrollFrame(scrollFrame)
     if scrollFrame and scrollFrame.ScrollBar then
+        local scrollBar = scrollFrame.ScrollBar
+        scrollBar:ClearAllPoints()
+        scrollBar:SetPoint("TOPLEFT", scrollFrame, "TOPRIGHT",
+            MODERN_SCROLL_BAR_OFFSET_X, MODERN_SCROLL_BAR_OFFSET_TOP)
+        scrollBar:SetPoint("BOTTOMLEFT", scrollFrame, "BOTTOMRIGHT",
+            MODERN_SCROLL_BAR_OFFSET_X, MODERN_SCROLL_BAR_OFFSET_BOTTOM)
         self:ApplyModernScrollBar(scrollFrame.ScrollBar)
     end
     return scrollFrame

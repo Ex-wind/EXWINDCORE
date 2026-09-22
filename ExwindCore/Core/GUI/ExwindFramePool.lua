@@ -17,10 +17,6 @@ _G.ExwindFactory = EXFactory
 -- 池子存储
 EXFactory.Pools = {}
 
--- 活跃对象追踪表（供 DevMonitor 显示地址用）
--- 结构: { [poolType] = { [frame] = true } }
-EXFactory.ActiveTracker = {}
-
 -------------------------------------------------------
 -- 辅助：标准重置函数 (Cleaner)
 -------------------------------------------------------
@@ -287,12 +283,6 @@ function EXFactory:Acquire(type, parent, appearance)
         end
     end
 
-    -- 追踪活跃对象（供 DevMonitor 地址显示）
-    if not EXFactory.ActiveTracker[type] then
-        EXFactory.ActiveTracker[type] = {}
-    end
-    EXFactory.ActiveTracker[type][frame] = true
-
     frame:Show()
     return frame, isNew
 end
@@ -320,10 +310,6 @@ function EXFactory:Release(type, frame)
             releaseFn(frame)
         end
         frame._fromPool = nil -- 清除标记
-        -- 移除追踪记录
-        if EXFactory.ActiveTracker[poolType] then
-            EXFactory.ActiveTracker[poolType][frame] = nil
-        end
         pool:Release(frame)
     else
         -- 池不存在，退化为隐藏

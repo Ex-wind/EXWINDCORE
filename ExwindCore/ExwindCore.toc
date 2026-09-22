@@ -36,7 +36,6 @@ Core\ExwindMedia.lua
 Core\ExwindUnitFrame.lua
 Core\Renderer\ExwindBlizzardNameplateAnchor.lua
 Core\ExwindEvent.lua
-Core\ExwindPerfMonitor.lua
 Core\GUI\ExwindTools_Changelog.lua
 
 
@@ -94,8 +93,6 @@ Core\ExwindExport.lua
 
 # 打包发布时删除开始
 # 5. 开发调试工具 (可选载入)
- Core\ExwindDevMonitor.lua
- Core\ExwindDevTest.lua
 # Core\ExwindGlowPreview.lua
 Core\GUI\ExwindGlassDemo.lua
 

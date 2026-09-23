@@ -377,6 +377,18 @@ local function SettingsTextHeight(region, width)
     return math.max(1, math.ceil(region:GetStringHeight() or 0))
 end
 
+local function FullSettingsDescriptionHeight(region, text, width)
+    local measure = settingsListMeasureHost.description
+    local fontPath, fontSize, fontFlags = region:GetFont()
+    if fontPath then measure:SetFont(fontPath, fontSize, fontFlags or "") end
+    measure:SetWordWrap(true)
+    measure:SetNonSpaceWrap(true)
+    measure:SetMaxLines(0)
+    measure:SetWidth(math.max(1, width))
+    measure:SetText(text)
+    return math.max(1, math.ceil(measure:GetStringHeight() or 0))
+end
+
 -- Reuse the exact self-drawn FillR4 surface path used by the stable modern
 -- input and dropdown controls. Settings-list dividers are not native lines.
 local settingsDividerFrames = setmetatable({}, { __mode = "k" })
@@ -601,11 +613,16 @@ function EXUI:UpdateSettingsSectionLayout(section, width)
             if region then
                 local widgetTop = height > 0 and (height + SETTINGS_LIST_DESCRIPTION_GAP) or contentTop
                 widget:SetWidth(textWidth)
+                region:SetWordWrap(true)
+                region:SetNonSpaceWrap(true)
+                region:SetMaxLines(0)
                 local text = region.GetText and tostring(region:GetText() or "") or nil
-                local widgetHeight = text == "" and 1 or SettingsTextHeight(region, textWidth)
+                local widgetHeight = text == "" and 1
+                    or FullSettingsDescriptionHeight(region, text, textWidth)
                 widget:ClearAllPoints()
                 widget:SetPoint("TOPLEFT", section, "TOPLEFT", insetX, -widgetTop)
                 widget:SetSize(textWidth, widgetHeight)
+                region:SetHeight(widgetHeight)
                 if text ~= "" then height = widgetTop + widgetHeight end
             end
         end

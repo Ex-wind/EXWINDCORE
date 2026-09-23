@@ -29,7 +29,7 @@ local msyhbd = defaultFontPath
 
 local THEME = {
     -- [v26.7 Style] Protocol 风格：低对比深色画布，强调色只用于状态和主操作。
-    Background = GC.page,
+    Background = GC.panel,
     Sidebar = GC.panel,
     Border = GC.panelBorder,
     Primary = GC.accent,
@@ -174,32 +174,27 @@ end
 -- 模块设置页 · 面板内嵌预览（ModulePreviewDock）
 -- 设计见 EXWIND-DEV/ExwindCore/模块SOP标准.md §5.2
 -- =========================================================
-EXUI.ModulePreviewDock = nil        -- 顶部固定预览区 Frame，未注册预览渲染器的模块保持 1px 收起
-EXUI.ModulePreviewDockHeight = 160  -- 有预览时的固定高度
+EXUI.ModulePreviewDock = nil        -- 标准预览画布；模块 renderer 只接收这一个 Dock
+EXUI.ModulePreviewShell = nil       -- 顶部固定预览区宿主
+EXUI.ModuleTopPreview = nil         -- Core 唯一顶部预览封装的实例
+EXUI.ModulePreviewDockHeight = EXUI:GetStandardPreviewMinimumCanvasHeight()
 ExwindTools.ModulePreviewRenderers = ExwindTools.ModulePreviewRenderers or {}
 
--- ExwindTools 的模块设置页预览画布唯一使用 #94A5FC。Unified Shell 的 Dock 也会
--- 被 EXAura/EXBoss 借用，因此只在 Tools 预览可见期间覆盖，并在释放时恢复宿主原色。
-local MODULE_PREVIEW_DOCK_BACKGROUND = { 148 / 255, 165 / 255, 252 / 255, 1 }
 local MODULE_PREVIEW_WHEEL_OWNER = {}
 
-local function SetToolsPreviewDockBackground(dock, useToolsBackground)
-    if not dock or not dock.SetBackdropColor then return end
-
-    if useToolsBackground then
-        if not dock._exToolsPreviewDockOriginalBackground and dock.GetBackdropColor then
-            local r, g, b, a = dock:GetBackdropColor()
-            dock._exToolsPreviewDockOriginalBackground = { r, g, b, a }
-        end
-        dock:SetBackdropColor(unpack(MODULE_PREVIEW_DOCK_BACKGROUND))
-        return
+local function EnsureToolsTopPreview(shell)
+    if EXUI.ModulePreviewShell == shell and EXUI.ModulePreviewDock then
+        return EXUI.ModulePreviewDock
     end
+    if EXUI.ModuleTopPreview then EXUI.ModuleTopPreview.row:Hide() end
 
-    local original = dock._exToolsPreviewDockOriginalBackground
-    if original then
-        dock:SetBackdropColor(unpack(original))
-        dock._exToolsPreviewDockOriginalBackground = nil
-    end
+    local top = EXUI:CreateStandardTopPreview(shell)
+    top:Place(shell, EXUI.ModuleScrollChild and EXUI.ModuleScrollChild:GetWidth(), 0)
+    top.row:Hide()
+    EXUI.ModulePreviewShell = shell
+    EXUI.ModuleTopPreview = top
+    EXUI.ModulePreviewDock = top.canvas
+    return top.canvas
 end
 
 --- 注册一个模块的"面板内嵌预览"渲染器。不注册的模块不受影响（ModulePreviewDock 保持收起，Grid 顶满全部区域）。
@@ -221,19 +216,25 @@ end
 function EXUI:SetModulePreviewDockVisible(visible, height)
     local dock = EXUI.ModulePreviewDock
     if not dock then return end
+    local shell = EXUI.ModulePreviewShell
+    height = math.max(height or EXUI.ModulePreviewDockHeight,
+        EXUI:GetStandardPreviewMinimumCanvasHeight())
     EXUI:SetPreviewDockScrollOwner(dock, MODULE_PREVIEW_WHEEL_OWNER,
         visible == true and EXUI.ModuleScrollFrame or nil)
+
+    dock:SetHeight(height)
+    EXUI.ModuleTopPreview:SyncHeight()
+    EXUI.ModuleTopPreview.row:SetShown(visible == true)
 
     if EXUI.ShellPanel and EXUI.ShellHosts then
         -- Unified Shell may supply a new hosts table when its workspace is reused.
         -- The preview session must mount into that exact Shell Dock; showing a
         -- different/stale Dock makes a successful Render invisible to the page.
         local shellDock = EXUI.ShellHosts.previewDock
-        if shellDock ~= dock then
-            error("[ExwindToolsUI] ModulePreviewDock is not the current Unified Shell previewDock", 2)
+        if shellDock ~= shell then
+            error("[ExwindToolsUI] ModulePreviewShell is not the current Unified Shell previewDock", 2)
         end
-        SetToolsPreviewDockBackground(shellDock, visible == true)
-        EXUI.ShellPanel:SetPreviewDockVisible(visible == true, height or EXUI.ModulePreviewDockHeight)
+        EXUI.ShellPanel:SetPreviewDockVisible(visible == true, EXUI:GetStandardPreviewShellHeight(height))
         local shellHost = shellDock:GetParent()
         if visible == true and (not shellHost or not shellHost:IsShown() or not shellDock:IsShown() or (shellDock:GetHeight() or 0) < 1) then
             error("[ExwindToolsUI] Unified Shell previewDock was not made visible with a non-zero height", 2)
@@ -241,9 +242,8 @@ function EXUI:SetModulePreviewDockVisible(visible, height)
         return
     end
 
-    SetToolsPreviewDockBackground(dock, visible == true)
-    dock:SetHeight(visible and (height or EXUI.ModulePreviewDockHeight) or 1)
-    dock:SetShown(visible == true)
+    shell:SetHeight(visible and EXUI:GetStandardPreviewShellHeight(height) or 1)
+    shell:SetShown(visible == true)
 end
 
 -- =========================================================
@@ -1339,6 +1339,9 @@ function EXUI:SyncScrollChildWidths()
         local w = EXUI.ModuleScrollFrame:GetWidth()
         if w and w > 1 then EXUI.ModuleScrollChild:SetWidth(w) end
     end
+    if EXUI.ModuleTopPreview and EXUI.ModulePreviewShell and EXUI.ModuleScrollChild then
+        EXUI.ModuleTopPreview:Place(EXUI.ModulePreviewShell, EXUI.ModuleScrollChild:GetWidth(), 0)
+    end
 end
 
 -- =========================================================
@@ -1356,7 +1359,7 @@ function EXUI:MountUnifiedWorkspace(hosts, shellPanel)
     if EXUI.WorkspaceFrame then
         EXUI.ShellHosts = hosts
         EXUI.ShellPanel = shellPanel
-        EXUI.ModulePreviewDock = hosts.previewDock
+        EnsureToolsTopPreview(hosts.previewDock)
         EXUI:RelayoutUnifiedWorkspace()
         return EXUI.WorkspaceFrame
     end
@@ -1386,7 +1389,7 @@ function EXUI:MountUnifiedWorkspace(hosts, shellPanel)
 
     EXUI:CreateSidebar(root, { fillParent = hosts.navHost })
     EXUI:CreateRightPanel(root, { fillParent = hosts.contentBodyHost })
-    EXUI.ModulePreviewDock = hosts.previewDock
+    EnsureToolsTopPreview(hosts.previewDock)
     EXUI:SyncScrollChildWidths()
     return root
 end
@@ -1761,7 +1764,7 @@ local function CreateModuleManagementOwner(page, categories)
             local meta = context.scope.item
             host._moduleKey = meta.Key
             if not host._moduleRowVisuals then
-                local iconTile = CreateFrame("Frame", nil, host, "BackdropTemplate")
+                local iconTile = CreateFrame("Frame", nil, host)
                 iconTile:SetSize(42, 42)
                 iconTile:SetPoint("LEFT", host, "LEFT", 12, 0)
                 local iconArt = EXUI:CreateVisualTexture(iconTile, EXBASEFRAME)
@@ -1781,30 +1784,17 @@ local function CreateModuleManagementOwner(page, categories)
                 description:SetJustifyH("LEFT")
                 description:SetWordWrap(true)
                 description:SetMaxLines(2)
-                local status = EXUI:CreateVisualFontString(host, EXFONTFRAME)
-                status:SetFont(defaultFontPath, 11, "")
-                status:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -14, 8)
-                local accent = EXUI:CreateVisualTexture(host, EXBASEFRAME)
-                accent:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -5)
-                accent:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 5)
-                accent:SetWidth(3)
+                local separator = EXUI:CreateSettingsSeparator(host, 1)
+                separator:SetPoint("TOPLEFT", host, "TOPLEFT", 0, 0)
                 host._moduleRowVisuals = {
                     iconTile = iconTile, iconArt = iconArt, iconMark = iconMark,
-                    name = name, description = description, status = status, accent = accent,
+                    name = name, description = description, separator = separator,
                 }
             end
             local visuals = host._moduleRowVisuals
             visuals.iconTile:Show()
             visuals.name:Show()
             visuals.description:Show()
-            visuals.status:Show()
-            visuals.accent:Show()
-            host.SettingsBtn = EXUI:CreateButton(host, 74, 26, L["设置"], context:Guard(function()
-                EXUI.CurrentPage = "ModuleSettings"
-                EXUI.CurrentModule = meta.Key
-                EXUI:RefreshContent()
-            end), { variant = "secondary", compact = true })
-            host.SettingsBtn:SetPoint("RIGHT", host, "RIGHT", -76, 0)
             host.EnableSwitch = EXUI:CreateCheckbox(host, "", ModuleManagementEnabled(meta),
                 context:Guard(function(checked)
                     ExwindTools:SetModuleEnabled(meta.Key, checked)
@@ -1823,15 +1813,8 @@ local function CreateModuleManagementOwner(page, categories)
             local meta = context.scope.item
             local key = meta.Key
             local enabled = ModuleManagementEnabled(meta)
-            local pendingReload = enabled and ExwindTools.ModuleStatus[key] == "pending_reload"
             local visuals = host._moduleRowVisuals
-            EXUI:SetControlSurface(host, 4,
-                enabled and GC.card or GC.disabledFill,
-                enabled and GC.cardBorder or GC.disabledBorder)
-            EXUI:SetControlSurface(visuals.iconTile, 4,
-                enabled and GC.subcard or GC.disabledFill,
-                enabled and GC.subcardBorder or GC.disabledBorder)
-            visuals.accent:SetColorTexture(unpack(enabled and GC.accent or GC.textDisabled))
+            visuals.separator:SetShown(context.scope.index > 1)
             local iconPath = MODULE_CARD_ICON_TEXTURES[key]
             visuals.iconArt:SetShown(iconPath ~= nil)
             visuals.iconMark:SetShown(iconPath == nil)
@@ -1846,26 +1829,23 @@ local function CreateModuleManagementOwner(page, categories)
             visuals.name:SetTextColor(unpack(enabled and GC.text or GC.textDisabled))
             visuals.description:SetText(meta.Desc or "")
             visuals.description:SetTextColor(unpack(enabled and GC.textDim or GC.textDisabled))
-            visuals.status:SetText(pendingReload and L["待重载"] or (enabled and L["已启用"] or L["已禁用"]))
-            visuals.status:SetTextColor(unpack(enabled and GC.selectedText or GC.textDisabled))
             host.EnableSwitch:SetChecked(enabled)
             EXUI:ApplyControlAppearance(host.EnableSwitch)
-            local controller = type(EXUI.GetCentralModuleController) == "function"
-                and EXUI:GetCentralModuleController(key) or nil
-            local ready = enabled and (ExwindTools.RegisteredLayouts[key] ~= nil
-                or (ExwindTools.ModuleDefinitions and ExwindTools.ModuleDefinitions[key] ~= nil)
-                or EXUI.SettingsPageDeclarations[key] ~= nil
-                or EXUI.ModuleSettingsV2Pages[key] ~= nil
-                or controller ~= nil)
-            host.SettingsBtn:SetEnabled(ready == true)
-            host.SettingsBtn:SetAlpha(ready and 1 or 0.35)
         end,
-        measure = function() return 72 end,
+        measure = function(host, _, width)
+            local visuals = host._moduleRowVisuals
+            local textWidth = math.max(80, width - 130)
+            visuals.name:SetWidth(textWidth)
+            visuals.description:SetWidth(textWidth)
+            return math.max(56, math.ceil(11 + visuals.name:GetStringHeight()
+                + 4 + visuals.description:GetStringHeight() + 8))
+        end,
         layout = function(host, context, width, height)
             host:SetSize(width, height)
-            local textWidth = math.max(80, width - 230)
+            local textWidth = math.max(80, width - 130)
             host._moduleRowVisuals.name:SetWidth(textWidth)
             host._moduleRowVisuals.description:SetWidth(textWidth)
+            host._moduleRowVisuals.separator:SetWidth(width)
         end,
         setEnabled = function() end,
         setVisible = function(host, context, visible) host:SetShown(visible) end,
@@ -1873,18 +1853,13 @@ local function CreateModuleManagementOwner(page, categories)
             local factory = _G.ExwindFactory
             EXUI:RestoreSettingsListControl(host.EnableSwitch)
             factory:Release(host.EnableSwitch._fromPool, host.EnableSwitch)
-            factory:Release(host.SettingsBtn._fromPool, host.SettingsBtn)
             host.EnableSwitch = nil
-            host.SettingsBtn = nil
             host._moduleKey = nil
-            EXUI:ClearControlSurface(host)
             local visuals = host._moduleRowVisuals
-            EXUI:ClearControlSurface(visuals.iconTile)
             visuals.iconTile:Hide()
             visuals.name:Hide()
             visuals.description:Hide()
-            visuals.status:Hide()
-            visuals.accent:Hide()
+            visuals.separator:Hide()
         end,
     }
     return owner
@@ -1908,19 +1883,19 @@ function EXUI:ShowLoadSettingsPage()
         hint:SetText(L["按左侧路由分类管理模块；禁用立即生效，重新启用后需要 /reload。"])
         hint:SetTextColor(unpack(GC.textDim))
 
-        local enableAll = EXUI:CreateSmallButton(page, L["全部启用"], function()
+        local enableAll = EXUI:CreateButton(page, 120, 28, L["全部启用"], function()
             for _, meta in ipairs(ExwindTools.ModuleList) do
                 if ModuleHasSettingsPage(meta) then ExwindTools:SetModuleEnabled(meta.Key, true) end
             end
             page.moduleListSession:Refresh()
-        end)
+        end, { variant = "primary", compact = true })
         enableAll:SetPoint("TOPRIGHT", -150, -12)
-        local disableAll = EXUI:CreateSmallButton(page, L["全部禁用"], function()
+        local disableAll = EXUI:CreateButton(page, 120, 28, L["全部禁用"], function()
             for _, meta in ipairs(ExwindTools.ModuleList) do
                 if ModuleHasSettingsPage(meta) then ExwindTools:SetModuleEnabled(meta.Key, false) end
             end
             page.moduleListSession:Refresh()
-        end)
+        end, { variant = "danger", compact = true })
         disableAll:SetPoint("TOPRIGHT", -20, -12)
 
         page.cardsContainer = CreateFrame("Frame", nil, page)
@@ -2028,12 +2003,11 @@ function EXUI:ShowModuleSettingsPage()
 
         if not EXUI.ModulePreviewDock then
             -- 顶部固定预览区：不参与滚动，未注册渲染器的模块保持 1px 收起，不占布局空间
-            local dock = CreateFrame("Frame", "ExwindModulePreviewDock", EXUI.RightPanel, "BackdropTemplate")
-            dock:SetPoint("TOPLEFT", EXUI.RightPanel, "TOPLEFT", 0, -5)
-            dock:SetPoint("TOPRIGHT", EXUI.RightPanel, "TOPRIGHT", -18, -5)
-            dock:SetHeight(1)
-            dock:SetBackdrop(BACKDROP_SIMPLE)
-            EXUI.ModulePreviewDock = dock
+            local shell = CreateFrame("Frame", "ExwindModulePreviewDock", EXUI.RightPanel)
+            shell:SetPoint("TOPLEFT", EXUI.RightPanel, "TOPLEFT", 0, -5)
+            shell:SetPoint("TOPRIGHT", EXUI.RightPanel, "TOPRIGHT", -18, -5)
+            shell:SetHeight(1)
+            EnsureToolsTopPreview(shell)
         end
 
         if not EXUI.ModuleScrollFrame then
@@ -2042,7 +2016,7 @@ function EXUI:ShowModuleSettingsPage()
                 "ScrollFrameTemplate")
             -- [Fix] 顶部锚点改挂在 ModulePreviewDock 的底部，而不是直接贴 RightPanel 顶部，
             -- 这样预览区高度变化（0 或 ModulePreviewDockHeight）会自动带动 Grid 区域跟着收缩/展开。
-            EXUI.ModuleScrollFrame:SetPoint("TOPLEFT", EXUI.ModulePreviewDock, "BOTTOMLEFT", 0, 0)
+            EXUI.ModuleScrollFrame:SetPoint("TOPLEFT", EXUI.ModulePreviewShell, "BOTTOMLEFT", 0, 0)
             -- 右边只交给 BOTTOMRIGHT 定义；若再用 TOPRIGHT=0 重复定义同一条边，
             -- 模板滚动条会按未内缩的右边向外展开，使 BOTTOMRIGHT 的内距实际失效。
             EXUI.ModuleScrollFrame:SetPoint("BOTTOMRIGHT", -18, 5)

@@ -4785,10 +4785,11 @@ end
 MODERN.standardPreview = {
     shellTop = 6,
     shellBottom = 8,
+    minimumShellHeight = ExwindTools.PanelTheme.Layout.PREVIEW_DOCK_HEIGHT,
     shellInset = 10,
     canvasGap = 8,
-    leftRailWidth = 190,
-    rightRailWidth = 190,
+    leftRailWidth = 162,
+    rightRailWidth = 162,
     backgroundPresets = {
         { 0.22, 0.25, 0.29 },
         { 0.16, 0.18, 0.21 },
@@ -4875,8 +4876,7 @@ function MODERN.standardPreview.CreateToolbar(shell, canvas)
     for index = 1, 5 do
         local button = EXUI:CreateButton(toolbar, 26, 26, "", nil, { compact = true })
         button:ClearAllPoints()
-        button:SetPoint("TOPRIGHT", toolbar, "TOPRIGHT",
-            -(MODERN.standardPreview.rightRailWidth * 0.5 - 13), -16 - ((index - 1) * 28))
+        button:SetPoint("TOPRIGHT", toolbar, "TOPRIGHT", -6, -16 - ((index - 1) * 28))
         local swatch = EXUI:CreateVisualTexture(button, EXBORDERFRAME)
         swatch:SetTexture("Interface\\Buttons\\WHITE8X8")
         swatch:SetPoint("TOPLEFT", button, "TOPLEFT", 4, -4)
@@ -4918,9 +4918,71 @@ function MODERN.standardPreview.CreateToolbar(shell, canvas)
             if GameTooltip and GameTooltip:GetOwner() == self then GameTooltip:Hide() end
         end)
     end
-    label:SetPoint("TOP", toolbar, "TOPRIGHT", -(MODERN.standardPreview.rightRailWidth * 0.5), -1)
+    label:SetPoint("TOP", controls.buttons[1], "TOP", 0, 15)
     MODERN.standardPreview.RefreshBackgroundButtons(canvas)
     return toolbar
+end
+
+-- The only top preview frame factory.  Pages provide a host and mount their
+-- existing preview session into canvas; they do not construct another panel.
+function EXUI:CreateStandardTopPreview(host)
+    local row = CreateFrame("Frame", nil, host)
+    row:SetFrameLevel((host:GetFrameLevel() or 0) + 1)
+    local background = self:CreateVisualTexture(row, EXBASEFRAME)
+    background:SetAllPoints(row)
+    background:SetColorTexture(unpack(MC.background))
+
+    local shell = CreateFrame("Frame", nil, row, "BackdropTemplate")
+    MODERN.standardModulePage.ApplyPreviewDockStyle(shell)
+    local canvas = CreateFrame("Frame", nil, shell, "BackdropTemplate")
+    MODERN.standardPreview.ApplyCanvasStyle(canvas)
+    local toolbar = MODERN.standardPreview.CreateToolbar(shell, canvas)
+    canvas:SetPoint("TOPLEFT", toolbar, "TOPLEFT",
+        MODERN.standardPreview.leftRailWidth + MODERN.standardPreview.canvasGap, 0)
+    canvas:SetPoint("TOPRIGHT", toolbar, "TOPRIGHT",
+        -(MODERN.standardPreview.rightRailWidth + MODERN.standardPreview.canvasGap), 0)
+    if type(self.SetPanelStylePresetControlsHost) == "function" then
+        self:SetPanelStylePresetControlsHost(canvas, toolbar, "preview-rail")
+    end
+    canvas:SetHeight(self:GetStandardPreviewMinimumCanvasHeight())
+
+    local top = { row = row, shell = shell, canvas = canvas, toolbar = toolbar }
+    function top:SyncHeight()
+        local height = EXUI:GetStandardPreviewShellHeight(self.canvas:GetHeight())
+        self.shell:SetHeight(height)
+        self.row:SetHeight(height)
+        return height
+    end
+    function top:Place(parent, scrollChildWidth, topOffset)
+        local grid = _G.ExwindGrid
+        if not grid or type(grid.ResolveSettingsListWidth) ~= "function" then
+            error("standard top preview requires ExwindGrid:ResolveSettingsListWidth", 2)
+        end
+        local defaults = type(grid.CardLayoutDefaults) == "table" and grid.CardLayoutDefaults or {}
+        local width = tonumber(scrollChildWidth) or tonumber(parent:GetWidth()) or 1
+        local available = math.max(1, width - math.max(0, tonumber(defaults.left) or 0)
+            - math.max(0, tonumber(defaults.right) or 0))
+        self.row:SetParent(parent)
+        self.row:ClearAllPoints()
+        self.row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, topOffset or 0)
+        self.row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, topOffset or 0)
+        self.shell:ClearAllPoints()
+        self.shell:SetPoint("TOP", self.row, "TOP", -4, 0)
+        self.shell:SetWidth(grid:ResolveSettingsListWidth(available, 75))
+        self:SyncHeight()
+    end
+    top:SyncHeight()
+    return top
+end
+
+function EXUI:GetStandardPreviewShellHeight(canvasHeight)
+    return math.max(MODERN.standardPreview.minimumShellHeight,
+        MODERN.standardPreview.shellTop + canvasHeight + MODERN.standardPreview.shellBottom)
+end
+
+function EXUI:GetStandardPreviewMinimumCanvasHeight()
+    return MODERN.standardPreview.minimumShellHeight
+        - MODERN.standardPreview.shellTop - MODERN.standardPreview.shellBottom
 end
 
 function MODERN.standardModulePage.ResolveLayout(layout, context)
@@ -5026,7 +5088,9 @@ function EXUI:CreateStandardModulePage(options)
         preview = preview,
         previewRender = previewRender,
         previewRelease = previewRelease,
-        dockHeight = math.max(1, tonumber(preview.height) or 160),
+        dockHeight = math.max(dockPolicy == "internal-top"
+            and EXUI:GetStandardPreviewMinimumCanvasHeight() or 1,
+            tonumber(preview.height) or 160),
         dockPolicy = dockPolicy,
         externalDockResolver = externalDockResolver,
         externalDockWidth = externalDockWidth,
@@ -5064,16 +5128,16 @@ function EXUI:CreateStandardModulePage(options)
     function controller:SetDockHeight(height)
         height = tonumber(height)
         if not height or height <= 0 then error("StandardModulePage dock height must be positive", 2) end
+        if self.dockPolicy == "internal-top" then
+            height = math.max(height, EXUI:GetStandardPreviewMinimumCanvasHeight())
+        end
         self.dockHeight = height
         if self.previewDock then self.previewDock:SetHeight(height) end
     end
 
     function controller:SyncInternalPreviewShellHeight()
-        if self.dockPolicy ~= "internal-top" or not self.previewDock or not self.previewShell then return end
-        local canvasHeight = math.max(1, tonumber(self.previewDock:GetHeight()) or self.dockHeight)
-        local shellHeight = MODERN.standardPreview.shellTop + canvasHeight + MODERN.standardPreview.shellBottom
-        self.previewShell:SetHeight(shellHeight)
-        if self.previewRow then self.previewRow:SetHeight(shellHeight) end
+        if self.dockPolicy ~= "internal-top" or not self.topPreview then return end
+        self.topPreview:SyncHeight()
     end
 
     function controller:RefreshGridControls()
@@ -5219,16 +5283,11 @@ function EXUI:CreateStandardModulePage(options)
 
         local previewRow, previewShell, dock, previewToolbar
         if self.dockPolicy == "internal-top" then
-            previewRow = CreateFrame("Frame", nil, contentFrame)
-            previewShell = CreateFrame("Frame", nil, previewRow, "BackdropTemplate")
-            MODERN.standardModulePage.ApplyPreviewDockStyle(previewShell)
-            dock = CreateFrame("Frame", nil, previewShell, "BackdropTemplate")
-            MODERN.standardPreview.ApplyCanvasStyle(dock)
-            previewToolbar = MODERN.standardPreview.CreateToolbar(previewShell, dock)
-            dock:SetPoint("TOPLEFT", previewToolbar, "TOPLEFT",
-                MODERN.standardPreview.leftRailWidth + MODERN.standardPreview.canvasGap, 0)
-            dock:SetPoint("TOPRIGHT", previewToolbar, "TOPRIGHT",
-                -(MODERN.standardPreview.rightRailWidth + MODERN.standardPreview.canvasGap), 0)
+            self.topPreview = EXUI:CreateStandardTopPreview(contentFrame)
+            previewRow = self.topPreview.row
+            previewShell = self.topPreview.shell
+            dock = self.topPreview.canvas
+            previewToolbar = self.topPreview.toolbar
             dock:SetHeight(self.dockHeight)
         else
             dock = CreateFrame("Frame", nil, contentFrame, "BackdropTemplate")
@@ -5244,9 +5303,6 @@ function EXUI:CreateStandardModulePage(options)
         self.previewToolbar = previewToolbar
         self.previewDock = dock
         self:SyncInternalPreviewShellHeight()
-        if previewToolbar and type(EXUI.SetPanelStylePresetControlsHost) == "function" then
-            EXUI:SetPanelStylePresetControlsHost(dock, previewToolbar, "preview-rail")
-        end
         -- 页面只保存标准宿主引用，不能保留 module private preview/session。
         self.page._scrollFrame = scrollFrame
         self.page._scrollChild = scrollChild
@@ -5296,30 +5352,9 @@ function EXUI:CreateStandardModulePage(options)
             dock:SetWidth(self.externalDockWidth)
             return
         end
-        local row, shell = self.previewRow, self.previewShell
-        if not row or not shell then error("internal-top PreviewDock requires preview row and shell", 2) end
+        if not self.topPreview then error("internal-top PreviewDock requires a standard top preview", 2) end
         self:SyncScrollChildWidth(true)
-        local grid = _G.ExwindGrid
-        if not grid or type(grid.ResolveSettingsListWidth) ~= "function" then
-            error("internal-top PreviewDock requires ExwindGrid:ResolveSettingsListWidth", 2)
-        end
-        local defaults = type(grid.CardLayoutDefaults) == "table" and grid.CardLayoutDefaults or {}
-        local rawAvailableWidth = math.max(1, (tonumber(self.scrollChild:GetWidth()) or 1)
-            - math.max(0, tonumber(defaults.left) or 0)
-            - math.max(0, tonumber(defaults.right) or 0))
-        local previewWidth = grid:ResolveSettingsListWidth(rawAvailableWidth, 75)
-
-        row:SetParent(contentFrame)
-        row:ClearAllPoints()
-        row:SetPoint("TOPLEFT", contentFrame, "TOPLEFT", 4, -4)
-        -- ScrollChild 从 contentFrame 左侧 +4 起算且比 contentFrame 窄 16px；
-        -- row 以 -12 收口后中心与下方 75% 普通设置卡中心完全一致。
-        row:SetPoint("TOPRIGHT", contentFrame, "TOPRIGHT", -12, -4)
-        shell:SetParent(row)
-        shell:ClearAllPoints()
-        shell:SetPoint("TOP", row, "TOP", 0, 0)
-        shell:SetWidth(previewWidth)
-        self:SyncInternalPreviewShellHeight()
+        self.topPreview:Place(contentFrame, self.scrollChild:GetWidth(), -4)
     end
 
     function controller:Render(contentFrame)

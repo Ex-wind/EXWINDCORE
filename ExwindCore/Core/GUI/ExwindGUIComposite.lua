@@ -16,6 +16,16 @@ local SetDropdownDisplayText = Internal.SetDropdownDisplayText
 local AcquireCompositeGroup = Internal.AcquireCompositeGroup
 local IsModuleCommonOrdinaryField = Internal.IsModuleCommonOrdinaryField
 
+-- 组合组只用列间竖线区分字段；线锚定原有容器，重排时不移动控件。
+local function CreateCompositeColumnDivider(parent, topFrame, bottomFrame, side, offset)
+    local line = parent:CreateTexture(nil, "ARTWORK")
+    line:SetColorTexture(unpack(ExwindTools.GUIColors.sectionDivider))
+    line:SetWidth(1)
+    line:SetPoint("TOP", topFrame, side == "LEFT" and "TOPLEFT" or "TOPRIGHT", offset, 0)
+    line:SetPoint("BOTTOM", bottomFrame, side == "LEFT" and "BOTTOMLEFT" or "BOTTOMRIGHT", offset, 0)
+    return line
+end
+
 -- =========================================================
 -- 组合组内部支撑：原路径访问、绑定、弹层、刷新与释放。
 -- =========================================================
@@ -539,7 +549,6 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         local card = CreateFrame("Frame", nil, content)
         card:SetPoint("TOPLEFT", x, y)
         card:SetSize(itemWidth, metricCardHeight)
-        EXUI:SetControlSurface(card, 10, palette.card, palette.border)
         return card
     end
 
@@ -583,8 +592,10 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     local controlCard = CreateFrame("Frame", nil, content)
     controlCard:SetPoint("TOPLEFT", controlX, controlY)
     controlCard:SetSize(controlWidth, sectionHeight)
-    EXUI:SetControlSurface(controlCard, 10, palette.utility, palette.border)
     group._exFontGroupActionCard = controlCard
+    CreateCompositeColumnDivider(content, colorCard, outlineCard, "RIGHT", gap / 2)
+    local actionDivider = CreateCompositeColumnDivider(content, controlCard, controlCard, "LEFT", -controlsGap / 2)
+    actionDivider:SetShown(not narrowLayout)
 
     local showText = self:CreateCheckbox(controlCard, L["显示文字"], db.enabled, function(v)
         CommitFontValue("enabled", v)
@@ -603,13 +614,13 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     local justifyH = self:CreateDropdown(controlCard, alignmentWidth, L["水平对齐"], justifyHItems, db.justifyH, function(v)
         CommitFontValue("justifyH", v)
     end)
-    justifyH:SetPoint("TOPLEFT", 12, -100)
+    justifyH:SetPoint("TOPLEFT", 12, -94)
 
     local justifyVItems = { { L["顶部"], "TOP" }, { L["居中"], "MIDDLE" }, { L["底部"], "BOTTOM" } }
     local justifyV = self:CreateDropdown(controlCard, alignmentWidth, L["垂直对齐"], justifyVItems, db.justifyV, function(v)
         CommitFontValue("justifyV", v)
     end)
-    justifyV:SetPoint("TOPLEFT", 12, -151)
+    justifyV:SetPoint("TOPLEFT", 12, -162)
 
     local gradientCheck = self:CreateCheckbox(controlCard, L["启用文字渐隐"], db.gradientEnabled, function(v)
         CommitFontValue("gradientEnabled", v)
@@ -773,17 +784,15 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         colorBtn:SetWidth(nextSliderWidth)
         controlCard:ClearAllPoints(); controlCard:SetPoint("TOPLEFT", content, "TOPLEFT", nextControlX, nextControlY)
         controlCard:SetSize(nextControlWidth, math.abs(row3 - row1) + metricCardHeight)
+        actionDivider:SetShown(not nextNarrow)
         local nextButtonWidth = math.min(187, math.floor(nextControlWidth * 0.45))
         local nextAlignmentWidth = math.min(156, math.floor(nextControlWidth * 0.45))
         justifyH:SetWidth(nextAlignmentWidth); justifyV:SetWidth(nextAlignmentWidth)
         shadowButton:SetWidth(nextButtonWidth); layoutButton:SetWidth(nextButtonWidth); advancedButton:SetWidth(nextButtonWidth)
-        -- Run after every layout, including a same-size pooled reuse: parent
-        -- scale and cached surface geometry can change without OnSizeChanged.
-        -- Reuse the existing skins; SetControlSurface explicitly lays them out.
         for _, card in ipairs(self._exFontGroupMetricCards) do
-            EXUI:SetControlSurface(card, 10, palette.card, palette.border)
+            EXUI:ClearControlSurface(card)
         end
-        EXUI:SetControlSurface(controlCard, 10, palette.utility, palette.border)
+        EXUI:ClearControlSurface(controlCard)
         for _, popup in ipairs(self._exCompositePopups or {}) do
             EXUI:SetControlSurface(popup, 10, palette.panel, palette.border)
         end
@@ -1006,7 +1015,7 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
     local channelDrop = self:CreateDropdown(settingsCard, 200, L["音频通道"], channels, GetValue("channel"), function(value)
         SetValue("channel", value); EmitUpdate()
     end)
-    local testButton = self:CreateButton(settingsCard, 110, 28, opts.testLabel or L["试听"], function()
+    local testButton = self:CreateButton(settingsCard, 110, 28, "", function()
         local activeOpts = group._exCompositeOpts or {}
         if type(activeOpts.onTest) == "function" then
             activeOpts.onTest(group._exCompositeDb, group._soundGroupKey)
@@ -1027,6 +1036,10 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
             })
         end
     end)
+    local playIcon = testButton:CreateTexture(nil, "ARTWORK")
+    playIcon:SetAtlas("charactercreate-customize-playbutton")
+    playIcon:SetSize(20, 20)
+    playIcon:SetPoint("CENTER")
 
     enabled._soundField = "enabled"
     sourceDrop._soundField = "source"
@@ -1074,7 +1087,7 @@ function EXUI:CreateSoundGroup(parent, width, label, db, key, onUpdate, opts)
         local state = self._soundState or {}
         local activeOpts = self._exCompositeOpts or {}
         local secondarySpec = ResolveSoundGroupSecondaryCheckbox(activeOpts)
-        if testButton.SetText then testButton:SetText(activeOpts.testLabel or L["试听"]) end
+        if testButton.SetText then testButton:SetText("") end
         secondaryCheckbox:SetShown(secondarySpec ~= nil)
         if secondarySpec then
             secondaryCheckbox.label:SetText(secondarySpec.label)
@@ -1656,10 +1669,10 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
         EXUI:LayoutCompositeGroup(container, groupWidth, groupHeight)
         EXUI:ClearControlSurface(container)
         for _, card in ipairs(container._exIconMetricCards or {}) do
-            EXUI:SetControlSurface(card, 10, palette.card, palette.border)
+            EXUI:ClearControlSurface(card)
         end
         if container._exIconActionCard then
-            EXUI:SetControlSurface(container._exIconActionCard, 10, palette.utility, palette.border)
+            EXUI:ClearControlSurface(container._exIconActionCard)
         end
         for _, popup in ipairs(container._exCompositePopups or {}) do
             EXUI:SetControlSurface(popup, 10, palette.panel, palette.border)
@@ -1865,7 +1878,6 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
         local card = CreateFrame("Frame", nil, content)
         card:SetPoint("TOPLEFT", x, y)
         card:SetSize(itemWidth, 64)
-        EXUI:SetControlSurface(card, 10, palette.card, palette.border)
         return card
     end
 
@@ -1901,8 +1913,10 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
     local actionCard = CreateFrame("Frame", nil, content)
     actionCard:SetPoint("TOPLEFT", controlX, controlY)
     actionCard:SetSize(controlWidth, math.abs(row2 - row1) + 64)
-    EXUI:SetControlSurface(actionCard, 10, palette.utility, palette.border)
     container._exIconActionCard = actionCard
+    CreateCompositeColumnDivider(content, widthCard, xCard or widthCard, "RIGHT", gap / 2)
+    local actionDivider = CreateCompositeColumnDivider(content, actionCard, actionCard, "LEFT", -controlsGap / 2)
+    actionDivider:SetShown(not narrowLayout)
 
     local cbShow = EXUI:CreateCheckbox(actionCard, L["显示图标"], iconDb.showIcon, function(v)
         CommitIconValue("showIcon", v)
@@ -2180,6 +2194,7 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
         for _, slider in ipairs(metricSliders) do slider:SetWidth(nextSliderWidth) end
         actionCard:ClearAllPoints(); actionCard:SetPoint("TOPLEFT", content, "TOPLEFT", nextControlX, nextControlY)
         actionCard:SetSize(nextControlWidth, math.abs(row2 - row1) + 64)
+        actionDivider:SetShown(not nextNarrow)
         local nextButtonWidth = math.min(187, math.floor(nextControlWidth * 0.45))
         appearanceButton:SetWidth(nextButtonWidth); borderButton:SetWidth(nextButtonWidth)
         cropButton:SetWidth(nextButtonWidth); countdownButton:SetWidth(nextButtonWidth)
@@ -2222,7 +2237,7 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
         if db[field] == nil then db[field] = value end
     end
     local groupWidth = width or 975
-    local groupHeight = 242
+    local groupHeight = 204
     -- 层数条复用计时条的尺寸／材质／颜色／边框控件，但没有 duration、图标或填充模式语义。
     -- 使用独立对象池，避免普通计时条和层数条之间残留可见控件。
     local poolType = opts.applicationBar == true and "CompositeTimerBarApplicationGroup" or "CompositeTimerBarGroup"
@@ -2347,9 +2362,8 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
     local controlX = padding + metricsWidth + controlsGap
 
     local function CreateMetricCard(x, y)
-        local card = CreateFrame("Frame", nil, content, "BackdropTemplate")
+        local card = CreateFrame("Frame", nil, content)
         card:SetPoint("TOPLEFT", x, y); card:SetSize(itemWidth, 60)
-        card:SetBackdrop(flatBackdrop); card:SetBackdropColor(unpack(palette.card)); card:SetBackdropBorderColor(unpack(palette.border))
         return card
     end
     local widthCard, heightCard = CreateMetricCard(col1, row1), CreateMetricCard(col2, row1)
@@ -2445,18 +2459,19 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
     end
     local fgButton = EXUI:CreateColorButton(colorCard, L["前景"], db, "barColor", true, EmitUpdate,
         { _changeFlow = CreateColorTransaction("barColor") })
-    fgButton:SetSize(colorHalfWidth, 36); fgButton:SetPoint("TOPLEFT", 10, -12)
+    fgButton:SetSize(colorHalfWidth, 36); fgButton:SetPoint("TOPLEFT", 10, -22)
     local bgButton = EXUI:CreateColorButton(colorCard, L["背景"], db, "barBgColor", true, EmitUpdate,
         { _changeFlow = CreateColorTransaction("barBgColor") })
-    bgButton:SetSize(colorHalfWidth, 36); bgButton:SetPoint("TOPLEFT", 15 + colorHalfWidth, -12)
+    bgButton:SetSize(colorHalfWidth, 36); bgButton:SetPoint("TOPLEFT", 15 + colorHalfWidth, -22)
     local textureDrop = EXUI:CreateLSMTextureDropdown(textureCard, "statusbar", sliderWidth, L["LSM皮肤"], db.texture, function(value)
         CommitTimerBarValue("texture", value)
     end)
     textureDrop:SetPoint("TOPLEFT", 10, -26)
 
-    local actionCard = CreateFrame("Frame", nil, content, "BackdropTemplate")
+    local actionCard = CreateFrame("Frame", nil, content)
     actionCard:SetPoint("TOPLEFT", controlX, row1); actionCard:SetSize(controlWidth, 196)
-    actionCard:SetBackdrop(flatBackdrop); actionCard:SetBackdropColor(unpack(palette.utility)); actionCard:SetBackdropBorderColor(unpack(palette.border))
+    CreateCompositeColumnDivider(content, widthCard, colorCard, "RIGHT", gap / 2)
+    CreateCompositeColumnDivider(content, actionCard, actionCard, "LEFT", -controlsGap / 2)
     local function ActionButton(text, y, callback)
         local button = EXUI:CreateButton(actionCard, math.min(187, math.floor(controlWidth * 0.45)), 28,
             text, callback, { variant = "soft" })
@@ -2558,20 +2573,34 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
     local showIcon = EXUI:CreateCheckbox(actionCard, L["显示图标"], db.showIcon, function(value)
         CommitTimerBarValue("showIcon", value)
     end)
-    showIcon:SetPoint("TOPLEFT", 12, -4); showIcon:SetSize(150, 28)
-    local iconButton = ActionButton(L["图标设置"], -4, function(self) TogglePopup(iconPopup, self) end)
+    showIcon:SetPoint("TOPLEFT", 12, -13); showIcon:SetSize(150, 28)
+    local iconButton = ActionButton(L["图标设置"], -13, function(self) TogglePopup(iconPopup, self) end)
 
     local showBorder = EXUI:CreateCheckbox(actionCard, L["显示边框"], db.showBorder, function(value)
         CommitTimerBarValue("showBorder", value)
     end)
-    showBorder:SetPoint("TOPLEFT", 12, -72); showBorder:SetSize(150, 28)
-    local borderButton = ActionButton(L["边框设置"], -72, function(self) TogglePopup(borderPopup, self) end)
+    showBorder:SetPoint("TOPLEFT", 12, -82); showBorder:SetSize(150, 28)
+    local borderButton = ActionButton(L["边框设置"], -82, function(self) TogglePopup(borderPopup, self) end)
 
     local fillLabel = EXUI:CreateVisualFontString(actionCard, EXFONTFRAME, "GameFontHighlight")
     -- LEFT 锚点的 Y 偏移从垂直中线计算，会把文字推到卡片外；必须以 TOPLEFT 定位。
-    fillLabel:SetPoint("TOPLEFT", actionCard, "TOPLEFT", 48, -140); fillLabel:SetText(L["填充方式"])
+    fillLabel:SetPoint("TOPLEFT", actionCard, "TOPLEFT", 36, -148); fillLabel:SetText(L["填充方式"])
     StyleModernTitle(fillLabel)
-    local fillButton = ActionButton(L["填充设置"], -140, function(self) TogglePopup(fillPopup, self) end)
+    local fillButton = ActionButton(L["填充设置"], -156, function(self) TogglePopup(fillPopup, self) end)
+
+    local actionDivider = actionCard:CreateTexture(nil, "ARTWORK")
+    actionDivider:SetColorTexture(unpack(ExwindTools.GUIColors.sectionDivider))
+    actionDivider:SetWidth(1)
+    local function LayoutActionDivider(width)
+        local buttonWidth = math.min(187, math.floor(width * 0.45))
+        local leftEdge = 12 + 150
+        local rightEdge = width - 10 - buttonWidth
+        local dividerX = math.floor((leftEdge + rightEdge) / 2)
+        actionDivider:ClearAllPoints()
+        actionDivider:SetPoint("TOPLEFT", actionCard, "TOPLEFT", dividerX, 0)
+        actionDivider:SetPoint("BOTTOMLEFT", actionCard, "BOTTOMLEFT", dividerX, 0)
+    end
+    LayoutActionDivider(controlWidth)
 
     if opts.applicationBar == true then
         -- ApplicationBar 的进度和法术图标由原生 Aura 绑定决定；这些控制项写入数据却
@@ -2634,12 +2663,13 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
         end
         fgButton:SetSize(nextColorHalfWidth, 36)
         bgButton:SetSize(nextColorHalfWidth, 36)
-        bgButton:ClearAllPoints(); bgButton:SetPoint("TOPLEFT", colorCard, "TOPLEFT", 15 + nextColorHalfWidth, -12)
+        bgButton:ClearAllPoints(); bgButton:SetPoint("TOPLEFT", colorCard, "TOPLEFT", 15 + nextColorHalfWidth, -22)
         textureDrop:SetWidth(nextSliderWidth)
         actionCard:ClearAllPoints(); actionCard:SetPoint("TOPLEFT", content, "TOPLEFT", nextControlX, row1)
         actionCard:SetWidth(nextControlWidth)
         local nextActionButtonWidth = math.min(187, math.floor(nextControlWidth * 0.45))
         iconButton:SetWidth(nextActionButtonWidth); borderButton:SetWidth(nextActionButtonWidth); fillButton:SetWidth(nextActionButtonWidth)
+        LayoutActionDivider(nextControlWidth)
     end
     EXUI:LayoutCompositeGroup(group, groupWidth, groupHeight)
     AttachCompositeRelease(group)
@@ -3818,7 +3848,7 @@ EXUI:RegisterGridComponentMeasure("icongroup", function(width)
     local height = narrow and 296 or 150
     return { minHeight = height, preferredHeight = height }
 end)
-EXUI:RegisterGridComponentMeasure("timerbargroup", FixedGridMeasure(242))
+EXUI:RegisterGridComponentMeasure("timerbargroup", FixedGridMeasure(204))
 EXUI:RegisterGridComponentMeasure("texturegroup", FixedGridMeasure(250))
 EXUI:RegisterGridComponentMeasure("anchorgroup", FixedGridMeasure(52))
 EXUI:RegisterGridComponentMeasure("glow_settings", FixedGridMeasure(250))

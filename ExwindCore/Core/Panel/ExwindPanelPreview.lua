@@ -1150,7 +1150,7 @@ local function PlacePanelStylePresetControls(dock, controls)
         controls.bar:SetPoint("TOPLEFT", host, "TOPLEFT", 9, -40)
         controls.bar:SetPoint("TOPRIGHT", host, "TOPRIGHT", -9, -40)
     elseif mode == "preview-rail" then
-        controls.bar:SetPoint("LEFT", host, "LEFT", 5, 0)
+        controls.bar:SetPoint("TOPLEFT", host, "TOPLEFT", 5, -4)
     elseif host ~= dock then
         controls.bar:SetPoint("LEFT", host, "LEFT", 0, 0)
     else
@@ -1162,7 +1162,7 @@ local function SetPanelStylePresetDropdownSelection(controls, slot)
     local dropdown = controls and controls.presetDropdown
     if not dropdown then return end
     local entry = controls.entriesBySlot and controls.entriesBySlot[slot]
-    if controls.dropdownCustomOnly and entry and not entry.custom then entry = nil end
+    if controls.dropdownCustomOnly and entry and not entry.dropdown then entry = nil end
     dropdown._currentValue = entry and entry.slot or nil
     local text = entry and entry.label or (controls.dropdownCustomOnly
         and (L["自定义样式"] or "自定义样式") or (L["选择样式"] or "选择样式"))
@@ -1223,6 +1223,9 @@ local function AcquirePanelStylePresetControls(dock)
         owner:HideStylePresetTooltip()
         controls.selectedSlot = slot
         owner:RefreshStylePresetButtons()
+        if controls.layoutMode == "preview-rail" then
+            owner:OpenStylePresetConfirmation(slot, controls.editMode and "delete" or "apply")
+        end
     end)
     controls.presetDropdown:SetPoint("LEFT", bar, "LEFT", 0, 0)
     if controls.presetDropdown.labelText then controls.presetDropdown.labelText:Hide() end
@@ -1255,6 +1258,16 @@ local function AcquirePanelStylePresetControls(dock)
         local owner = controls.owner
         if owner then owner:OpenAddStylePresetConfirmation() end
     end)
+    controls.addButton:HookScript("OnEnter", function(self)
+        if controls.layoutMode == "preview-rail" and GameTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(L["新增样式"] or "新增样式")
+            GameTooltip:Show()
+        end
+    end)
+    controls.addButton:HookScript("OnLeave", function(self)
+        if GameTooltip and GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+    end)
     controls.deleteButton = EXUI:CreateButton(bar, 54, 28, L["删除"], nil,
         { compact = true, variant = "danger" })
     controls.deleteButton:SetPoint("LEFT", controls.addButton, "RIGHT", 6, 0)
@@ -1273,6 +1286,16 @@ local function AcquirePanelStylePresetControls(dock)
         controls.editMode = not controls.editMode
         owner:HideStylePresetTooltip()
         owner:RefreshStylePresetButtons()
+    end)
+    controls.editButton:HookScript("OnEnter", function(self)
+        if controls.layoutMode == "preview-rail" and GameTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(L["编辑"] or "编辑")
+            GameTooltip:Show()
+        end
+    end)
+    controls.editButton:HookScript("OnLeave", function(self)
+        if GameTooltip and GameTooltip:GetOwner() == self then GameTooltip:Hide() end
     end)
     controls.editButton:Hide()
 
@@ -1474,18 +1497,19 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
             { slot = "B", label = L["样式 B"], custom = false },
         }
         local _, customPresets = GetCustomStylePresetStore(descriptor.family)
-        for _, preset in ipairs(customPresets) do
+        for index, preset in ipairs(customPresets) do
             entries[#entries + 1] = {
                 slot = CUSTOM_STYLE_PRESET_PREFIX .. tostring(preset.id),
                 label = L["自定义样式"] .. tostring(preset.id),
                 custom = true,
                 customID = preset.id,
+                dropdown = index > 2,
             }
         end
         local items, entriesBySlot = {}, {}
         for _, entry in ipairs(entries) do
             entriesBySlot[entry.slot] = entry
-            if not previewRail or entry.custom then
+            if not previewRail or entry.dropdown then
                 items[#items + 1] = { entry.label, entry.slot }
             end
         end
@@ -1508,41 +1532,42 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
         end
         if previewRail then
             controls.editMode = controls.editMode == true and #customPresets > 0
-            controls.addButton:SetWidth(88)
-            controls.editButton:SetWidth(88)
-            controls.builtinButtons.A:SetWidth(88)
-            controls.builtinButtons.B:SetWidth(88)
+            local columnWidth = 74
+            controls.addButton:SetSize(columnWidth, 24)
+            controls.editButton:SetSize(columnWidth, 24)
+            controls.builtinButtons.A:SetSize(columnWidth, 22)
+            controls.builtinButtons.B:SetSize(columnWidth, 22)
             controls.addButton:SetPoint("TOPLEFT", controls.bar, "TOPLEFT", 0, 0)
             controls.editButton:SetPoint("LEFT", controls.addButton, "RIGHT", 4, 0)
-            controls.builtinButtons.A:SetPoint("TOPLEFT", controls.addButton, "BOTTOMLEFT", 0, -6)
+            controls.builtinButtons.A:SetPoint("TOPLEFT", controls.addButton, "BOTTOMLEFT", 0, -4)
             controls.builtinButtons.B:SetPoint("LEFT", controls.builtinButtons.A, "RIGHT", 4, 0)
             controls.builtinButtons.A:SetText(L["样式 A"] or "样式 A")
             controls.builtinButtons.B:SetText(L["样式 B"] or "样式 B")
 
-            local rowHeight = 24
-            local customHeight = #customPresets > 0 and (6 + (#customPresets * rowHeight)
-                + ((#customPresets - 1) * 4)) or 0
-            controls.bar:SetSize(180, 62 + customHeight)
+            controls.bar:SetSize(152, #customPresets > 2 and 110 or (#customPresets > 0 and 78 or 50))
             for index = 1, MAX_CUSTOM_STYLE_PRESETS do
                 local preset = customPresets[index]
                 local button = controls.buttons[index]
                 local deleteButton = controls.deleteButtons[index]
-                if preset then
+                if preset and index <= 2 then
                     local slot = CUSTOM_STYLE_PRESET_PREFIX .. tostring(preset.id)
                     button._exPresetSlot = slot
                     button:SetText(L["自定义样式"] .. tostring(preset.id))
-                    button:SetWidth(controls.editMode and 136 or 180)
+                    button:SetWidth(74)
                     if index == 1 then
-                        button:SetPoint("TOPLEFT", controls.builtinButtons.A, "BOTTOMLEFT", 0, -6)
+                        button:SetPoint("TOPLEFT", controls.builtinButtons.A, "BOTTOMLEFT", 0, -4)
                     else
-                        button:SetPoint("TOPLEFT", controls.buttons[index - 1], "BOTTOMLEFT", 0, -4)
+                        button:SetPoint("LEFT", controls.buttons[1], "RIGHT", 4, 0)
                     end
                     button._exButtonVariant = controls.activeSlot == slot and "primary" or "secondary"
                     EXUI:ApplyControlAppearance(button)
                     button:Show()
 
                     deleteButton._exPresetSlot = slot
-                    deleteButton:SetPoint("LEFT", button, "RIGHT", 4, 0)
+                    deleteButton:SetSize(20, 20)
+                    deleteButton:SetText("×")
+                    deleteButton:SetPoint("TOPRIGHT", button, "TOPRIGHT", -2, -2)
+                    deleteButton:SetFrameLevel(button:GetFrameLevel() + 1)
                     deleteButton:SetShown(controls.editMode)
                 else
                     button._exPresetSlot = nil
@@ -1551,9 +1576,13 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
                     deleteButton:Hide()
                 end
             end
+            if #customPresets > 2 then
+                controls.presetDropdown:SetWidth(152)
+                controls.presetDropdown:SetPoint("TOPLEFT", controls.buttons[1], "BOTTOMLEFT", 0, -4)
+            end
         elseif sidebar then
             controls.editMode = false
-            controls.addButton:SetWidth(82)
+            controls.addButton:SetSize(82, 28)
             controls.presetDropdown:SetPoint("TOPLEFT", controls.bar, "TOPLEFT", 0, 0)
             controls.presetDropdown:SetPoint("TOPRIGHT", controls.bar, "TOPRIGHT", 0, 0)
             controls.applyStyleButton:SetPoint("TOPLEFT", controls.presetDropdown, "BOTTOMLEFT", 0, -6)
@@ -1563,7 +1592,7 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
         else
             controls.editMode = false
             controls.presetDropdown:SetWidth(116)
-            controls.addButton:SetWidth(82)
+            controls.addButton:SetSize(82, 28)
             controls.presetDropdown:SetPoint("LEFT", controls.bar, "LEFT", 0, 0)
             controls.applyStyleButton:SetPoint("LEFT", controls.presetDropdown, "RIGHT", 6, 0)
             controls.addButton:SetPoint("LEFT", controls.applyStyleButton, "RIGHT", 6, 0)
@@ -1584,7 +1613,7 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
             button._exButtonVariant = controls.activeSlot == slot and "primary" or "secondary"
             EXUI:ApplyControlAppearance(button)
         end
-        controls.presetDropdown:SetShown(not previewRail)
+        controls.presetDropdown:SetShown(not previewRail or #customPresets > 2)
         controls.applyStyleButton:SetShown(not previewRail)
         controls.addButton:Show()
         controls.addButton:SetText(previewRail and (L["新增"] or "新增")
@@ -1592,6 +1621,7 @@ local function CreatePanelPreview(kind, dock, moduleKey, callbacks, factory)
         controls.addButton._exButtonVariant = previewRail and "secondary" or "primary"
         EXUI:ApplyControlAppearance(controls.addButton)
         controls.editButton:SetShown(previewRail)
+        if previewRail then controls.editButton:SetText(L["编辑"] or "编辑") end
         controls.editButton._exButtonVariant = controls.editMode and "primary" or "secondary"
         EXUI:ApplyControlAppearance(controls.editButton)
         controls.deleteButton:SetShown(not previewRail)

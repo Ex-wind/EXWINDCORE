@@ -201,6 +201,13 @@ function Panel:ApplyLayout(mode, options)
     self.TopTabHost:SetShown(hasTabs)
     self:HideAllHosts()
     if self.NavDivider then self.NavDivider:SetShown(hasNav) end
+    if self.TopDivider then
+        local topEdge = hasTabs and self.TopTabHost or self.Header
+        self.TopDivider:ClearAllPoints()
+        self.TopDivider:SetPoint("TOPLEFT", topEdge, "BOTTOMLEFT", 0, 0)
+        self.TopDivider:SetPoint("TOPRIGHT", topEdge, "BOTTOMRIGHT", 0, 0)
+        self.TopDivider:SetShown(hasNav)
+    end
 
     local metrics = self:GetMetrics()
     self.NavHost:ClearAllPoints()
@@ -829,7 +836,7 @@ function Panel:CreateFrame()
 
     local brand = EXUI:CreateVisualTexture(rail, EXBASEFRAME)
     brand:SetPoint("TOP", 0, -5)
-    brand:SetSize(40, 34)
+    brand:SetSize(36, 44)
     brand:SetTexture("Interface\\AddOns\\ExwindCore\\Textures\\LOGO\\EXShellLogo.tga")
     brand:SetVertexColor(CopyColor(GC.selectedText))
     local brandLine = EXUI:CreateVisualTexture(rail, EXBASEFRAME)
@@ -967,8 +974,8 @@ function Panel:CreateFrame()
 
     -- 关闭键属于整个 Shell，而非 Header 中线；始终贴齐窗口右上角。
     local close = CreateFrame("Button", nil, frame)
-    close:SetSize(24, 24)
-    close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -1)
+    close:SetSize(20, 20)
+    close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -8, -3)
     EXUI:SetControlSurface(close, 4, GC.input, GC.panelBorder)
     close.label = MakeText(close, "OVERLAY", 17, GC.text, "OUTLINE")
     close.label:SetPoint("CENTER", 0, 1)
@@ -1002,6 +1009,14 @@ function Panel:CreateFrame()
     tabHost:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
     tabHost:SetHeight(Layout.TOP_TAB_HEIGHT)
     self.TopTabHost = tabHost
+
+    local topDivider = CreateFrame("Frame", nil, frame)
+    topDivider:SetHeight(1)
+    topDivider:SetFrameLevel(frame:GetFrameLevel() + 20)
+    local topDividerLine = EXUI:CreateVisualTexture(topDivider, EXBASEFRAME)
+    topDividerLine:SetAllPoints()
+    topDividerLine:SetColorTexture(CopyColor(Color.borderSoft))
+    self.TopDivider = topDivider
 
     local navHost = MakeFlatFrame(frame)
     self.NavHost = navHost

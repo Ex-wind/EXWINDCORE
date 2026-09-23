@@ -554,8 +554,15 @@ end
 
 local function Stack(node, width, columns, offset)
     local y, any = offset or 0, false
-    for _, child in ipairs(node.children) do
+    local lastRepeatRow
+    if node.spec.kind == "repeat" then
+        for index, child in ipairs(node.children) do
+            if child.visible then lastRepeatRow = index end
+        end
+    end
+    for index, child in ipairs(node.children) do
         if child.visible then
+            child.hideTrailingSeparator = index == lastRepeatRow
             if any then y = y + GAP end
             local height = LayoutNode(child, width, columns)
             Place(child.frame, node.body, 0, y, width, height)
@@ -707,10 +714,13 @@ LayoutNode = function(node, width, columns)
         height = Stack(node, width, columns)
     end
     if node.separator then
-        node.separator:ClearAllPoints()
-        node.separator:SetPoint("TOPLEFT", node.frame, "TOPLEFT", 0, -(height + GAP / 2))
-        node.separator:SetWidth(width)
-        height = height + GAP
+        node.separator:SetShown(not node.hideTrailingSeparator)
+        if not node.hideTrailingSeparator then
+            node.separator:ClearAllPoints()
+            node.separator:SetPoint("TOPLEFT", node.frame, "TOPLEFT", 0, -(height + GAP / 2))
+            node.separator:SetWidth(width)
+            height = height + GAP
+        end
     end
     node.frame:SetHeight(math.max(1, height))
     return height

@@ -19,7 +19,7 @@ ExwindTools.PanelTheme = ExwindTools.PanelTheme or {
         CONTENT_GUTTER = 12,
         -- 所有 B+C 左右布局的唯一比例：B=25%，C=75%。不得由 Provider 覆写。
         NAV_RATIO = 0.25,
-        PREVIEW_DOCK_HEIGHT = 160,
+        PREVIEW_DOCK_HEIGHT = 200, -- 标准顶部预览外框最小高度，Shell 同时以此为上限
         SPLIT_CONTENT_GRID_COLS = 200,
         FULL_CONTENT_GRID_COLS = 64,
         DEFAULT_WIDTH = 1440,
@@ -29,11 +29,11 @@ ExwindTools.PanelTheme = ExwindTools.PanelTheme or {
     },
 
     Color = {
-        panel = GC.page,
+        panel = GC.panel,
         rail = GC.shell.rail,
         header = GC.shell.header,
         nav = GC.shell.nav,
-        content = GC.page,
+        content = GC.panel,
         card = GC.shell.card,
         cardAlt = GC.shell.cardAlt,
         border = GC.shell.border,

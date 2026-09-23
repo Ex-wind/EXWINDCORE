@@ -2138,7 +2138,8 @@ function EXUI:PrepareSettingsListControl(widget, options)
             region:SetJustifyV("TOP")
             region:SetWordWrap(true)
             if region.SetMaxLines then region:SetMaxLines(0) end
-            MODERN.Font(region, 13, SETTINGS_LIST_DESCRIPTION, "", "GameFontHighlightSmall")
+            MODERN.Font(region, options.descriptionFontSize or 13,
+                SETTINGS_LIST_DESCRIPTION, "", "GameFontHighlightSmall")
         end
     end
     if options.hideLabel == true then

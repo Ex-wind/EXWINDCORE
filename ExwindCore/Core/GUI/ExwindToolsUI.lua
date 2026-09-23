@@ -1016,16 +1016,18 @@ function EXUI:CreateSidebar(parent, options)
         sidebar:SetPoint("TOPLEFT", 1, -47)
         sidebar:SetPoint("BOTTOMLEFT", 1, 45)
     end
-    sidebar:SetBackdrop(BACKDROP)
-    sidebar:SetBackdropColor(unpack(GC.shell.toolsSidebar))
-    sidebar:SetBackdropBorderColor(unpack(GC.shell.toolsSidebarBorder))
+    -- Unified Shell 已拥有 B/C 分隔线；嵌入时不再叠加第二道方形边框。
+    if not options.fillParent then
+        sidebar:SetBackdrop(BACKDROP)
+        sidebar:SetBackdropColor(unpack(GC.shell.toolsSidebar))
+        sidebar:SetBackdropBorderColor(unpack(GC.shell.toolsSidebarBorder))
 
-    -- [Style] 添加一条垂直分割线，区分侧边栏和内容区
-    local vLine = EXUI:CreateVisualTexture(sidebar, EXBASEFRAME)
-    vLine:SetPoint("TOPRIGHT", 0, 0)
-    vLine:SetPoint("BOTTOMRIGHT", 0, 0)
-    vLine:SetWidth(1)
-    vLine:SetColorTexture(unpack(GC.shell.toolsSidebarDivider))
+        local vLine = EXUI:CreateVisualTexture(sidebar, EXBASEFRAME)
+        vLine:SetPoint("TOPRIGHT", 0, 0)
+        vLine:SetPoint("BOTTOMRIGHT", 0, 0)
+        vLine:SetWidth(1)
+        vLine:SetColorTexture(unpack(GC.shell.toolsSidebarDivider))
+    end
 
     local scrollFrame
     local searchBox = CreateSidebarSearchBox(sidebar, EXUI.SidebarState.SearchText or "", {
@@ -1671,321 +1673,17 @@ function EXUI:ShowHomePage()
     EXUI.ActivePageFrame = page
     EXUI._InternalPageFrame = page
 
-    if not isNew then
-        if page.RefreshLocaleControls then
-            page:RefreshLocaleControls()
-        end
-        EXUI.RightScrollChild:SetHeight(980)
-        return
+    if isNew then
+        local label = EXUI:CreateVisualFontString(page, EXFONTFRAME)
+        label:SetFontObject("GameFontHighlight")
+        label:SetPoint("TOPLEFT", page, "TOPLEFT", 20, -24)
+        label:SetText("开发中")
+        label:SetTextColor(unpack(GC.text))
     end
 
-    local FONT = ExwindTools.MAIN_FONT
-    local HOME = {
-        bg = GC.panel,
-        panel = GC.panel,
-        panel2 = GC.panel,
-        line = GC.panelBorder,
-        gold = GC.accent,
-        cyan = GC.accent,
-        text = GC.text,
-        muted = GC.textDim,
-    }
-    local GREY = GC.markup.placeholder
-    local SUPPORT_URL = "https://afdian.com/a/Exwind"
-    -- 右侧通用滚动容器实际宽度约 750，这里留边距避免被裁切
-    local W = math.min((page:GetWidth() or 750) - 30, 720)
-    local PAGE_H = 980
-    local COL_GAP = 14
-    local COL_W = math.floor((W - COL_GAP) / 2)
-    local INNER_W = COL_W - 42
-    local localeItems = {
-        { L["跟随客户端"], "AUTO" },
-        { L["强制 zhCN"], "zhCN" },
-        { L["强制 zhTW"], "zhTW" },
-        { L["强制 enUS"], "enUS" },
-    }
-
-    local function GetLocaleModeLabel(mode)
-        if mode == "zhCN" then
-            return L["强制 zhCN"]
-        elseif mode == "zhTW" then
-            return L["强制 zhTW"]
-        elseif mode == "enUS" then
-            return L["强制 enUS"]
-        end
-        return L["跟随客户端"]
-    end
-
-    local function MakePanel(parent, w, h, point, rel, relPoint, x, y, bg, border)
-        local frame = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-        frame:SetSize(w, h)
-        frame:SetPoint(point, rel, relPoint, x, y)
-        frame:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
-        })
-        frame:SetBackdropColor(unpack(bg or HOME.panel))
-        frame:SetBackdropBorderColor(unpack(border or HOME.line))
-        return frame
-    end
-
-    local function Accent(frame, color)
-        local c = color or HOME.gold
-        local line = EXUI:CreateVisualTexture(frame, EXBASEFRAME)
-        line:SetTexture("Interface\\Buttons\\WHITE8X8")
-        line:SetVertexColor(c[1], c[2], c[3], 0.95)
-        line:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, 0)
-        line:SetPoint("TOPRIGHT", frame, "TOPRIGHT", 0, 0)
-        line:SetHeight(2)
-        return line
-    end
-
-    local function Font(fs, size, color, flags)
-        fs:SetFont(FONT, size or 14, flags or "")
-        local c = color or HOME.text
-        fs:SetTextColor(c[1], c[2], c[3], c[4] or 1)
-    end
-
-    local function Text(parent, text, size, color, point, rel, relPoint, x, y, w, flags)
-        local fs = EXUI:CreateVisualFontString(parent, EXFONTFRAME)
-        Font(fs, size, color, flags)
-        fs:SetJustifyH("LEFT")
-        fs:SetJustifyV("TOP")
-        if w then fs:SetWidth(w) end
-        fs:SetText(text or "")
-        fs:SetPoint(point or "TOPLEFT", rel or parent, relPoint or point or "TOPLEFT", x or 0, y or 0)
-        return fs
-    end
-
-    local function MakeCopyBox(parent, label, value, color, width, height, fontSize)
-        local c = color or HOME.cyan
-        local title
-        if label and label ~= "" then
-            title = Text(parent, label, 12, HOME.muted, "TOPLEFT", parent, "TOPLEFT", 0, 0)
-        end
-        local box = CreateFrame("EditBox", nil, parent, "BackdropTemplate")
-        box:SetSize(width or 360, height or 28)
-        box:SetAutoFocus(false)
-        box:SetMultiLine(false)
-        box:SetTextInsets(10, 10, 0, 0)
-        box:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
-        })
-        box:SetBackdropColor(unpack(GC.input))
-        box:SetBackdropBorderColor(unpack(GC.panelBorder))
-        Font(box, fontSize or 13, HOME.text, "")
-        box:SetText(tostring(value or ""))
-        box:SetCursorPosition(0)
-        box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
-        box:SetScript("OnEditFocusGained", function(self)
-            self:SetBackdropBorderColor(unpack(GC.accent))
-            self:HighlightText()
-        end)
-        box:SetScript("OnEditFocusLost", function(self)
-            self:SetBackdropBorderColor(unpack(GC.panelBorder))
-        end)
-        box:SetScript("OnMouseUp", function(self)
-            self:SetFocus()
-            self:HighlightText()
-        end)
-        return box, title
-    end
-
-    local function OpenCopyText(value)
-        if ChatFrame_OpenChat then
-            ChatFrame_OpenChat(tostring(value or ""))
-        else
-            print(tostring(value or ""))
-        end
-    end
-
-    local function MakeButton(parent, label, value, color, w, h, fontSize)
-        local b = EXUI:CreateSmallButton(parent, label, function()
-            OpenCopyText(value)
-        end)
-        b:SetSize(w or 168, h or 28)
-        if b.Label then b.Label:SetFont(FONT, fontSize or 13, "OUTLINE") end
-        return b
-    end
-
-    local function SectionTitle(parent, title, sub, color)
-        local t = Text(parent, title, 18, color or HOME.gold, "TOPLEFT", parent, "TOPLEFT", 16, -14, nil, "OUTLINE")
-        if sub and sub ~= "" then
-            local s = Text(parent, sub, 12, HOME.muted, "TOPLEFT", t, "BOTTOMLEFT", 0, -5)
-            s:SetPoint("TOPRIGHT", parent, "TOPRIGHT", -16, 0)
-            return t, s
-        end
-        return t
-    end
-
-    local function MakeOpenExBossButton(parent)
-        local b = EXUI:CreateSmallButton(parent, L["打开 EXBoss"], function()
-        local panel = _G.ExBoss and _G.ExBoss.UI and _G.ExBoss.UI.Panel
-        if not panel then
-            return
-        end
-        if panel.SetTab then
-            panel:SetTab("boss")
-        end
-        if EXUI.MainFrame then
-            EXUI.MainFrame:Hide()
-        end
-        if panel.Show then
-            panel:Show()
-        elseif panel.Toggle then
-            panel:Toggle()
-        end
-        end)
-        return b
-    end
-
-    local hero = MakePanel(page, W, 168, "TOP", page, "TOP", 0, -18, HOME.bg, HOME.line)
-    Accent(hero, HOME.gold)
-    local title = Text(hero, "ExwindTools", 32, HOME.gold, "TOPLEFT", hero, "TOPLEFT", 24, -20, nil, "OUTLINE")
-    Text(hero, L["零依赖 · 事件驱动 · State 订阅 · Grid 配置"], 14, HOME.text, "TOPLEFT", title, "BOTTOMLEFT", 0, -8)
-    Text(hero, L["模块管理用于启用/禁用功能；各模块配置页使用 Grid 面板实时调整。"], 13, HOME.muted, "TOPLEFT", title, "BOTTOMLEFT", 0, -38, W - 220)
-    Text(hero, L["作者"] .. ": EXWIND", 13, HOME.cyan, "TOPLEFT", title, "BOTTOMLEFT", 0, -72)
-    Text(hero, "Version " .. (ExwindTools.VERSION or "Unknown"), 13, HOME.muted, "TOPRIGHT", hero, "TOPRIGHT", -24, -24)
-    local openExBossBtn = MakeOpenExBossButton(hero)
-    openExBossBtn:SetSize(132, 28)
-    openExBossBtn:SetPoint("TOPRIGHT", hero, "TOPRIGHT", -24, -62)
-    if openExBossBtn:GetFontString() then
-        openExBossBtn:GetFontString():SetFont(FONT, 12, "OUTLINE")
-    end
-
-    local support = MakePanel(page, W, 190, "TOP", hero, "BOTTOM", 0, -16, HOME.panel2, HOME.line)
-    Accent(support, HOME.gold)
-    Text(support, L["赞助支持"], 28, HOME.gold, "TOPLEFT", support, "TOPLEFT", 22, -18, nil, "OUTLINE")
-    Text(support, L["如果你觉得插件不错，可以小额赞助。"], 15, HOME.text, "TOPLEFT", support, "TOPLEFT", 22, -62, W - 44)
-    Text(support, L["ExwindTools 和 EXBoss 是免费项目；赞助不会解锁额外功能，所有人使用同一版本。"], 12, HOME.muted, "TOPLEFT", support, "TOPLEFT", 22, -88, W - 44)
-    local supportBox = MakeCopyBox(support, "", SUPPORT_URL, HOME.gold, W - 250, 38, 18)
-    supportBox:SetPoint("BOTTOMLEFT", support, "BOTTOMLEFT", 22, 24)
-    local supportBtn = MakeButton(support, L["复制赞助链接"], SUPPORT_URL, HOME.gold, 190, 38, 16)
-    supportBtn:SetPoint("LEFT", supportBox, "RIGHT", 14, 0)
-    Text(support, L["点击输入框可全选，按 Ctrl+C 复制链接。"], 11, HOME.muted, "BOTTOMLEFT", supportBox, "TOPLEFT", 0, 7)
-
-    local cardRow = CreateFrame("Frame", nil, page)
-    cardRow:SetSize(W, 410)
-    cardRow:SetPoint("TOP", support, "BOTTOM", 0, -16)
-
-    local infoPanel = MakePanel(cardRow, COL_W, 410, "TOPLEFT", cardRow, "TOPLEFT", 0, 0, HOME.panel, HOME.line)
-    Accent(infoPanel, HOME.cyan)
-    SectionTitle(infoPanel, L["信息与反馈"], L["遇到问题、配置建议或缺少选项都可以反馈。"], HOME.cyan)
-
-    Text(infoPanel, L["网站"], 12, HOME.muted, "TOPLEFT", infoPanel, "TOPLEFT", 18, -78)
-    local siteBox = MakeCopyBox(infoPanel, "", "exwind.net", HOME.cyan, INNER_W, 28, 13)
-    siteBox:SetPoint("TOPLEFT", infoPanel, "TOPLEFT", 18, -100)
-
-    Text(infoPanel, "BiliBili", 12, HOME.muted, "TOPLEFT", siteBox, "BOTTOMLEFT", 0, -22)
-    Text(infoPanel, "EX-WIND " .. GREY .. "(" .. L["私信"] .. ")|r", 14, HOME.text, "TOPLEFT", siteBox, "BOTTOMLEFT", 0, -43)
-
-    Text(infoPanel, L["NGA 链接"], 12, HOME.muted, "TOPLEFT", siteBox, "BOTTOMLEFT", 0, -78)
-    local ngaBox = MakeCopyBox(infoPanel, "", "https://nga.178.com/read.php?tid=46217768", HOME.cyan, INNER_W, 28, 11)
-    ngaBox:SetPoint("TOPLEFT", siteBox, "BOTTOMLEFT", 0, -100)
-    Text(infoPanel, L["点击输入框可全选，按 Ctrl+C 复制链接"], 10, HOME.muted, "TOPLEFT", ngaBox, "BOTTOMLEFT", 0, -5)
-
-    local actionPanel = MakePanel(cardRow, COL_W, 410, "TOPRIGHT", cardRow, "TOPRIGHT", 0, 0, HOME.panel, HOME.line)
-    Accent(actionPanel, HOME.gold)
-    SectionTitle(actionPanel, L["快捷操作"], L["这些操作会直接影响插件配置。"], HOME.gold)
-
-    local localeDropdown = EXUI:CreateDropdown(
-        actionPanel,
-        188,
-        L["界面语言"],
-        localeItems,
-        ExwindTools.GetLocaleMode and ExwindTools:GetLocaleMode() or "AUTO",
-        function(value)
-            if ExwindTools.SetLocaleMode then
-                ExwindTools:SetLocaleMode(value)
-            end
-            if page.RefreshLocaleControls then
-                page:RefreshLocaleControls()
-            end
-        end
-    )
-    localeDropdown:SetPoint("TOPLEFT", actionPanel, "TOPLEFT", 18, -82)
-
-    local localeReloadBtn = EXUI:CreateSmallButton(actionPanel, L["立即重载界面"], function()
-        C_UI.Reload()
-    end)
-    localeReloadBtn:SetSize(120, 26)
-    localeReloadBtn:SetPoint("BOTTOMRIGHT", localeDropdown, "BOTTOMRIGHT", 122, 0)
-    if localeReloadBtn:GetFontString() then
-        localeReloadBtn:GetFontString():SetFont(FONT, 11, "OUTLINE")
-    end
-
-    local localeHint = Text(actionPanel, "", 11, HOME.muted, "TOPLEFT", localeDropdown, "BOTTOMLEFT", 0, -10, INNER_W)
-    localeHint:SetWordWrap(true)
-    local localeStatus = Text(actionPanel, "", 10, HOME.muted, "TOPLEFT", localeHint, "BOTTOMLEFT", 0, -6, INNER_W)
-    localeStatus:SetWordWrap(true)
-
-    page.LocaleDropdown = localeDropdown
-    page.LocaleHint = localeHint
-    page.LocaleStatus = localeStatus
-
-    function page:RefreshLocaleControls()
-        local localeMode = ExwindTools.GetLocaleMode and ExwindTools:GetLocaleMode() or "AUTO"
-        local clientLocale = _G.ExwindLocale and _G.ExwindLocale.GetClientLocale and _G.ExwindLocale.GetClientLocale() or GetLocale()
-        local effectiveLocale = ExwindTools.GetEffectiveLocale and ExwindTools:GetEffectiveLocale(localeMode) or clientLocale
-
-        if self.LocaleDropdown then
-            self.LocaleDropdown._currentValue = localeMode
-            self.LocaleDropdown:SetText(GetLocaleModeLabel(localeMode))
-        end
-
-        if self.LocaleHint then
-            self.LocaleHint:SetText(L["仅影响 Exwind 自身本地化文本；部分由游戏 API / 第三方库返回的内容不受影响。切换后建议立即重载界面。"])
-        end
-
-        if self.LocaleStatus then
-            self.LocaleStatus:SetText(string.format(L["当前设置：%s | 客户端：%s | 当前生效：%s"], GetLocaleModeLabel(localeMode), clientLocale, effectiveLocale))
-        end
-    end
-    page:RefreshLocaleControls()
-
-    -- 小地图按钮隐藏开关是跨插件通用功能，已迁移到统一面板左下角"设置"入口
-    -- (ExwindUnifiedPanel.lua 的 SettingsProvider)，不再在此处重复暴露。
-    local tipHeader = Text(actionPanel, L["使用建议"], 13, HOME.gold, "TOPLEFT", localeStatus, "BOTTOMLEFT", 0, -20, nil, "OUTLINE")
-    local tips = {
-        L["模块管理页用于启用/禁用模块，变更后需 /reload 生效。"],
-        L["进入模块设置页后可使用 Grid 面板调整样式、位置和功能开关。"],
-        L["全局编辑模式命令: /ex edmode (用于拖动 HUD 位置)。"],
-    }
-    local lastTip = tipHeader
-    for _, tip in ipairs(tips) do
-        local fs = Text(actionPanel, GC.markup.placeholder .. "•|r " .. tip, 12, HOME.text, "TOPLEFT", lastTip, "BOTTOMLEFT", 0, -8, INNER_W)
-        lastTip = fs
-    end
-
-    local btnReset = EXUI:CreateButton(actionPanel, 120, 24, L["重置设置"], function()
-        StaticPopup_Show("EXWIND_CONFIRM_RESET")
-    end, { variant = "danger", compact = true })
-    btnReset:SetPoint("BOTTOMRIGHT", actionPanel, "BOTTOMRIGHT", -16, 16)
-    if btnReset:GetFontString() then btnReset:GetFontString():SetFont(FONT, 11, "OUTLINE") end
-
-    local resetHint = Text(actionPanel, GREY .. L["RESET_HINT"] .. "|r", 10, HOME.muted, "BOTTOMLEFT", actionPanel, "BOTTOMLEFT", 18, 20, INNER_W - 110)
-
-    local footerPanel = MakePanel(page, W, 84, "TOP", cardRow, "BOTTOM", 0, -16, HOME.bg, HOME.line)
-    Accent(footerPanel, HOME.cyan)
-    local footerText = Text(footerPanel, L["作者: Exwind  |  网站: exwind.net\n问题反馈: BiliBili(EX-WIND) / NGA"], 15, HOME.muted, "CENTER", footerPanel, "CENTER", 0, 0, W - 36)
-    footerText:SetJustifyH("CENTER")
-    footerText:SetWordWrap(true)
-
-    page:SetHeight(PAGE_H)
-    EXUI.RightScrollChild:SetHeight(PAGE_H)
+    page:SetHeight(96)
+    EXUI.RightScrollChild:SetHeight(96)
 end
-
--- =========================================================
--- Async Handler (单例，确保能取消之前的任务)
--- =========================================================
-EXUI.AsyncHandler = LibStub("LibAsync"):GetHandler({
-    type = "everyFrame",
-    maxTime = 20, -- 增加一点每帧处理时间
-    errorHandler = geterrorhandler()
-})
 
 -- =========================================================
 -- 插件载入页面
@@ -2027,307 +1725,238 @@ local MODULE_CARD_ICON_TEXTURES = {
     ["ExTools.TransformTimer"] = "Interface\\AddOns\\ExwindCore\\Textures\\LOGO\\ExTools_TransformTimer.png",
 }
 
+local MODULE_MANAGEMENT_PAGE_ID = "ExwindTools.ModuleManagement"
+
+local function ModuleManagementEnabled(meta)
+    return ExwindTools.DB.LoadByKey[meta.Key] ~= false
+end
+
+local function SortedCategoryModules(category)
+    local enabled, disabled = {}, {}
+    for _, meta in ipairs(ExwindTools.ModuleList) do
+        if ModuleHasSettingsPage(meta) and (tonumber(meta.Category) or 1) == category then
+            local bucket = ModuleManagementEnabled(meta) and enabled or disabled
+            bucket[#bucket + 1] = meta
+        end
+    end
+    for _, meta in ipairs(disabled) do enabled[#enabled + 1] = meta end
+    return enabled
+end
+
+local function CreateModuleManagementOwner(page, categories)
+    local owner = { controls = {}, components = {}, actions = {}, predicates = {}, sources = {}, texts = {} }
+    for _, category in ipairs(categories) do
+        local categoryID = category
+        owner.sources["category-" .. categoryID] = function()
+            return SortedCategoryModules(categoryID)
+        end
+    end
+    owner.onHeightChanged = function(height)
+        page.cardsContainer:SetHeight(math.max(1, height))
+        page:SetHeight(height + 102)
+        EXUI.RightScrollChild:SetHeight(page:GetHeight())
+    end
+    owner.components.moduleRow = {
+        mount = function(host, context)
+            local meta = context.scope.item
+            host._moduleKey = meta.Key
+            if not host._moduleRowVisuals then
+                local iconTile = CreateFrame("Frame", nil, host, "BackdropTemplate")
+                iconTile:SetSize(42, 42)
+                iconTile:SetPoint("LEFT", host, "LEFT", 12, 0)
+                local iconArt = EXUI:CreateVisualTexture(iconTile, EXBASEFRAME)
+                iconArt:SetPoint("TOPLEFT", 3, -3)
+                iconArt:SetPoint("BOTTOMRIGHT", -3, 3)
+                local iconMark = EXUI:CreateVisualFontString(iconTile, EXFONTFRAME)
+                iconMark:SetFont(defaultFontPath, 15, "OUTLINE")
+                iconMark:SetPoint("CENTER")
+                iconMark:SetText("EX")
+                local name = EXUI:CreateVisualFontString(host, EXFONTFRAME)
+                name:SetFont(defaultFontPath, 15, "OUTLINE")
+                name:SetPoint("TOPLEFT", host, "TOPLEFT", 66, -11)
+                name:SetJustifyH("LEFT")
+                local description = EXUI:CreateVisualFontString(host, EXFONTFRAME)
+                description:SetFont(defaultFontPath, 12, "")
+                description:SetPoint("TOPLEFT", name, "BOTTOMLEFT", 0, -4)
+                description:SetJustifyH("LEFT")
+                description:SetWordWrap(true)
+                description:SetMaxLines(2)
+                local status = EXUI:CreateVisualFontString(host, EXFONTFRAME)
+                status:SetFont(defaultFontPath, 11, "")
+                status:SetPoint("BOTTOMRIGHT", host, "BOTTOMRIGHT", -14, 8)
+                local accent = EXUI:CreateVisualTexture(host, EXBASEFRAME)
+                accent:SetPoint("TOPLEFT", host, "TOPLEFT", 0, -5)
+                accent:SetPoint("BOTTOMLEFT", host, "BOTTOMLEFT", 0, 5)
+                accent:SetWidth(3)
+                host._moduleRowVisuals = {
+                    iconTile = iconTile, iconArt = iconArt, iconMark = iconMark,
+                    name = name, description = description, status = status, accent = accent,
+                }
+            end
+            local visuals = host._moduleRowVisuals
+            visuals.iconTile:Show()
+            visuals.name:Show()
+            visuals.description:Show()
+            visuals.status:Show()
+            visuals.accent:Show()
+            host.SettingsBtn = EXUI:CreateButton(host, 74, 26, L["设置"], context:Guard(function()
+                EXUI.CurrentPage = "ModuleSettings"
+                EXUI.CurrentModule = meta.Key
+                EXUI:RefreshContent()
+            end), { variant = "secondary", compact = true })
+            host.SettingsBtn:SetPoint("RIGHT", host, "RIGHT", -76, 0)
+            host.EnableSwitch = EXUI:CreateCheckbox(host, "", ModuleManagementEnabled(meta),
+                context:Guard(function(checked)
+                    ExwindTools:SetModuleEnabled(meta.Key, checked)
+                    C_Timer.After(0, function()
+                        if page.moduleListSession and page:IsVisible() then
+                            page.moduleListSession:Refresh()
+                        end
+                    end)
+                end))
+            host.EnableSwitch:SetSize(44, 28)
+            host.EnableSwitch:SetPoint("TOPRIGHT", host, "TOPRIGHT", -14, -11)
+            EXUI:PrepareSettingsListControl(host.EnableSwitch, { presentation = "switch", hideLabel = true })
+            return host
+        end,
+        update = function(host, context)
+            local meta = context.scope.item
+            local key = meta.Key
+            local enabled = ModuleManagementEnabled(meta)
+            local pendingReload = enabled and ExwindTools.ModuleStatus[key] == "pending_reload"
+            local visuals = host._moduleRowVisuals
+            EXUI:SetControlSurface(host, 4,
+                enabled and GC.card or GC.disabledFill,
+                enabled and GC.cardBorder or GC.disabledBorder)
+            EXUI:SetControlSurface(visuals.iconTile, 4,
+                enabled and GC.subcard or GC.disabledFill,
+                enabled and GC.subcardBorder or GC.disabledBorder)
+            visuals.accent:SetColorTexture(unpack(enabled and GC.accent or GC.textDisabled))
+            local iconPath = MODULE_CARD_ICON_TEXTURES[key]
+            visuals.iconArt:SetShown(iconPath ~= nil)
+            visuals.iconMark:SetShown(iconPath == nil)
+            if iconPath then
+                visuals.iconArt:SetTexture(iconPath)
+                visuals.iconArt:SetDesaturated(not enabled)
+                local brightness = enabled and 1 or 0.42
+                visuals.iconArt:SetVertexColor(brightness, brightness, brightness, 1)
+            end
+            visuals.iconMark:SetTextColor(unpack(enabled and GC.accent or GC.textDisabled))
+            visuals.name:SetText(meta.Name or key)
+            visuals.name:SetTextColor(unpack(enabled and GC.text or GC.textDisabled))
+            visuals.description:SetText(meta.Desc or "")
+            visuals.description:SetTextColor(unpack(enabled and GC.textDim or GC.textDisabled))
+            visuals.status:SetText(pendingReload and L["待重载"] or (enabled and L["已启用"] or L["已禁用"]))
+            visuals.status:SetTextColor(unpack(enabled and GC.selectedText or GC.textDisabled))
+            host.EnableSwitch:SetChecked(enabled)
+            EXUI:ApplyControlAppearance(host.EnableSwitch)
+            local controller = type(EXUI.GetCentralModuleController) == "function"
+                and EXUI:GetCentralModuleController(key) or nil
+            local ready = enabled and (ExwindTools.RegisteredLayouts[key] ~= nil
+                or (ExwindTools.ModuleDefinitions and ExwindTools.ModuleDefinitions[key] ~= nil)
+                or EXUI.SettingsPageDeclarations[key] ~= nil
+                or EXUI.ModuleSettingsV2Pages[key] ~= nil
+                or controller ~= nil)
+            host.SettingsBtn:SetEnabled(ready == true)
+            host.SettingsBtn:SetAlpha(ready and 1 or 0.35)
+        end,
+        measure = function() return 72 end,
+        layout = function(host, context, width, height)
+            host:SetSize(width, height)
+            local textWidth = math.max(80, width - 230)
+            host._moduleRowVisuals.name:SetWidth(textWidth)
+            host._moduleRowVisuals.description:SetWidth(textWidth)
+        end,
+        setEnabled = function() end,
+        setVisible = function(host, context, visible) host:SetShown(visible) end,
+        release = function(host)
+            local factory = _G.ExwindFactory
+            EXUI:RestoreSettingsListControl(host.EnableSwitch)
+            factory:Release(host.EnableSwitch._fromPool, host.EnableSwitch)
+            factory:Release(host.SettingsBtn._fromPool, host.SettingsBtn)
+            host.EnableSwitch = nil
+            host.SettingsBtn = nil
+            host._moduleKey = nil
+            EXUI:ClearControlSurface(host)
+            local visuals = host._moduleRowVisuals
+            EXUI:ClearControlSurface(visuals.iconTile)
+            visuals.iconTile:Hide()
+            visuals.name:Hide()
+            visuals.description:Hide()
+            visuals.status:Hide()
+            visuals.accent:Hide()
+        end,
+    }
+    return owner
+end
+
 function EXUI:ShowLoadSettingsPage()
-    -- 卡片必须按右侧滚动区域的最终宽度排版。页面首次打开时 ScrollChild
-    -- 仍可能保留初始化宽度，先同步一次，避免三列只占左半边。
     EXUI:SyncScrollChildWidths()
-    -- [Fix] 挂载到 ScrollChild
     local page, isNew = EXUI:GetCachedPage("LoadSettings", EXUI.RightScrollChild)
     EXUI.ActivePageFrame = page
     EXUI._InternalPageFrame = page
 
     if isNew then
-        local pageTitle = EXUI:CreateVisualFontString(page, EXFONTFRAME)
-        pageTitle:SetFont(defaultFontPath, 22, "OUTLINE")
-        pageTitle:SetPoint("TOPLEFT", 20, -15)
-        pageTitle:SetText(L["模块管理"])
-        pageTitle:SetTextColor(unpack(THEME.TextMain))
-
+        local title = EXUI:CreateVisualFontString(page, EXFONTFRAME)
+        title:SetFont(defaultFontPath, 20, "OUTLINE")
+        title:SetPoint("TOPLEFT", 20, -15)
+        title:SetText(L["模块管理"])
+        title:SetTextColor(unpack(GC.text))
         local hint = EXUI:CreateVisualFontString(page, EXFONTFRAME)
         hint:SetFontObject("GameFontHighlight")
         hint:SetPoint("TOPLEFT", 20, -45)
         hint:SetText(L["按左侧路由分类管理模块；禁用立即生效，重新启用后需要 /reload。"])
-        hint:SetTextColor(unpack(THEME.TextSub))
+        hint:SetTextColor(unpack(GC.textDim))
 
-        local btnEnableAll = EXUI:CreateSmallButton(page, L["全部启用"], function()
+        local enableAll = EXUI:CreateSmallButton(page, L["全部启用"], function()
             for _, meta in ipairs(ExwindTools.ModuleList) do
                 if ModuleHasSettingsPage(meta) then ExwindTools:SetModuleEnabled(meta.Key, true) end
             end
-            if page.cardsContainer then
-                EXUI:RefreshModuleCardStates(page.cardsContainer)
-            else
-                EXUI:RefreshContentKeepRightScroll()
-            end
+            page.moduleListSession:Refresh()
         end)
-        btnEnableAll:SetPoint("TOPRIGHT", -150, -12)
-
-        local btnDisableAll = EXUI:CreateSmallButton(page, L["全部禁用"], function()
+        enableAll:SetPoint("TOPRIGHT", -150, -12)
+        local disableAll = EXUI:CreateSmallButton(page, L["全部禁用"], function()
             for _, meta in ipairs(ExwindTools.ModuleList) do
                 if ModuleHasSettingsPage(meta) then ExwindTools:SetModuleEnabled(meta.Key, false) end
             end
-            if page.cardsContainer then
-                EXUI:RefreshModuleCardStates(page.cardsContainer)
-            else
-                EXUI:RefreshContentKeepRightScroll()
-            end
+            page.moduleListSession:Refresh()
         end)
-        btnDisableAll:SetPoint("TOPRIGHT", -20, -12)
+        disableAll:SetPoint("TOPRIGHT", -20, -12)
 
-        -- [Fix] 不再创建内部 ScrollFrame，直接使用 page 作为容器
-        -- 用于挂载卡片的容器 (其实就是 page 本身)
         page.cardsContainer = CreateFrame("Frame", nil, page)
-        page.cardsContainer:SetPoint("TOPLEFT", 15, -75)
-        page.cardsContainer:SetPoint("BOTTOMRIGHT", -15, 0)
-        page.cardsContainer:SetSize(720, 1) -- 初始高度
-    end
+        page.cardsContainer:SetPoint("TOPLEFT", page, "TOPLEFT", 15, -82)
+        page.cardsContainer:SetPoint("TOPRIGHT", page, "TOPRIGHT", -15, -82)
+        page.cardsContainer:SetHeight(1)
 
-    -- 刷新卡片列表
-    if page.cardsContainer then
-        EXUI.AsyncHandler:CancelAsync("ExwindTools_GenCards")
-        for _, child in ipairs({ page.cardsContainer:GetChildren() }) do
-            child:Hide()
-            child:SetParent(nil)
-        end
-        -- 生成卡片并自适应高度
-        EXUI:GenerateModuleCards(page.cardsContainer, function(contentHeight)
-            page:SetHeight(contentHeight + 100)
-            EXUI.RightScrollChild:SetHeight(page:GetHeight())
-        end)
-    end
-end
-
--- 模块管理卡片：根据启用状态刷新视觉（避免整页刷新导致闪烁）
-function EXUI:ApplyModuleCardState(card, isEnabled)
-    if not card then return end
-    local accent = card.CategoryAccent or THEME.Primary
-    local pendingReload = isEnabled and ExwindTools.ModuleStatus[card._moduleKey] == "pending_reload"
-    card:SetBackdropBorderColor(accent[1], accent[2], accent[3], isEnabled and 0.52 or 0.20)
-    card:SetBackdropColor(unpack(isEnabled and GC.card or GC.disabledFill))
-    if card.Accent then
-        card.Accent:SetColorTexture(accent[1], accent[2], accent[3], isEnabled and 0.95 or 0.30)
-    end
-    if card.IconMark then card.IconMark:SetAlpha(isEnabled and 1 or 0.38) end
-    if card.IconArt then
-        card.IconArt:SetDesaturated(not isEnabled)
-        local brightness = isEnabled and 1 or 0.32
-        card.IconArt:SetVertexColor(brightness, brightness, brightness, 1)
-        card.IconArt:SetAlpha(isEnabled and 1 or 0.72)
-    end
-    if card.StatusDot then
-        local color = pendingReload and { 0.93, 0.69, 0.31 } or (isEnabled and THEME.Success or THEME.Danger)
-        card.StatusDot:SetTextColor(color[1], color[2], color[3], 1)
-    end
-    if card.StatusText then
-        card.StatusText:SetText(pendingReload and L["待重载"] or (isEnabled and L["已启用"] or L["已禁用"]))
-        local color = pendingReload and { 0.93, 0.69, 0.31 } or (isEnabled and THEME.Success or THEME.Danger)
-        card.StatusText:SetTextColor(color[1], color[2], color[3], 1)
-    end
-    if card.SettingsBtn then
-        local key = card._moduleKey
-        local controller = type(EXUI.GetCentralModuleController) == "function" and EXUI:GetCentralModuleController(key) or nil
-        local ready = isEnabled and (ExwindTools.RegisteredLayouts[key] ~= nil
-            or (ExwindTools.ModuleDefinitions and ExwindTools.ModuleDefinitions[key] ~= nil)
-            or EXUI.SettingsPageDeclarations[key] ~= nil
-            or EXUI.ModuleSettingsV2Pages[key] ~= nil
-            or controller ~= nil)
-        card.SettingsBtn:SetEnabled(ready == true)
-        card.SettingsBtn:SetAlpha(ready and 1 or 0.35)
-    end
-    if card.EnableBtnText then
-        card.EnableBtnText:SetText(isEnabled and L["禁用"] or L["启用"])
-        local actionColor = isEnabled and THEME.Danger or THEME.Success
-        card.EnableBtnText:SetTextColor(actionColor[1], actionColor[2], actionColor[3], 1)
-    end
-end
-
-function EXUI:RefreshModuleCardStates(container)
-    if not container then return end
-    for _, child in ipairs({ container:GetChildren() }) do
-        if child._moduleKey then
-            local isEnabled = ExwindTools.DB.LoadByKey[child._moduleKey] ~= false
-            EXUI:ApplyModuleCardState(child, isEnabled)
-        end
-    end
-end
-
--- [Update] 修改 GenerateModuleCards 以支持高度回调
-function EXUI:GenerateModuleCards(parent, onComplete)
-    local cardsPerRow, cardHeight = 3, 126
-    local cardGap, rowGap, sectionGap = 12, 12, 18
-    local xInset, headerHeight = 6, 28
-    local contentWidth = tonumber(parent:GetWidth()) or 0
-    local viewportWidth = EXUI.RightScrollFrame and tonumber(EXUI.RightScrollFrame:GetWidth()) or 0
-    if viewportWidth > 1 then
-        -- cardsContainer 相对页面左右各缩进 15。
-        contentWidth = viewportWidth - 30
-    end
-    if contentWidth < 600 then contentWidth = 780 end
-    local cardWidth = math.floor((contentWidth - xInset * 2
-        - (cardsPerRow - 1) * cardGap) / cardsPerRow)
-
-    local categoryPalette = {
-        [1] = { 0.57, 0.49, 0.91 },
-        [2] = { 0.28, 0.72, 0.90 },
-        [3] = { 0.31, 0.78, 0.55 },
-        [4] = { 0.93, 0.69, 0.31 },
-        [5] = { 0.91, 0.38, 0.47 },
-        [6] = { 0.44, 0.63, 0.95 },
-    }
-    local grouped = {}
-    for _, meta in ipairs(ExwindTools.ModuleList) do
-        if ModuleHasSettingsPage(meta) then
-            local category = tonumber(meta.Category) or 1
-            grouped[category] = grouped[category] or {}
-            grouped[category][#grouped[category] + 1] = meta
-        end
-    end
-    local categoryIDs = {}
-    for category in pairs(grouped) do categoryIDs[#categoryIDs + 1] = category end
-    table.sort(categoryIDs)
-
-    local totalHeight = 8
-    for _, category in ipairs(categoryIDs) do
-        local rows = math.ceil(#grouped[category] / cardsPerRow)
-        totalHeight = totalHeight + headerHeight + 8 + rows * cardHeight
-            + math.max(0, rows - 1) * rowGap + sectionGap
-    end
-    parent:SetHeight(totalHeight)
-    if onComplete then onComplete(totalHeight) end
-
-    EXUI.AsyncHandler:Async(function()
-        local cursorY, rendered = 5, 0
-        for _, category in ipairs(categoryIDs) do
-            if not parent:IsVisible() then return end
-            local modules = grouped[category]
-            local accent = categoryPalette[category] or THEME.Primary
-
-            local header = CreateFrame("Frame", nil, parent)
-            header:SetSize(contentWidth - xInset * 2, headerHeight)
-            header:SetPoint("TOPLEFT", parent, "TOPLEFT", xInset, -cursorY)
-            local rail = EXUI:CreateVisualTexture(header, EXBASEFRAME)
-            rail:SetPoint("LEFT", 0, 0)
-            rail:SetSize(3, 18)
-            rail:SetColorTexture(accent[1], accent[2], accent[3], 1)
-            local categoryTitle = EXUI:CreateVisualFontString(header, EXFONTFRAME)
-            categoryTitle:SetFont(defaultFontPath, 17, "OUTLINE")
-            categoryTitle:SetPoint("LEFT", rail, "RIGHT", 9, 0)
-            categoryTitle:SetText((ExwindTools.Cate and ExwindTools.Cate[category]) or (L["分类"] .. " " .. category))
-            categoryTitle:SetTextColor(unpack(THEME.TextMain))
-            local categoryCount = EXUI:CreateVisualFontString(header, EXFONTFRAME)
-            categoryCount:SetFont(defaultFontPath, 11, "")
-            categoryCount:SetPoint("LEFT", categoryTitle, "RIGHT", 10, -1)
-            categoryCount:SetText(string.format("%d %s", #modules, L["个模块"]))
-            categoryCount:SetTextColor(unpack(THEME.TextDim))
-            local line = EXUI:CreateVisualTexture(header, EXBASEFRAME)
-            line:SetPoint("LEFT", categoryCount, "RIGHT", 12, 0)
-            line:SetPoint("RIGHT", header, "RIGHT", 0, 0)
-            line:SetHeight(1)
-            line:SetColorTexture(accent[1], accent[2], accent[3], 0.18)
-
-            cursorY = cursorY + headerHeight + 8
-            for index, meta in ipairs(modules) do
-                local moduleMeta, moduleKey = meta, meta.Key
-                rendered = rendered + 1
-                if rendered % 4 == 0 then coroutine.yield() end
-                if not parent:IsVisible() then return end
-
-                local row = math.floor((index - 1) / cardsPerRow)
-                local col = (index - 1) % cardsPerRow
-                local card = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-                card._moduleKey = moduleKey
-                card.CategoryAccent = accent
-                card:SetSize(cardWidth, cardHeight)
-                card:SetPoint("TOPLEFT", parent, "TOPLEFT",
-                    xInset + col * (cardWidth + cardGap), -cursorY - row * (cardHeight + rowGap))
-                card:SetBackdrop(BACKDROP)
-
-                local cardAccent = EXUI:CreateVisualTexture(card, EXBASEFRAME)
-                cardAccent:SetPoint("TOPLEFT", 0, 0)
-                cardAccent:SetPoint("BOTTOMLEFT", 0, 0)
-                cardAccent:SetWidth(3)
-                card.Accent = cardAccent
-
-                local iconTile = CreateFrame("Frame", nil, card, "BackdropTemplate")
-                iconTile:SetSize(48, 48)
-                iconTile:SetPoint("TOPLEFT", 14, -15)
-                iconTile:SetBackdrop(BACKDROP)
-                iconTile:SetBackdropColor(accent[1] * 0.12, accent[2] * 0.12, accent[3] * 0.12, 0.96)
-                iconTile:SetBackdropBorderColor(accent[1], accent[2], accent[3], 0.42)
-                local iconTexturePath = MODULE_CARD_ICON_TEXTURES[moduleKey]
-                if iconTexturePath then
-                    local iconArt = EXUI:CreateVisualTexture(iconTile, EXBASEFRAME)
-                    iconArt:SetPoint("TOPLEFT", 3, -3)
-                    iconArt:SetPoint("BOTTOMRIGHT", -3, 3)
-                    iconArt:SetTexture(iconTexturePath)
-                    iconArt:SetTexCoord(0, 1, 0, 1)
-                    card.IconArt = iconArt
-                else
-                    local iconMark = EXUI:CreateVisualFontString(iconTile, EXFONTFRAME)
-                    iconMark:SetFont(defaultFontPath, 17, "OUTLINE")
-                    iconMark:SetPoint("CENTER", 0, 0)
-                    iconMark:SetText("EX")
-                    iconMark:SetTextColor(accent[1], accent[2], accent[3], 1)
-                    card.IconMark = iconMark
+        local seen, categories = {}, {}
+        for _, meta in ipairs(ExwindTools.ModuleList) do
+            if ModuleHasSettingsPage(meta) then
+                local category = tonumber(meta.Category) or 1
+                if not seen[category] then
+                    seen[category] = true
+                    categories[#categories + 1] = category
                 end
-
-                local nameText = EXUI:CreateVisualFontString(card, EXFONTFRAME)
-                nameText:SetFont(defaultFontPath, 16, "OUTLINE")
-                nameText:SetPoint("TOPLEFT", 76, -15)
-                nameText:SetWidth(math.max(80, cardWidth - 168))
-                nameText:SetJustifyH("LEFT")
-                nameText:SetText(moduleMeta.Name or moduleKey)
-                nameText:SetTextColor(unpack(THEME.TextMain))
-
-                local statusDot = EXUI:CreateVisualFontString(card, EXFONTFRAME)
-                statusDot:SetFont(defaultFontPath, 12, "OUTLINE")
-                statusDot:SetPoint("TOPRIGHT", -72, -17)
-                statusDot:SetText("●")
-                card.StatusDot = statusDot
-                local statusText = EXUI:CreateVisualFontString(card, EXFONTFRAME)
-                statusText:SetFont(defaultFontPath, 11, "")
-                statusText:SetPoint("LEFT", statusDot, "RIGHT", 4, 0)
-                card.StatusText = statusText
-
-                local descText = EXUI:CreateVisualFontString(card, EXFONTFRAME)
-                descText:SetFont(defaultFontPath, 12, "")
-                descText:SetPoint("TOPLEFT", nameText, "BOTTOMLEFT", 0, -7)
-                descText:SetWidth(math.max(100, cardWidth - 90))
-                descText:SetJustifyH("LEFT")
-                descText:SetJustifyV("TOP")
-                descText:SetWordWrap(true)
-                descText:SetMaxLines(2)
-                descText:SetText(moduleMeta.Desc or "")
-                descText:SetTextColor(unpack(THEME.TextSub))
-
-                local settingsBtn = EXUI:CreateSmallButton(card, L["设置"], function()
-                    EXUI.CurrentPage = "ModuleSettings"
-                    EXUI.CurrentModule = moduleKey
-                    EXUI:RefreshContent()
-                end)
-                settingsBtn:SetSize(84, 25)
-                settingsBtn:SetPoint("BOTTOMLEFT", 76, 12)
-                card.SettingsBtn = settingsBtn
-
-                local enableBtn = EXUI:CreateSmallButton(card, "", function()
-                    local currentEnabled = ExwindTools.DB.LoadByKey[moduleKey] ~= false
-                    local newEnabled = not currentEnabled
-                    ExwindTools:SetModuleEnabled(moduleKey, newEnabled)
-                    EXUI:ApplyModuleCardState(card, newEnabled)
-                end)
-                card.EnableBtn = enableBtn
-                card.EnableBtnText = enableBtn.Label
-                enableBtn:SetSize(84, 25)
-                enableBtn:SetPoint("BOTTOMRIGHT", -14, 12)
-
-                EXUI:ApplyModuleCardState(card, ExwindTools.DB.LoadByKey[moduleKey] ~= false)
             end
-
-            local rows = math.ceil(#modules / cardsPerRow)
-            cursorY = cursorY + rows * cardHeight + math.max(0, rows - 1) * rowGap + sectionGap
         end
-    end, "ExwindTools_GenCards")
+        table.sort(categories)
+        local cards = {}
+        for _, category in ipairs(categories) do
+            cards[#cards + 1] = {
+                id = "category-card-" .. category, kind = "card",
+                title = (ExwindTools.Cate and ExwindTools.Cate[category]) or (L["分类"] .. " " .. category),
+                children = {{
+                    id = "category-list-" .. category, kind = "repeat", source = "category-" .. category,
+                    template = { id = "module-row-" .. category, kind = "component", ref = "moduleRow" },
+                }},
+            }
+        end
+        EXUI:RegisterSettingsPageV2(MODULE_MANAGEMENT_PAGE_ID, { version = 2, cards = cards })
+        page.moduleListSession = EXUI:MountSettingsPageV2(page.cardsContainer,
+            MODULE_MANAGEMENT_PAGE_ID, CreateModuleManagementOwner(page, categories))
+    else
+        page.moduleListSession:Refresh()
+    end
 end
-
 -- =========================================================
 -- 模块设置页面 (ExwindGrid Layout)
 -- 使用原生 Grid 布局引擎渲染
@@ -3045,88 +2674,98 @@ end
 -- 配置管理页面 (导出/导入)
 -- =========================================================
 function EXUI:ShowProfileManagerPage()
+    EXUI:SyncScrollChildWidths()
     local page, isNew = EXUI:GetCachedPage("ProfileManager", EXUI.RightScrollChild)
     EXUI.ActivePageFrame = page
     EXUI._InternalPageFrame = page
 
-    -- 状态存储
     if not EXUI.ProfileState then
         EXUI.ProfileState = {
-            exportSelected = {},   -- 导出时选中的模块
-            importSelected = {},   -- 导入时选中的模块
-            parsedData = nil,      -- 解析后的导入数据
-            mergeMode = "replace", -- 导入模式
+            exportSelected = {},
+            importSelected = {},
+            parsedData = nil,
+            mergeMode = "replace",
         }
     end
     local state = EXUI.ProfileState
-
     if not isNew then
-        EXUI.RightScrollChild:SetHeight(1200)
+        if page.RelayoutProfileManagerPage then page:RelayoutProfileManagerPage() end
+        EXUI.RightScrollChild:SetHeight(page:GetHeight())
         return
     end
 
-    local yOffset = -20
     local Export = ExwindTools.Export
+    local sectionWidth = math.max(620, math.min((page:GetWidth() or 800) - 40, 980))
+    local innerWidth = sectionWidth - 36
+    page.ProfileColumnCount = innerWidth >= 750 and 3 or 2
+    local function StyleMultiline(field)
+        local hovered, focused = false, false
+        local function Paint()
+            EXUI:SetControlSurface(field, 4,
+                (hovered or focused) and GC.inputHover or GC.input,
+                focused and GC.inputFocusBorder or (hovered and GC.inputHoverBorder or GC.inputBorder))
+        end
+        field.scrollFrame:HookScript("OnEnter", function() hovered = true; Paint() end)
+        field.scrollFrame:HookScript("OnLeave", function() hovered = false; Paint() end)
+        field.editBox:HookScript("OnEnter", function() hovered = true; Paint() end)
+        field.editBox:HookScript("OnLeave", function() hovered = false; Paint() end)
+        field.editBox:HookScript("OnEditFocusGained", function() focused = true; Paint() end)
+        field.editBox:HookScript("OnEditFocusLost", function() focused = false; Paint() end)
+        Paint()
+    end
 
-    -- ===== 标题 =====
     local title = EXUI:CreateVisualFontString(page, EXFONTFRAME)
-    title:SetFont(ExwindTools.MAIN_FONT, 25, "OUTLINE")
-    title:SetPoint("TOPLEFT", 20, yOffset)
-    title:SetText(GC.markup.accent .. L["配置管理"] .. "|r")
-    yOffset = yOffset - 40
+    title:SetFont(ExwindTools.MAIN_FONT, 23, "OUTLINE")
+    title:SetPoint("TOPLEFT", page, "TOPLEFT", 20, -18)
+    title:SetText(L["配置管理"])
+    title:SetTextColor(unpack(GC.text))
 
-    -- ===== 导出区域 =====
     local exportSection = CreateFrame("Frame", nil, page, "BackdropTemplate")
-    exportSection:SetSize(780, 400)
-    exportSection:SetPoint("TOPLEFT", 20, yOffset)
-    exportSection:SetBackdrop(BACKDROP)
-    exportSection:SetBackdropColor(unpack(GC.panel))
-    exportSection:SetBackdropBorderColor(unpack(THEME.Border))
-
+    exportSection:SetSize(sectionWidth, 400)
+    exportSection:SetPoint("TOPLEFT", page, "TOPLEFT", 20, -74)
+    EXUI:SetControlSurface(exportSection, 10, GC.card, GC.cardBorder)
+    page.ProfileExportSection = exportSection
     local exportTitle = EXUI:CreateVisualFontString(exportSection, EXFONTFRAME)
-    exportTitle:SetFont(ExwindTools.MAIN_FONT, 20, "OUTLINE")
-    exportTitle:SetPoint("TOPLEFT", 15, -15)
-    exportTitle:SetText(GC.markup.accent .. L["导出配置"] .. "|r")
+    exportTitle:SetFont(ExwindTools.MAIN_FONT, 18, "OUTLINE")
+    exportTitle:SetPoint("TOPLEFT", exportSection, "TOPLEFT", 18, -17)
+    exportTitle:SetText(L["导出配置"])
+    exportTitle:SetTextColor(unpack(GC.text))
 
-    -- 配置名称输入
-    local nameInput = EXUI:CreateEditBox(exportSection, L["我的配置"], 300, 30, L["配置名称:"], { labelPos = "left" })
-    nameInput:SetPoint("TOPLEFT", 100, -50)
+    local nameWidth = math.floor((innerWidth - 16) * 0.55)
+    local authorWidth = innerWidth - nameWidth - 16
+    local nameInput = EXUI:CreateEditBox(exportSection, L["我的配置"], nameWidth, 30,
+        L["配置名称:"], { labelPos = "top" })
+    nameInput:SetPoint("TOPLEFT", exportSection, "TOPLEFT", 18, -76)
+    local authorInput = EXUI:CreateEditBox(exportSection, "", authorWidth, 30,
+        L["导出者:"], { labelPos = "top", placeholder = L["留空则使用当前名"] })
+    authorInput:SetPoint("TOPLEFT", nameInput, "TOPRIGHT", 16, 0)
+    local noteInput = EXUI:CreateEditBox(exportSection, "", innerWidth, 76,
+        L["备注说明:"], { labelPos = "top" })
+    noteInput:SetPoint("TOPLEFT", exportSection, "TOPLEFT", 18, -154)
+    StyleMultiline(noteInput)
 
-    -- 导出者名称输入
-    local authorInput = EXUI:CreateEditBox(exportSection, "", 200, 30, L["导出者:"],
-        { labelPos = "left", placeholder = L["留空则使用当前名"] })
-    authorInput:SetPoint("LEFT", nameInput, "RIGHT", 80, 0)
-
-    -- 备注说明输入
-    local noteInput = EXUI:CreateEditBox(exportSection, "", 600, 70, L["备注说明:"], { labelPos = "left" })
-    noteInput:SetPoint("TOPLEFT", 100, -100)
-
-    -- 模块选择区域 (向下顺延偏移，防止重叠)
-    local moduleLabel = EXUI:CreateVisualFontString(exportSection, EXFONTFRAME, "GameFontHighlight")
-    moduleLabel:SetPoint("TOPLEFT", 15, -190)
+    local moduleLabel = EXUI:CreateVisualFontString(exportSection, EXFONTFRAME)
+    moduleLabel:SetFont(ExwindTools.MAIN_FONT, 14, "OUTLINE")
+    moduleLabel:SetPoint("TOPLEFT", exportSection, "TOPLEFT", 18, -257)
     moduleLabel:SetText(L["选择导出模块:"])
-
-    -- 全选/全不选按钮
-    local selectAllBtn = EXUI:CreateSmallButton(exportSection, L["全选"], function()
+    moduleLabel:SetTextColor(unpack(GC.text))
+    local selectAllBtn = EXUI:CreateButton(exportSection, 62, 26, L["全选"], function()
         local modules = Export:GetExportableModules()
         for _, m in ipairs(modules) do state.exportSelected[m.key] = true end
         EXUI:RefreshExportCheckboxes()
-    end)
-    selectAllBtn:SetSize(60, 22); selectAllBtn:SetPoint("LEFT", moduleLabel, "RIGHT", 15, 0)
+    end, { variant = "secondary", compact = true })
+    selectAllBtn:SetPoint("LEFT", moduleLabel, "RIGHT", 16, 0)
+    local selectNoneBtn = EXUI:CreateButton(exportSection, 74, 26, L["全不选"], function()
+        wipe(state.exportSelected)
+        EXUI:RefreshExportCheckboxes()
+    end, { variant = "secondary", compact = true })
+    selectNoneBtn:SetPoint("LEFT", selectAllBtn, "RIGHT", 8, 0)
 
-    local selectNoneBtn = EXUI:CreateSmallButton(exportSection, L["全不选"], function()
-        wipe(state.exportSelected); EXUI:RefreshExportCheckboxes()
-    end)
-    selectNoneBtn:SetSize(70, 22); selectNoneBtn:SetPoint("LEFT", selectAllBtn, "RIGHT", 5, 0)
-
-    -- 模块列表容器 (调整位位移)
     local exportList = CreateFrame("Frame", nil, exportSection)
-    exportList:SetSize(740, 1)
-    exportList:SetPoint("TOPLEFT", 15, -220)
+    exportList:SetSize(innerWidth, 1)
+    exportList:SetPoint("TOPLEFT", exportSection, "TOPLEFT", 18, -294)
     EXUI.ExportListFrame = exportList
-
-    -- 导出按钮 (回归 Exwind 经典紫)
-    local exportBtn = EXUI:CreateActionButton(exportSection, L["生成导出字符串"], function()
+    local exportBtn = EXUI:CreateButton(exportSection, 200, 36, L["生成导出字符串"], function()
         local profileName = nameInput:GetText() or L["未命名"]
         local authorName = authorInput:GetText() or ""
         local note = noteInput:GetText() or ""
@@ -3136,36 +2775,28 @@ function EXUI:ShowProfileManagerPage()
         else
             print("|cffff0000[ExwindTools]|r " .. L["导出失败: "] .. (err or L["未知错误"]))
         end
-    end)
-    exportBtn:SetSize(200, 38)
-    exportBtn:SetBackdropColor(unpack(GC.accent))
-    exportBtn:SetBackdropBorderColor(unpack(GC.accent))
-    exportBtn:SetPoint("BOTTOMRIGHT", exportSection, "BOTTOMRIGHT", -15, 15)
+    end, { variant = "primary", compact = true })
+    exportBtn:SetPoint("BOTTOMRIGHT", exportSection, "BOTTOMRIGHT", -18, 18)
     EXUI.ExportGenBtn = exportBtn
 
-    yOffset = yOffset - 420
-
-    -- ===== 导入区域 =====
     local importSection = CreateFrame("Frame", nil, page, "BackdropTemplate")
-    importSection:SetSize(780, 480)
-    -- 初始位置设低一点，等待动态计算覆盖
-    importSection:SetPoint("TOPLEFT", 20, -1000)
+    importSection:SetSize(sectionWidth, 550)
+    importSection:SetPoint("TOPLEFT", exportSection, "BOTTOMLEFT", 0, -18)
+    EXUI:SetControlSurface(importSection, 10, GC.card, GC.cardBorder)
     EXUI.ImportSection = importSection
-    importSection:SetBackdropColor(unpack(GC.panel))
-    importSection:SetBackdropBorderColor(unpack(THEME.Border))
-
+    page.ProfileImportSection = importSection
     local importTitle = EXUI:CreateVisualFontString(importSection, EXFONTFRAME)
-    importTitle:SetFont(ExwindTools.MAIN_FONT, 20, "OUTLINE")
-    importTitle:SetPoint("TOPLEFT", 15, -15)
-    importTitle:SetText(GC.markup.accent .. L["导入配置"] .. "|r")
+    importTitle:SetFont(ExwindTools.MAIN_FONT, 18, "OUTLINE")
+    importTitle:SetPoint("TOPLEFT", importSection, "TOPLEFT", 18, -17)
+    importTitle:SetText(L["导入配置"])
+    importTitle:SetTextColor(unpack(GC.text))
 
-    -- 导入字符串输入 (统一使用标准 EditBox，移除所有滚动层包装)
-    local importInput = EXUI:CreateEditBox(importSection, "", 750, 100, L["粘贴导入字符串:"], { labelPos = "top" })
-    importInput:SetPoint("TOPLEFT", 15, -60)
+    local importInput = EXUI:CreateEditBox(importSection, "", innerWidth, 96,
+        L["粘贴导入字符串:"], { labelPos = "top" })
+    importInput:SetPoint("TOPLEFT", importSection, "TOPLEFT", 18, -76)
+    StyleMultiline(importInput)
     EXUI.ImportStringField = importInput
-
-    -- 解析预览按钮
-    local parseBtn = EXUI:CreateSmallButton(importSection, L["解析预览"], function()
+    local parseBtn = EXUI:CreateButton(importSection, 120, 28, L["解析预览"], function()
         local importDataInput = EXUI.ImportStringField:GetText()
         local data, err = Export:ParseImportString(importDataInput)
         if data then
@@ -3180,69 +2811,116 @@ function EXUI:ShowProfileManagerPage()
             EXUI:RefreshImportPreview(nil)
             print("|cffff0000[ExwindTools]|r " .. L["解析失败: "] .. (err or L["未知错误"]))
         end
-    end)
-    parseBtn:SetSize(120, 26)
-    parseBtn:SetPoint("TOPLEFT", EXUI.ImportStringField, "BOTTOMLEFT", 0, -10)
+    end, { variant = "secondary", compact = true })
+    parseBtn:SetPoint("TOPLEFT", importSection, "TOPLEFT", 18, -192)
 
-    -- 预览信息区 (结构完全对齐导出区)
     local previewFrame = CreateFrame("Frame", nil, importSection)
-    previewFrame:SetSize(740, 1)
-    previewFrame:SetPoint("TOPLEFT", 15, -195)
+    previewFrame:SetSize(innerWidth, 1)
+    previewFrame:SetPoint("TOPLEFT", importSection, "TOPLEFT", 18, -250)
     EXUI.ImportPreviewFrame = previewFrame
-
-    -- [Style] 模拟导出页的数据字段 (只读模式)
-    local pName = EXUI:CreateEditBox(previewFrame, "", 300, 30, GC.markup.textDim .. L["配置名称:"] .. "|r", { labelPos = "left" })
-    pName:SetPoint("TOPLEFT", 85, 0)
-    pName.editBox:Disable(); pName:SetBackdropColor(unpack(GC.inputDisabled)); pName:SetBackdropBorderColor(unpack(GC.inputDisabledBorder))
+    local pName = EXUI:CreateEditBox(previewFrame, "", nameWidth, 30,
+        GC.markup.textDim .. L["配置名称:"] .. "|r", { labelPos = "top" })
+    pName:SetPoint("TOPLEFT", previewFrame, "TOPLEFT", 0, -22)
+    pName.editBox:Disable()
+    EXUI:ApplyControlAppearance(pName)
     EXUI.ImportPreviewName = pName
-
-    local pAuthor = EXUI:CreateEditBox(previewFrame, "", 200, 30, GC.markup.textDim .. L["作者:"] .. "|r", { labelPos = "left" })
-    pAuthor:SetPoint("LEFT", pName, "RIGHT", 75, 0)
-    pAuthor.editBox:Disable(); pAuthor:SetBackdropColor(unpack(GC.inputDisabled)); pAuthor:SetBackdropBorderColor(unpack(GC.inputDisabledBorder))
+    local pAuthor = EXUI:CreateEditBox(previewFrame, "", authorWidth, 30,
+        GC.markup.textDim .. L["作者:"] .. "|r", { labelPos = "top" })
+    pAuthor:SetPoint("TOPLEFT", pName, "TOPRIGHT", 16, 0)
+    pAuthor.editBox:Disable()
+    EXUI:ApplyControlAppearance(pAuthor)
     EXUI.ImportPreviewAuthor = pAuthor
-
-    local pNote = EXUI:CreateEditBox(previewFrame, "", 600, 60, GC.markup.textDim .. L["备注说明:"] .. "|r", { labelPos = "left" })
-    pNote:SetPoint("TOPLEFT", 85, -45)
-    pNote.editBox:Disable(); pNote:SetBackdropColor(unpack(GC.inputDisabled)); pNote:SetBackdropBorderColor(unpack(GC.inputDisabledBorder))
+    local pNote = EXUI:CreateEditBox(previewFrame, "", innerWidth, 62,
+        GC.markup.textDim .. L["备注说明:"] .. "|r", { labelPos = "top" })
+    pNote:SetPoint("TOPLEFT", previewFrame, "TOPLEFT", 0, -94)
+    pNote.editBox:Disable()
+    EXUI:SetControlSurface(pNote, 4, GC.inputDisabled, GC.inputDisabledBorder)
     EXUI.ImportPreviewNote = pNote
-
-    -- [Standard] 模块选择标题 (下移防止重叠)
-    local importModLabel = EXUI:CreateVisualFontString(previewFrame, EXFONTFRAME, "GameFontHighlight")
-    importModLabel:SetPoint("TOPLEFT", 0, -125)
-    importModLabel:SetText(L["选择导入模块:"])
+    local importModLabel = EXUI:CreateVisualFontString(previewFrame, EXFONTFRAME)
+    importModLabel:SetFont(ExwindTools.MAIN_FONT, 14, "OUTLINE")
+    importModLabel:SetPoint("TOPLEFT", previewFrame, "TOPLEFT", 0, -184)
+    importModLabel:SetTextColor(unpack(GC.textDim))
     EXUI.ImportPreviewLabel = importModLabel
-
-    -- 导入模块选择列表 (直挂预览框架)
     local importList = CreateFrame("Frame", nil, previewFrame)
-    importList:SetSize(740, 1)
-    importList:SetPoint("TOPLEFT", 0, -155)
+    importList:SetSize(innerWidth, 1)
+    importList:SetPoint("TOPLEFT", previewFrame, "TOPLEFT", 0, -220)
     EXUI.ImportListFrame = importList
-
-    -- 应用导入按钮
-    local applyBtn = EXUI:CreateActionButton(importSection, L["应用导入"], function()
+    local applyBtn = EXUI:CreateButton(importSection, 160, 36, L["应用导入"], function()
         if not state.parsedData then
             print("|cffff0000[ExwindTools]|r " .. L["请先解析导入字符串"])
             return
         end
-        -- 默认使用覆盖模式
         local count = Export:ApplyImport(state.parsedData, state.importSelected, "replace")
         if count > 0 then
             StaticPopup_Show("EXWIND_IMPORT_SUCCESS", count)
         else
             print("|cffff8800[ExwindTools]|r " .. L["未导入任何模块 (可能未选中或数据为空)"])
         end
-    end)
-    applyBtn:SetSize(160, 38)
-    applyBtn:SetPoint("BOTTOMRIGHT", importSection, "BOTTOMRIGHT", -15, 15)
+    end, { variant = "primary", compact = true })
+    applyBtn:SetPoint("BOTTOMRIGHT", importSection, "BOTTOMRIGHT", -18, 18)
 
-    yOffset = yOffset - 500
+    function page:RelayoutProfileManagerPage()
+        local width = math.max(560, math.min((self:GetWidth() or 800) - 40, 980))
+        if self.ProfileLayoutWidth == width then return end
+        self.ProfileLayoutWidth = width
+        local inner = width - 36
+        local columns = inner >= 750 and 3 or 2
+        self.ProfileColumnCount = columns
+        exportSection:SetWidth(width)
+        importSection:SetWidth(width)
+        local firstWidth = math.floor((inner - 16) * 0.55)
+        local secondWidth = inner - firstWidth - 16
+        local function ResizeField(field, fieldWidth)
+            field:SetWidth(fieldWidth)
+            if field.scrollFrame then
+                local scrollChild = field.scrollFrame:GetScrollChild()
+                if scrollChild then scrollChild:SetWidth(math.max(1, fieldWidth - 20)) end
+            end
+        end
+        ResizeField(nameInput, firstWidth)
+        ResizeField(authorInput, secondWidth)
+        ResizeField(noteInput, inner)
+        ResizeField(importInput, inner)
+        ResizeField(pName, firstWidth)
+        ResizeField(pAuthor, secondWidth)
+        ResizeField(pNote, inner)
+        exportList:SetWidth(inner)
+        previewFrame:SetWidth(inner)
+        importList:SetWidth(inner)
+        local function ArrangeCheckboxes(list)
+            local gap = 12
+            local cellWidth = math.floor((inner - (columns - 1) * gap) / columns)
+            local count = 0
+            for _, cb in ipairs({ list:GetChildren() }) do
+                local index = cb._profileIndex
+                if index then
+                    cb:SetSize(cellWidth, 28)
+                    cb:ClearAllPoints()
+                    cb:SetPoint("TOPLEFT", list, "TOPLEFT",
+                        ((index - 1) % columns) * (cellWidth + gap),
+                        -math.floor((index - 1) / columns) * 34)
+                    cb.label:SetWidth(math.max(1, cellWidth - 36))
+                    count = math.max(count, index)
+                end
+            end
+            local height = math.max(38, math.ceil(count / columns) * 34 + 6)
+            list:SetHeight(height)
+            return height
+        end
+        local exportHeight = ArrangeCheckboxes(exportList)
+        local importHeight = ArrangeCheckboxes(importList)
+        exportSection:SetHeight(294 + exportHeight + 66)
+        importSection:SetHeight(250 + 220 + importHeight + 64)
+        self:SetHeight(74 + exportSection:GetHeight() + 18 + importSection:GetHeight() + 28)
+        EXUI.RightScrollChild:SetHeight(self:GetHeight())
+    end
 
-    -- 初始化导出模块列表
     EXUI:RefreshExportCheckboxes()
-
-    -- 设置页面高度
-    page:SetHeight(math.abs(yOffset) + 50)
-    EXUI.RightScrollChild:SetHeight(page:GetHeight())
+    EXUI:RefreshImportPreview(nil)
+    page:RelayoutProfileManagerPage()
+    page:SetScript("OnSizeChanged", function(self)
+        self:RelayoutProfileManagerPage()
+    end)
 end
 
 -- =========================================================
@@ -3254,130 +2932,96 @@ function EXUI:RefreshExportCheckboxes()
     local parent = EXUI.ExportListFrame
     if not parent then return end
 
-    -- 清理旧内容
+    local factory = _G.ExwindFactory
     for _, child in ipairs({ parent:GetChildren() }) do
-        if not child._isPersistent then
-            child:Hide(); child:SetParent(nil)
-        end
+        child._profileIndex = nil
+        factory:Release(child._fromPool, child)
     end
 
     local modules = Export:GetExportableModules()
-    local yOff = 0
-    local col = 0
-    local rowHeight = 32 -- 提高行高，适配大勾选框
-
-    for i, m in ipairs(modules) do
-        -- 使用自研勾选框组件 (取代 UICheckButtonTemplate)
+    local columns = parent:GetParent():GetParent().ProfileColumnCount or 3
+    local columnGap = 12
+    local columnWidth = math.floor((parent:GetWidth() - (columns - 1) * columnGap) / columns)
+    for index, m in ipairs(modules) do
         local cb = EXUI:CreateCheckbox(parent, m.name, state.exportSelected[m.key] or false, function(checked)
             state.exportSelected[m.key] = checked
         end)
-        cb:SetSize(220, 26)
-        cb:SetPoint("TOPLEFT", (col * 240), yOff)
-
-        -- 对齐文本
-        cb.label:ClearAllPoints()
-        cb.label:SetPoint("LEFT", cb.checkbox, "RIGHT", 5, 0)
+        cb._profileIndex = index
+        cb:SetSize(columnWidth, 28)
+        cb:SetPoint("TOPLEFT", parent, "TOPLEFT",
+            ((index - 1) % columns) * (columnWidth + columnGap),
+            -math.floor((index - 1) / columns) * 34)
+        cb.label:SetWidth(math.max(1, columnWidth - 36))
         cb.label:SetJustifyH("LEFT")
-        cb.label:SetTextColor(unpack(GC.text))
-
-        col = col + 1
-        if col >= 3 then
-            col = 0
-            yOff = yOff - rowHeight
-        end
+        cb.label:SetWordWrap(false)
     end
 
-    -- 动态布局计算
-    local listHeight = math.abs(yOff) + 40
+    local rows = math.ceil(#modules / columns)
+    local listHeight = math.max(38, rows * 34 + 6)
     parent:SetHeight(listHeight)
-
-    local exportSection = parent:GetParent()
-    -- 基础偏移(180) + 备注框高度(70) + 列表高度 + 底部按钮区域(80)
-    local sectionHeight = 250 + listHeight + 80
-    exportSection:SetHeight(sectionHeight)
-
-    -- [CRITICAL] 重新排布导入区域的锚点，确保永远不重叠
-    if EXUI.ImportSection then
-        EXUI.ImportSection:ClearAllPoints()
-        EXUI.ImportSection:SetPoint("TOPLEFT", 20, -(100 + sectionHeight + 50))
-    end
-
-    -- 更新页面总高度
-    local page = exportSection:GetParent()
-    if page then
-        page:SetHeight(sectionHeight + (EXUI.ImportSection and EXUI.ImportSection:GetHeight() or 500) + 200)
-    end
+    local page = parent:GetParent():GetParent()
+    page.ProfileExportSection:SetHeight(294 + listHeight + 66)
+    page:SetHeight(74 + page.ProfileExportSection:GetHeight() + 18
+        + page.ProfileImportSection:GetHeight() + 28)
+    EXUI.RightScrollChild:SetHeight(page:GetHeight())
 end
 
--- =========================================================
--- 刷新导入预览
--- =========================================================
 function EXUI:RefreshImportPreview(summary)
     local state = EXUI.ProfileState
     local parent = EXUI.ImportListFrame
     if not parent then return end
 
-    -- 清理旧内容
+    local factory = _G.ExwindFactory
     for _, child in ipairs({ parent:GetChildren() }) do
-        child:Hide(); child:SetParent(nil)
+        child._profileIndex = nil
+        factory:Release(child._fromPool, child)
     end
 
-    if not summary then
+    if summary then
+        EXUI.ImportPreviewName:SetText(summary.profileName or L["未命名"])
+        EXUI.ImportPreviewAuthor:SetText(summary.author or L["未知"])
+        EXUI.ImportPreviewNote:SetText(summary.note or L["无备注说明"])
+        EXUI.ImportPreviewLabel:SetText("|cff00ff80" ..
+            L["解析成功预览:"] .. "|r " .. string.format("|cffaaaaaa(" .. L["版本: %s"] .. ")|r", summary.addonVersion))
+    else
         EXUI.ImportPreviewName:SetText("")
         EXUI.ImportPreviewAuthor:SetText("")
         EXUI.ImportPreviewNote:SetText("")
         EXUI.ImportPreviewLabel:SetText(GC.markup.placeholder .. L["等待解析..."] .. "|r")
-        return
     end
 
-    -- [Standard] 填充数据到标准化只读字段
-    EXUI.ImportPreviewName:SetText(summary.profileName or L["未命名"])
-    EXUI.ImportPreviewAuthor:SetText(summary.author or L["未知"])
-    EXUI.ImportPreviewNote:SetText(summary.note or L["无备注说明"])
-    EXUI.ImportPreviewLabel:SetText("|cff00ff80" ..
-        L["解析成功预览:"] .. "|r " .. string.format("|cffaaaaaa(" .. L["版本: %s"] .. ")|r", summary.addonVersion))
-
-    -- 创建模块勾选列表
-    local yOff = 0
-    local col = 0
-    local rowHeight = 32
-
-    for i, m in ipairs(summary.modules) do
+    local modules = summary and summary.modules or {}
+    local page = parent:GetParent():GetParent():GetParent()
+    local columns = page.ProfileColumnCount or 3
+    local columnGap = 12
+    local columnWidth = math.floor((parent:GetWidth() - (columns - 1) * columnGap) / columns)
+    for index, m in ipairs(modules) do
         local labelText = m.name
         if not m.exists then
             labelText = "|cffff6666" .. labelText .. " (" .. L["未安装"] .. ")|r"
         else
             labelText = "|cff90ee90" .. labelText .. "|r"
         end
-
         local cb = EXUI:CreateCheckbox(parent, labelText, state.importSelected[m.key] or false, function(checked)
             state.importSelected[m.key] = checked
         end)
-        cb:SetSize(220, 26)
-        cb:SetPoint("TOPLEFT", (col * 240), yOff)
-
-        -- 对齐文本
-        cb.label:ClearAllPoints()
-        cb.label:SetPoint("LEFT", cb.checkbox, "RIGHT", 5, 0)
+        cb._profileIndex = index
+        cb:SetSize(columnWidth, 28)
+        cb:SetPoint("TOPLEFT", parent, "TOPLEFT",
+            ((index - 1) % columns) * (columnWidth + columnGap),
+            -math.floor((index - 1) / columns) * 34)
+        cb.label:SetWidth(math.max(1, columnWidth - 36))
         cb.label:SetJustifyH("LEFT")
-
-        col = col + 1
-        if col >= 3 then
-            col = 0; yOff = yOff - rowHeight
-        end
+        cb.label:SetWordWrap(false)
     end
 
-    -- 动态布局：调整整个区块高度
-    local listHeight = math.abs(yOff) + 60
+    local rows = math.ceil(#modules / columns)
+    local listHeight = math.max(38, rows * 34 + 6)
     parent:SetHeight(listHeight)
-
-    local importSection = parent:GetParent():GetParent()
-    if importSection then
-        importSection:SetHeight(260 + listHeight + 80)
-    end
-
-    local page = importSection:GetParent()
-    if page then page:SetHeight(math.abs(page:GetTop() - importSection:GetBottom()) + 200) end
+    page.ProfileImportSection:SetHeight(250 + 220 + listHeight + 64)
+    page:SetHeight(74 + page.ProfileExportSection:GetHeight() + 18
+        + page.ProfileImportSection:GetHeight() + 28)
+    EXUI.RightScrollChild:SetHeight(page:GetHeight())
 end
 
 -- =========================================================

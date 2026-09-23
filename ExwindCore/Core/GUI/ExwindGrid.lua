@@ -2623,6 +2623,7 @@ do
                         EXUI:PrepareSettingsListControl(widget, {
                             ordinaryControl = ordinaryControl,
                             role = informational and "description" or nil,
+                            descriptionFontSize = informational and row.descriptionFontSize or nil,
                             hideLabel = not informational and row.fullWidth ~= true and row.label ~= nil,
                             presentation = row.presentation,
                             cardDescription = row.presentation == "card" and row.descriptionWidget ~= nil,
@@ -4591,7 +4592,7 @@ do
         if type(value) == "number" then Finite(value, location)
         else String(value, location) end
     end
-    local itemFields = { key=true, type=true, label=true, description=true,
+    local itemFields = { key=true, type=true, label=true, description=true, inputWidthPercent=true,
         parentKey=true, subKey=true, setKey=true, options=true, optionsSource=true,
         min=true, max=true, step=true, itemID=true, canDelete=true, baseLabel=true, func=true, multiple=true,
         media=true, search=true, originalOptions=true }
@@ -4624,6 +4625,11 @@ do
         end
         if item.func ~= nil and (item.type ~= "button" or type(item.func) ~= "function") then
             Fail(location, "func must be the original button callback")
+        end
+        if item.inputWidthPercent ~= nil then
+            if item.type ~= "input" then Fail(location, "inputWidthPercent requires input") end
+            Finite(item.inputWidthPercent, location .. ".inputWidthPercent")
+            if item.inputWidthPercent <= 0 then Fail(location, "inputWidthPercent must be positive") end
         end
         if item.multiple ~= nil and (item.type ~= "select" or type(item.multiple) ~= "boolean") then
             Fail(location, "multiple is only a boolean on select")
@@ -4887,11 +4893,15 @@ do
                 String(section.title, at .. ".title")
                 if type(section.description) == "table" then
                     if section.kind ~= "settings" then Fail(at, "identified descriptions require a settings section") end
-                    Fields(section.description, { key=true, type=true, label=true }, at .. ".description")
+                    Fields(section.description, { key=true, type=true, label=true, fontSize=true }, at .. ".description")
                     if section.description.type ~= "description" then Fail(at, "identified description must retain type=description") end
                     Key(section.description.key, at .. ".description.key")
                     String(section.description.label, at .. ".description.label", true)
                     if section.description.label == nil then Fail(at, "identified description requires label") end
+                    if section.description.fontSize ~= nil then
+                        Finite(section.description.fontSize, at .. ".description.fontSize")
+                        if section.description.fontSize <= 0 then Fail(at, "description fontSize must be positive") end
+                    end
                 else String(section.description, at .. ".description", true) end
                 if section.binding ~= nil and type(section.binding) ~= "string" and type(section.binding) ~= "table" then
                     Fail(at, "binding must reference the original named or complete binding object")
@@ -4919,13 +4929,17 @@ do
                     end
                     if section.footerDescription ~= nil then
                         local footer = section.footerDescription
-                        Fields(footer, { key=true, type=true, label=true }, at .. ".footerDescription")
+                        Fields(footer, { key=true, type=true, label=true, fontSize=true }, at .. ".footerDescription")
                         if footer.type ~= "description" then Fail(at, "footer must retain its original description factory") end
                         Key(footer.key, at .. ".footerDescription.key")
                         if keys[footer.key] then Fail(at, "duplicate footer key " .. footer.key) end
                         keys[footer.key] = true
                         String(footer.label, at .. ".footerDescription.label", true)
                         if footer.label == nil then Fail(at, "footer description requires label") end
+                        if footer.fontSize ~= nil then
+                            Finite(footer.fontSize, at .. ".footerDescription.fontSize")
+                            if footer.fontSize <= 0 then Fail(at, "footer fontSize must be positive") end
+                        end
                     end
                 elseif section.kind == "table" then
                     local columns = Array(section.columns, at .. ".columns")
@@ -5138,7 +5152,8 @@ do
         end
         if section.kind == "settings" then
             if type(section.description) == "table" then
-                rows[#rows+1] = { widget=Widget(section.description), informational=true }
+                rows[#rows+1] = { widget=Widget(section.description), informational=true,
+                    descriptionFontSize=section.description.fontSize }
             end
             local lastClass, classRow
             for _, item in ipairs(section.items) do
@@ -5164,13 +5179,15 @@ do
                     rows[#rows + 1] = { widget=Widget(item), label=item.label,
                         description=type(item.description) == "string" and item.description or nil,
                         descriptionWidget=type(item.description) == "table" and Widget(item.description) or nil,
+                        inputWidthPercent=item.inputWidthPercent,
                         presentation=item.type == "switch" and "switch" or nil }
                     lastClass, classRow = nil, nil
                 end
                 end
             end
             if section.footerDescription then
-                rows[#rows+1] = { widget=Widget(section.footerDescription), informational=true, omitEmpty=true }
+                rows[#rows+1] = { widget=Widget(section.footerDescription), informational=true, omitEmpty=true,
+                    descriptionFontSize=section.footerDescription.fontSize }
             end
         else
             rows, columns = BuildTypedTable(section, Widget)

@@ -4531,6 +4531,9 @@ function EXUI:CreateEditBox(parent, text, w, h, labelText, options)
         container:SetJustifyH("LEFT")
         container:SetJustifyV("MIDDLE")
         SetPixelSize(container, w or 180, h or 28)
+        -- GridInput is also leased by item quantity fields, which enable numeric
+        -- mode. Restore text input before applying this lease's value.
+        container:SetNumeric(false)
         if container.EnableMouse then
             container:EnableMouse(true)
         end

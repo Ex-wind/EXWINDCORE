@@ -198,7 +198,7 @@ end
 local function Acquire(parent)
     local host = Factory:AcquireCompositeHost(POOL, parent)
     if host._v2Label then host._v2Label:Hide() end
-    if host._v2Separator then host._v2Separator:Hide() end
+    if host._v2SettingsSeparator then host._v2SettingsSeparator:Hide() end
     host:SetScript("OnMouseWheel", nil)
     host:EnableMouseWheel(false)
     host:SetSize(1, 1)
@@ -338,8 +338,10 @@ Build = function(session, spec, parentFrame, scope, parent)
     end
     node.context = Context(node)
     if spec.kind == "row" and spec.separator then
-        if not node.frame._v2Separator then node.frame._v2Separator = UI:CreateSeparator(node.frame, 1) end
-        node.separator = node.frame._v2Separator
+        if not node.frame._v2SettingsSeparator then
+            node.frame._v2SettingsSeparator = UI:CreateSettingsSeparator(node.frame, 1)
+        end
+        node.separator = node.frame._v2SettingsSeparator
         node.separator:Show()
     end
     if spec.kind == "control" or spec.kind == "component" then

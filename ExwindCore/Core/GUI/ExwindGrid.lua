@@ -1761,30 +1761,6 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         local timerBarPath = bindRoot and (contextPath or "") or fullPath
         widget = EXUI:CreateTimerBarGroup(container, timerBarGroupWidth, ele.label, curVal, nil, function() NotifyCompositeWrite(moduleKey, timerBarPath) end, BuildCompositeOptions(ele.opts, moduleKey, timerBarPath))
         widget._exGridWidth = timerBarGroupWidth
-    elseif ele.type == "auradurationbargroup" then
-        local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
-        widget = EXUI:CreateAuraDurationBarGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
-        widget._exGridWidth = pw
-    elseif ele.type == "auraapplicationbargroup" then
-        local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
-        widget = EXUI:CreateAuraApplicationBarGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
-        widget._exGridWidth = pw
-    elseif ele.type == "auradispelbordergroup" then
-        local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
-        widget = EXUI:CreateAuraDispelBorderGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end)
-        widget._exGridWidth = pw
-    elseif ele.type == "aurasortgroup" then
-        local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
-        widget = EXUI:CreateAuraSortGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end)
-        widget._exGridWidth = pw
-    elseif ele.type == "aurachildelementsgroup" then
-        local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
-        -- Aura child elements can be bound directly to display.aura.  In
-        -- root mode `key` remains the Grid identity only; passing it through
-        -- would create the invalid aura.children.children table.
-        local bindKey = (type(ele.opts) == "table" and ele.opts.bindRoot == true) and nil or ele.key
-        widget = EXUI:CreateAuraChildElementsGroup(container, pw, ele.label, auraConfig, bindKey, function() NotifyCompositeWrite(moduleKey, fullPath) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
-        widget._exGridWidth = pw
     end
 
     if widget then

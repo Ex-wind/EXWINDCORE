@@ -90,6 +90,17 @@ local function IsSecret(value)
     return type(value) == "userdata" and type(issecretvalue) == "function" and issecretvalue(value)
 end
 
+local function IsDurationObject(value)
+    if type(value) ~= "userdata" then return false end
+    local ok, match = pcall(function()
+        return type(value.HasSecretValues) == "function"
+            and type(value.GetRemainingDuration) == "function"
+            and type(value.GetTotalDuration) == "function"
+            and type(value.GetObjectType) ~= "function"
+    end)
+    return ok and match == true
+end
+
 -- `content` is the only payload channel, but it is not a blanket Secret
 -- escape hatch.  A Secret value may occur only under a native Widget input
 -- which this manager forwards without inspecting.  All other fields remain
@@ -101,8 +112,8 @@ local SECRET_CONTENT_KEYS = {
     texture = { raidTargetIndex = true, shownFromBoolean = true },
 }
 
-local function AssertNativePayload(value, label, seen)
-    if IsSecret(value) then return end
+local function AssertNativePayload(value, label, seen, allowDuration)
+    if IsSecret(value) or (allowDuration and IsDurationObject(value)) then return end
     local valueType = type(value)
     if valueType == "function" or valueType == "userdata" or valueType == "thread" then
         error(label .. " cannot contain " .. valueType, 3)
@@ -113,8 +124,8 @@ local function AssertNativePayload(value, label, seen)
     if seen[value] then return end
     seen[value] = true
     for key, child in pairs(value) do
-        AssertNativePayload(key, label, seen)
-        AssertNativePayload(child, label, seen)
+        AssertNativePayload(key, label, seen, false)
+        AssertNativePayload(child, label, seen, allowDuration)
     end
 end
 
@@ -124,7 +135,8 @@ local function AssertContent(kind, content, label)
     local nativeKeys = SECRET_CONTENT_KEYS[kind] or {}
     for key, value in pairs(content) do
         if nativeKeys[key] then
-            AssertNativePayload(value, label .. "." .. key)
+            AssertNativePayload(value, label .. "." .. key, nil,
+                key == "durationObject" or key == "secretDuration" or key == "cooldown")
         else
             AssertPure(value, label .. "." .. tostring(key), nil, false)
         end
@@ -263,7 +275,7 @@ local function ApplyTimerBar(widget, spec, moduleKey)
     -- control flow.  The declaration contract requires `maximum` for this
     -- channel.
     elseif content.hasSecretProgress == true then widget:SetSecretProgress(content.value, content.maximum, content.minimum)
-    else widget:SetProgress(content.progress or 0, content.maximum or content.max or 1) end
+    else widget:SetProgress(content.progress or 0, content.maximum or content.max or 1, content.minimum) end
     if content.stacks ~= nil then widget:SetStacks(content.stacks) end
     if type(widget.SetFillVisible) == "function" then widget:SetFillVisible(content.fillVisible ~= false) end
     widget:SetShown(content.shown ~= false and spec.shown ~= false)

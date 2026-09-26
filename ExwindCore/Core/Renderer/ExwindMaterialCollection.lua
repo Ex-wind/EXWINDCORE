@@ -451,6 +451,10 @@ function EXUI:CreateMaterialCollection(parent, interactionMode, moduleKey, callb
         ApplyTextSlots(self, item, presentation)
         item.regions:SetConfigContextID(presentation.regionConfigContextID)
         item.regions:Apply(presentation.regionElements)
+        if item.visualEffects then
+            EXUI:ApplyCollectionItemVisualEffects(item.root, item.visualEffects, item.bodyWidth, item.bodyHeight)
+        end
+        if item._collectionClickSpec then EXUI:ApplyCollectionItemClick(item, item._collectionClickSpec) end
         return item
     end
 
@@ -524,10 +528,26 @@ function EXUI:CreateMaterialCollection(parent, interactionMode, moduleKey, callb
         return self.itemsByID
     end
 
+    function collection:SetItemClickAction(itemID, spec)
+        local item = self.itemsByID[itemID]
+        if not item or not item.root then return false end
+        return EXUI:ApplyCollectionItemClick(item, spec)
+    end
+
+    function collection:SetItemVisualEffects(itemID, effects)
+        local item = self.itemsByID[itemID]
+        if not item or not item.root then return false end
+        item.visualEffects = type(effects) == "table" and effects or nil
+        EXUI:ApplyCollectionItemVisualEffects(item.root, item.visualEffects, item.bodyWidth, item.bodyHeight)
+        return true
+    end
+
     function collection:ReleaseItem(itemID)
         local item = self.itemsByID[itemID]
         if not item then return end
         self.itemsByID[itemID] = nil
+        EXUI:ReleaseCollectionItemClick(item)
+        EXUI:ReleaseCollectionItemVisualEffects(item.root)
         ResetOverlay(item.interactionOverlay, true)
         if item.regions then item.regions:Release() end
         for slotID in pairs(item.textWidgets or {}) do ResetTextSlot(item, slotID, true) end
@@ -537,6 +557,7 @@ function EXUI:CreateMaterialCollection(parent, interactionMode, moduleKey, callb
         item.widget:Release()
         ReleaseItemRoot(item.root)
         item.widget, item.root, item.presentation, item.declaredBounds, item.localOffset, item.interactionOverlay = nil, nil, nil, nil, nil, nil
+        item.visualEffects = nil
         item.textWidgets, item.textInteractionOverlays, item.textSlotBounds, item.textSlotAnchors, item.regions = nil, nil, nil, nil, nil
     end
     function collection:Release()

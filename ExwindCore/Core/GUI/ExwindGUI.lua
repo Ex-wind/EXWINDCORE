@@ -5414,18 +5414,30 @@ function EXUI:CreateStandardModulePage(options)
                 EXUI.CurrentModule = self.moduleKey
                 context = BuildContext(self)
                 context.config = config
-                local declaration = MODERN.standardModulePage.ResolveLayout(self.layout, context)
-                if type(grid.MountSettingsDeclaration) ~= "function" then
-                    error("StandardModulePage requires ExwindGrid:MountSettingsDeclaration", 2)
+                local layout = type(self.layout) == "function" and self.layout(context) or self.layout
+                if self.moduleKey:match("^EXAura%.") and type(layout) == "table"
+                    and layout.version == nil and layout.cards == nil and layout.sections == nil then
+                    -- Original EXAura pages retain their authored Grid coordinates.
+                    -- Restore the existing Grid route from 6987675; do not reshape their layout.
+                    columns = type(self.getColumns) == "function" and self.getColumns(context) or self.getColumns
+                    columns = tonumber(columns)
+                    if not columns or columns <= 0 then error("StandardModulePage resolved invalid Grid column count", 2) end
+                    grid:SetContainerCols(scrollChild, columns)
+                    grid:Render(scrollChild, layout, config, self.moduleKey)
+                else
+                    local declaration = MODERN.standardModulePage.ResolveLayout(layout, context)
+                    if type(grid.MountSettingsDeclaration) ~= "function" then
+                        error("StandardModulePage requires ExwindGrid:MountSettingsDeclaration", 2)
+                    end
+                    self.cardSession = grid:MountSettingsDeclaration(scrollChild, declaration, {
+                        pageId = self.moduleKey,
+                        regionId = "standard-module",
+                        binding = self.binding,
+                        config = config,
+                        moduleKey = self.moduleKey,
+                        scrollFrame = scrollFrame,
+                    })
                 end
-                self.cardSession = grid:MountSettingsDeclaration(scrollChild, declaration, {
-                    pageId = self.moduleKey,
-                    regionId = "standard-module",
-                    binding = self.binding,
-                    config = config,
-                    moduleKey = self.moduleKey,
-                    scrollFrame = scrollFrame,
-                })
                 self.gridRendered = true
                 context = BuildContext(self)
                 context.config = config
@@ -5462,90 +5474,6 @@ function EXUI:CreateStandardModulePage(options)
 
     page._standardModulePage = controller
     return controller
-end
-
--- Minimal shared window/scroll host for temporary EXUI inspection pages.
--- The caller supplies only Grid declarations and an in-memory config table;
--- all native frames, styling, scrolling and release behavior stay in Core.
-function EXUI:CreateShowcaseWindow(options)
-    options = type(options) == "table" and options or {}
-    if self._showcaseWindow then
-        self._showcaseWindow.title:SetText(options.title or "EXUI Control Showcase")
-        return self._showcaseWindow
-    end
-
-    local name = "ExwindGUIShowcaseWindow"
-    local frame = CreateFrame("Frame", name, UIParent, "BackdropTemplate")
-    frame:SetSize(1120, 760)
-    frame:SetPoint("CENTER")
-    frame:SetFrameStrata("DIALOG")
-    frame:SetFrameLevel(500)
-    frame:SetClampedToScreen(true)
-    frame:SetMovable(true)
-    frame:EnableMouse(true)
-    frame:RegisterForDrag("LeftButton")
-    frame:SetScript("OnDragStart", frame.StartMoving)
-    frame:SetScript("OnDragStop", frame.StopMovingOrSizing)
-    self:ApplyModernPanel(frame)
-
-    local title = self:CreateVisualFontString(frame, EXFONTFRAME, "GameFontNormalHuge")
-    title:SetPoint("TOPLEFT", 22, -18)
-    title:SetText(options.title or "EXUI Control Showcase")
-    StyleModernTitle(title)
-    frame.title = title
-
-    local subtitle = self:CreateVisualFontString(frame, EXFONTFRAME, "GameFontHighlightSmall")
-    subtitle:SetPoint("TOPLEFT", title, "BOTTOMLEFT", 0, -5)
-    subtitle:SetText(options.subtitle or "Shared constructors rendered through ExwindGrid")
-    MODERN.ApplyTextRole(subtitle, "hint")
-    frame.subtitle = subtitle
-
-    local close = self:CreateButton(frame, 32, 30, "×", function() frame:Hide() end, { variant = "soft", compact = true })
-    close:SetPoint("TOPRIGHT", -16, -15)
-
-    local divider = self:CreateSeparator(frame, 1076)
-    divider:SetPoint("TOPLEFT", 22, -63)
-
-    local scroll = self:CreateScrollFrame(frame)
-    scroll:SetPoint("TOPLEFT", 20, -78)
-    scroll:SetPoint("BOTTOMRIGHT", -18, 20)
-    scroll:SetScript("OnMouseWheel", function(self, delta)
-        local range = self:GetVerticalScrollRange() or 0
-        self:SetVerticalScroll(math.max(0, math.min(range, self:GetVerticalScroll() - delta * 44)))
-    end)
-    local child = CreateFrame("Frame", nil, scroll)
-    child:SetSize(1038, 1)
-    child:SetPoint("TOPLEFT")
-    scroll:SetScrollChild(child)
-    frame.scrollFrame, frame.content = scroll, child
-
-    function frame:Render(layout, db, columns, preserveScroll)
-        local grid = _G.ExwindGrid
-        if not grid then error("CreateShowcaseWindow requires ExwindGrid", 2) end
-        local previousScroll = preserveScroll and self.scrollFrame:GetVerticalScroll() or 0
-        self._showcaseLayout, self._showcaseDB = layout, db
-        grid:SetContainerCols(self.content, tonumber(columns) or 100)
-        grid:SetContainerPadding(self.content, { left = 8, right = 8, top = 8, bottom = 20 })
-        grid:Render(self.content, layout, db, nil)
-        local range = self.scrollFrame:GetVerticalScrollRange() or 0
-        self.scrollFrame:SetVerticalScroll(math.max(0, math.min(range, previousScroll)))
-    end
-
-    function frame:Release()
-        local grid = _G.ExwindGrid
-        if grid then grid:ReleaseContainerWidgets(self.content) end
-        self._showcaseLayout, self._showcaseDB = nil, nil
-    end
-
-    function frame:Toggle()
-        if self:IsShown() then self:Hide() else self:Show() end
-    end
-
-    frame:Hide()
-    self._showcaseWindow = frame
-    _G.UISpecialFrames = _G.UISpecialFrames or {}
-    table.insert(_G.UISpecialFrames, name)
-    return frame
 end
 
 -- 仅供同一 GUI 实现的后续文件使用；保存原函数/常量，不承载配置或页面状态。

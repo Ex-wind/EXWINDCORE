@@ -2205,7 +2205,11 @@ local function TimerBarWidgetSetSecretProgress(widget, secretValue, maximum, min
     widget._timerMode = "SECRET"
     widget.bar:Hide()
     widget.secretBar:Show()
-    widget.secretBar:SetMinMaxValues(NumberOr(minimum, 0), math.max(1, NumberOr(maximum, 1)))
+    local minValue = NumberOr(minimum, 0)
+    local maxValue = NumberOr(maximum, 1)
+    -- Bounds are ordinary caller-supplied numbers; the value remains opaque.
+    if maxValue <= minValue then maxValue = minValue + 1 end
+    widget.secretBar:SetMinMaxValues(minValue, maxValue)
     widget.secretBar:SetValue(secretValue)
     widget.timeText:ClearDurationBinding()
     widget.timeText:ApplyStyle(widget.textStyles and widget.textStyles.time or DEFAULT_TEXT_STYLE)

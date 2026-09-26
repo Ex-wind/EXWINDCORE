@@ -372,6 +372,11 @@ function EXUI:CreateTextCollection(parent, interactionMode, moduleKey, callbacks
         item.bodyWidth, item.bodyHeight = baseWidth * item.presentationScale, baseHeight * item.presentationScale
         item.root:SetScale(item.presentationScale)
         item.root:SetSize(baseWidth, baseHeight)
+        if item.visualEffects then
+            EXUI:ApplyCollectionItemVisualEffects(item.root, item.visualEffects,
+                baseWidth, baseHeight, item.presentationScale)
+        end
+        if item._collectionClickSpec then EXUI:ApplyCollectionItemClick(item, item._collectionClickSpec) end
         item.root:Show()
         ConfigurePanelInteraction(self, item, presentation.interaction)
         item.regions:SetConfigContextID(presentation.regionConfigContextID)
@@ -431,6 +436,22 @@ function EXUI:CreateTextCollection(parent, interactionMode, moduleKey, callbacks
     end
     function collection:GetBounds() return self.layout:GetBounds() end
     function collection:GetItems() return self.itemsByID end
+
+    function collection:SetItemVisualEffects(itemID, effects)
+        local item = self.itemsByID[itemID]
+        if not item or not item.root then return false end
+        item.visualEffects = type(effects) == "table" and effects or nil
+        local bounds = item.declaredBounds
+        EXUI:ApplyCollectionItemVisualEffects(item.root, item.visualEffects,
+            bounds.right - bounds.left, bounds.top - bounds.bottom, item.presentationScale)
+        return true
+    end
+
+    function collection:SetItemClickAction(itemID, spec)
+        local item = self.itemsByID[itemID]
+        if not item or not item.root then return false end
+        return EXUI:ApplyCollectionItemClick(item, spec)
+    end
     -- Runtime animations (for example a fading announcement) may adjust the
     -- item's root alpha without reaching through the collection into a private
     -- TextWidget/FontString tree.  The value is visual-only and never changes
@@ -482,12 +503,15 @@ function EXUI:CreateTextCollection(parent, interactionMode, moduleKey, callbacks
             item.alphaAnimation = nil
         end
         self.itemsByID[itemID] = nil
+        EXUI:ReleaseCollectionItemClick(item)
+        EXUI:ReleaseCollectionItemVisualEffects(item.root)
         ResetOverlay(item.interactionOverlay, true)
         if item.regions then item.regions:Release() end
         item.root:SetScale(1)
         item.widget:Release()
         ReleaseItemRoot(item.root)
         item.widget, item.root, item.presentation, item.declaredBounds, item.anchor, item.interactionOverlay, item.regions, item.presentationScale = nil, nil, nil, nil, nil, nil, nil, nil
+        item.visualEffects = nil
     end
     function collection:Release()
         for id in pairs(self.itemsByID) do self:ReleaseItem(id) end

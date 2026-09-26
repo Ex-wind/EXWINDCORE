@@ -29,6 +29,7 @@ Locale\itIT.lua
 # 1. 主引擎
 Core\ExwindTools_Metadata.lua
 Core\ExwindTools.lua
+Core\ExwindCapability.lua
 Core\GUI\ExwindGUIColor.lua
 Core\Panel\ExwindPanelTheme.lua
 Core\Renderer\ExwindVisualLayers.lua
@@ -69,8 +70,6 @@ Core\Renderer\ExwindStandardPreview.lua
 Core\Renderer\ExwindStandardTimerBar.lua
 Core\Renderer\ExwindGlow.lua
 Core\GUI\ExwindGrid.lua
-Core\GUI\ExwindGridCardShowcase.lua
-Core\GUI\ExwindGUIShowcase.lua
 Core\GUI\ExwindToolsUI.lua
 Core\GUI\ExwindSettingsV2.lua
 Core\Renderer\ExwindModuleDefinition.lua
@@ -96,6 +95,5 @@ Core\ExwindExport.lua
 # 打包发布时删除开始
 # 5. 开发调试工具 (可选载入)
 # Core\ExwindGlowPreview.lua
-Core\GUI\ExwindGlassDemo.lua
 
 #打包发布时删除结束

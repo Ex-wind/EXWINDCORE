@@ -696,10 +696,15 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks, s
         -- 参与 collection 步距，也不得通过 visual union 移动语义原点。
         self.itemWidth = math.max(1, widget:GetWidth() or 1)
         self.itemHeight = math.max(1, widget:GetHeight() or 1)
+        item.bodyWidth, item.bodyHeight = self.itemWidth, self.itemHeight
         item.root:SetSize(self.itemWidth, self.itemHeight)
         item.localOffset = ResolveLocalOffset(self, presentation, self.standardSchema)
         widget:ClearAllPoints()
         widget:SetPoint("CENTER", item.root, "CENTER", item.localOffset.x, item.localOffset.y)
+        if item.visualEffects then
+            EXUI:ApplyCollectionItemVisualEffects(item.root, item.visualEffects, self.itemWidth, self.itemHeight)
+        end
+        if item._collectionClickSpec then EXUI:ApplyCollectionItemClick(item, item._collectionClickSpec) end
         if presentation.shown == false then item.root:Hide() else item.root:Show() end
         return item
     end
@@ -802,6 +807,8 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks, s
         local item = self.itemsByID[itemID]
         if not item then return end
         self.itemsByID[itemID] = nil
+        EXUI:ReleaseCollectionItemClick(item)
+        EXUI:ReleaseCollectionItemVisualEffects(item.root)
         ReleaseInteractionOverlays(item)
         if item.regions then item.regions:Release() end
         if item.isStandard then
@@ -815,11 +822,27 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks, s
         item.regions = nil
         item.interactionOverlays = nil
         item.presentation = nil
+        item.visualEffects = nil
+        item.bodyWidth, item.bodyHeight = nil, nil
         item.localOffset = nil
     end
 
     function collection:GetBounds()
         return self.layout:GetBounds()
+    end
+
+    function collection:SetItemVisualEffects(itemID, effects)
+        local item = self.itemsByID[itemID]
+        if not item or not item.root then return false end
+        item.visualEffects = type(effects) == "table" and effects or nil
+        EXUI:ApplyCollectionItemVisualEffects(item.root, item.visualEffects, self.itemWidth, self.itemHeight)
+        return true
+    end
+
+    function collection:SetItemClickAction(itemID, spec)
+        local item = self.itemsByID[itemID]
+        if not item or not item.root then return false end
+        return EXUI:ApplyCollectionItemClick(item, spec)
     end
 
     -- 暴雪式 Selection Bounds：局部控件矩形 + WidgetLayout 已实际使用的 Item

@@ -1204,9 +1204,9 @@ function EXDB:ApplyFont(fs, config)
         fs:SetDrawLayer("OVERLAY", 6)
     end
     if config.rotation and fs.SetRotation then fs:SetRotation(config.rotation) end
+    if fs.ClearAlphaGradient then fs:ClearAlphaGradient() end
     if fs.SetAlphaGradient then
         -- SetAlphaGradient 要求 length > 0，否则直接报错（"length must be greater than 0"）。
-        -- 暴雪没有提供对应的"清除渐变"接口，禁用渐变时只能不调用它，不能传 0 长度去"重置"。
         local gradientLength = tonumber(config.gradientLength) or 0
         if config.gradientEnabled and gradientLength > 0 then
             fs:SetAlphaGradient(tonumber(config.gradientStart) or 0, gradientLength)

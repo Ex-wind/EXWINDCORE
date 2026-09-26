@@ -39,6 +39,7 @@ local OVERLAY_PROFILES = {
         titleShadow = { r = 0.12, g = 0.03, b = 0.24, a = 1.00, x = 2, y = -2 },
     },
     EXAura = {
+        titleStrata = "HIGH",
         fill = { r = 0.56, g = 0.25, b = 0.88, a = 0.16 },
         border = { r = 0.84, g = 0.62, b = 1.00, a = 1.00 },
         borderSize = 2,
@@ -686,8 +687,9 @@ end
 
 local function CreatePresentationEntity(session, rootID)
     local project, usesWorldRenderer = ValidatePresentationProject(session.provider, rootID, session.provider.Project(rootID))
-    local host = CreateFrame("Frame", nil, EnsurePresentationRoot())
-    host:SetFrameStrata("FULLSCREEN_DIALOG")
+    local belowEditor = session.provider.addon == "EXAura"
+    local host = CreateFrame("Frame", nil, belowEditor and UIParent or EnsurePresentationRoot())
+    host:SetFrameStrata(belowEditor and "HIGH" or "FULLSCREEN_DIALOG")
     host:SetFrameLevel(2)
     host:SetMovable(false)
     host:EnableMouse(true)

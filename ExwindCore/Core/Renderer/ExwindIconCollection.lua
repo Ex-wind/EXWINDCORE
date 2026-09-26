@@ -1044,6 +1044,10 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
         ConfigureRuntimeTooltip(self, item, presentation.runtimeTooltip)
         ConfigureRuntimeAction(self, item, presentation.runtimeAction)
         ConfigureInteractionOverlays(self, item, presentation.interaction)
+        if item.visualEffects then
+            EXUI:ApplyCollectionItemVisualEffects(item.root, item.visualEffects, item.bodyWidth, item.bodyHeight)
+        end
+        if item._collectionClickSpec then EXUI:ApplyCollectionItemClick(item, item._collectionClickSpec) end
         item.root:Show()
         return item
     end
@@ -1167,11 +1171,27 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
 
     function collection:GetItems() return self.itemsByID end
 
+    function collection:SetItemVisualEffects(itemID, effects)
+        local item = self.itemsByID[itemID]
+        if not item or not item.root then return false end
+        item.visualEffects = type(effects) == "table" and effects or nil
+        EXUI:ApplyCollectionItemVisualEffects(item.root, item.visualEffects, item.bodyWidth, item.bodyHeight)
+        return true
+    end
+
+    function collection:SetItemClickAction(itemID, spec)
+        local item = self.itemsByID[itemID]
+        if not item or not item.root then return false end
+        return EXUI:ApplyCollectionItemClick(item, spec)
+    end
+
     function collection:ReleaseItem(itemID)
         local item = self.itemsByID[itemID]
         if not item then return end
         self.itemsByID[itemID] = nil
         StopCoreGlow(item)
+        EXUI:ReleaseCollectionItemClick(item)
+        EXUI:ReleaseCollectionItemVisualEffects(item.root)
         if type(item.presentation) == "table" and type(item.presentation.releaseExtraChildren) == "function" then
             item.presentation.releaseExtraChildren(item.widget, item)
         end
@@ -1191,6 +1211,7 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
         item.localOffset = nil
         item.coreLayoutRects = nil
         item.presentation = nil
+        item.visualEffects = nil
         item.interactionOverlay = nil
         item.interactionOverlays = nil
         item.extraChildHostIDs = nil

@@ -1,0 +1,453 @@
+-- Pooled tabs and option groups. Ordinary EXUI button skins are unchanged.
+local UI = _G.ExwindTools.UI
+local Factory = _G.ExwindFactory
+local HOST, VIEW, ITEM = "EXUI.ChoiceGroup", "EXUI.ChoiceViewport", "EXUI.ChoiceItem"
+local Methods = {}
+local Appearance = UI.ControlAppearance
+local TRI_INCLUDE = { .30, .78, .48, 1 }
+local Paint, Layout
+
+Factory:InitCompositePool(HOST)
+Factory:InitPool(VIEW, "Frame")
+Factory:InitPool(ITEM, "Button", "BackdropTemplate", function(button)
+    -- Paint owns text state. Do not register this label as Button's native
+    -- font string: native pushed/font state must not move our layout-owned text.
+    button.label = UI:CreateVisualFontString(button, _G.EXFONTFRAME, "GameFontHighlightSmall")
+    button.label:SetWordWrap(false)
+    button.label:SetJustifyH("CENTER")
+    button.label:SetJustifyV("MIDDLE")
+    button.icon = button:CreateTexture(nil, "ARTWORK")
+    button.line = button:CreateTexture(nil, "OVERLAY")
+    button.line:SetColorTexture(unpack(Appearance.colors.focus))
+    button.line:SetPoint("BOTTOMLEFT", 0, 0)
+    button.line:SetPoint("BOTTOMRIGHT", 0, 0)
+    button.line:SetHeight(2)
+    button.seam = UI:CreateVisualTexture(button, _G.EXBORDERFRAME)
+    button.seam:SetColorTexture(unpack(Appearance.colors.inputBorder))
+    button.seam:SetPoint("TOPRIGHT")
+    button.seam:SetPoint("BOTTOMRIGHT")
+    button.seam:SetWidth(1)
+    button.seam:Hide()
+end)
+
+local function Copy(value)
+    if type(value) ~= "table" then return value end
+    local result = {}
+    for id, selected in pairs(value) do if selected == true then result[id] = true end end
+    return result
+end
+
+local function Composite(base, overlay)
+    local alpha = overlay[4] or 1
+    return {
+        base[1] + (overlay[1] - base[1]) * alpha,
+        base[2] + (overlay[2] - base[2]) * alpha,
+        base[3] + (overlay[3] - base[3]) * alpha,
+        1,
+    }
+end
+
+local function Normalize(host, value)
+    if host.triStateMode then
+        assert(value == "neutral" or value == "include" or (value == "exclude" and host.allowExclude),
+            "TriStateChip expects neutral/include or an allowed exclude state")
+        return value
+    end
+    if host.mode == "multiple" then
+        local selected = {}
+        for _, item in ipairs(host.items) do
+            if type(value) == "table" and value[item.id] == true then selected[item.id] = true end
+        end
+        if not host.allowEmpty and not next(selected) then
+            for _, item in ipairs(host.items) do if not item.disabled then selected[item.id] = true; break end end
+        end
+        return selected
+    end
+    for _, item in ipairs(host.items) do if item.id == value then return value end end
+    if not host.allowEmpty then
+        for _, item in ipairs(host.items) do if not item.disabled then return item.id end end
+    end
+end
+
+local function Selected(host, id)
+    if host.triStateMode then return host.selection ~= "neutral" end
+    if host.mode == "multiple" then return host.selection[id] == true end
+    return host.selection == id
+end
+
+local function CloseTooltip(button)
+    if _G.GameTooltip and GameTooltip:GetOwner() == button then GameTooltip:Hide() end
+end
+
+Paint = function(button)
+    local host, item = button._choiceHost, button._choiceItem
+    if not host or not item then return end
+    local selected = not button._choiceArrow and Selected(host, item.id)
+    local disabled = host.disabled or item.disabled
+    local hover = button._choiceHover and not disabled
+    local pressed = button._choicePressed and not disabled
+    button:SetEnabled(not disabled)
+    local fill, edge, textColor
+    if host.triStateMode and not button._choiceArrow then
+        button.label:SetText(item.label)
+    end
+    if host.triStateMode and selected and not disabled and not button._choiceArrow then
+        local tone = host.selection == "include" and TRI_INCLUDE or Appearance.colors.exclude
+        fill = Composite(Appearance.colors.subcard,
+            {tone[1], tone[2], tone[3], pressed and .34 or (hover and .26 or .18)})
+        edge, textColor = tone, Appearance.colors.white
+        UI:SetControlSurface(button, 4, fill, edge)
+    elseif (host.choiceStyle == "segmented" or host.choiceStyle == "connected") and not button._choiceArrow then
+        local radius = host.choiceStyle == "connected" and 0 or 4
+        if disabled then
+            fill, textColor = Appearance.colors.disabledFill, Appearance.colors.disabledText
+            UI:SetControlSurface(button, radius, fill, fill)
+        elseif pressed then
+            fill, textColor = Composite(Appearance.colors.input, Appearance.colors.toolActive),
+                Appearance.colors.accentActive
+            UI:SetControlSurface(button, radius, fill, fill)
+        elseif selected then
+            fill, textColor = Composite(Appearance.colors.input,
+                    hover and Appearance.colors.tagSelectedHover or Appearance.colors.segmentSelected),
+                Appearance.colors.white
+            UI:SetControlSurface(button, radius, fill, fill)
+        elseif hover then
+            fill, textColor = Composite(Appearance.colors.input, Appearance.colors.toolHover),
+                Appearance.colors.text
+            UI:SetControlSurface(button, radius, fill, fill)
+        else
+            UI:ClearControlSurface(button)
+            textColor = Appearance.colors.segmentText
+        end
+        if selected and (host.choiceStyle == "segmented" or not disabled) then
+            UI:SetControlSurface(button, radius, fill, Appearance.colors.modifiedBorder)
+        end
+    else
+        local base = Appearance.colors.subcard
+        if disabled then
+            fill, edge, textColor = Appearance.colors.disabledFill,
+                Appearance.colors.disabledBorder, Appearance.colors.disabledText
+        elseif pressed then
+            fill = Composite(base, Appearance.colors.toolActive)
+            edge = selected and Appearance.colors.modifiedBorder or Appearance.colors.subcardHoverBorder
+            textColor = host.variant == "tabs" and Appearance.colors.accentActive
+                or (selected and Appearance.colors.tagSelectedText or Appearance.colors.tagHoverText)
+        elseif selected then
+            fill = Composite(base, hover and Appearance.colors.tagSelectedHover
+                or Appearance.colors.tagSelected)
+            edge = Appearance.colors.modifiedBorder
+            textColor = Appearance.colors.tagSelectedText
+        elseif hover then
+            fill = Composite(base, Appearance.colors.rowHover)
+            edge = Appearance.colors.subcardHoverBorder
+            textColor = Appearance.colors.tagHoverText
+        else
+            fill, edge, textColor = base, Appearance.colors.subcardBorder,
+                Appearance.colors.tagText
+        end
+        UI:SetControlSurface(button, 4, fill, edge)
+    end
+    button.label:SetTextColor(unpack(textColor))
+    button.seam:SetColorTexture(unpack(selected and Appearance.colors.modifiedBorder or Appearance.colors.inputBorder))
+    button.line:SetColorTexture(unpack(Appearance.colors.focus))
+    button.line:SetShown(host.variant == "tabs" and selected and not button._choiceArrow)
+    button.icon:SetAlpha(disabled and .35 or 1)
+end
+
+function Methods:GetValue() return Copy(self.selection) end
+
+-- SetValue/SetItems are always silent, including calls made inside onChange.
+function Methods:SetValue(value)
+    if not self._choiceLease then return end
+    self.selection = Normalize(self, value)
+    self._choiceRevision = self._choiceRevision + 1
+    for _, button in ipairs(self.buttons) do Paint(button) end
+    Layout(self, true)
+end
+
+function Methods:SetDisabled(disabled)
+    if not self._choiceLease then return end
+    self.disabled = disabled == true
+    for _, button in ipairs(self.buttons) do Paint(button) end
+end
+
+local function Choose(button)
+    local host, item = button._choiceHost, button._choiceItem
+    if not host or not host._choiceLease or not host:IsVisible() or host.disabled or item.disabled then return end
+    local old, value = host:GetValue(), host:GetValue()
+    if host.triStateMode then
+        value = value == "neutral" and "include"
+            or (value == "include" and host.allowExclude and "exclude" or "neutral")
+    elseif host.mode == "multiple" then
+        value[item.id] = not value[item.id] or nil
+        if not host.allowEmpty and not next(value) then return end
+    elseif value == item.id then
+        if not host.allowEmpty then return end
+        value = nil
+    else value = item.id end
+    local lease, callback = host._choiceLease, host.onChange
+    host:SetValue(value)
+    if host._choiceLease ~= lease then return end
+    local revision = host._choiceRevision
+    if callback then
+        local ok, accepted = pcall(callback, host:GetValue(), host)
+        if host._choiceLease == lease and host._choiceRevision == revision and (not ok or accepted == false) then
+            host:SetValue(old)
+        end
+        if not ok then error(accepted, 0) end
+    end
+end
+
+local function LayoutLabel(button)
+    local padding = button:GetWidth() < 32 and 2 or 6
+    local label = button.label
+    label:ClearAllPoints()
+    label:SetPoint("TOPLEFT", button, "TOPLEFT", button._choiceItem.icon and 26 or padding, 0)
+    label:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -padding, 0)
+    label:SetJustifyH("CENTER")
+    label:SetJustifyV("MIDDLE")
+    label:SetWordWrap(false)
+    UI:ApplyVisualLayer(label, _G.EXFONTFRAME)
+end
+
+local function AcquireButton(host, parent, item, onClick)
+    local button = Factory:Acquire(ITEM, parent)
+    button._choiceHost, button._choiceItem, button._choiceHover, button._choicePressed, button._choiceArrow = host, item, false, false, false
+    local textRole = (host.choiceStyle == "connected" or host.triStateMode) and "fieldValue" or "control"
+    Appearance.ApplyTextRole(button.label, textRole, nil, textRole == "control" and "GameFontNormalSmall" or nil)
+    button:SetPushedTextOffset(0, 0)
+    button.label:SetText(item.label)
+    LayoutLabel(button)
+    button.icon:ClearAllPoints()
+    button.icon:SetPoint("LEFT", 6, 0)
+    button.icon:SetSize(16, 16)
+    button.icon:SetTexture(item.icon)
+    button.icon:SetShown(item.icon ~= nil)
+    button:SetScript("OnClick", onClick or Choose)
+    button:SetScript("OnEnter", function(self)
+        self._choiceHover = true; Paint(self)
+        if _G.GameTooltip and self._choiceItem then
+            GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+            GameTooltip:SetText(self._choiceItem.label)
+            if host.triStateMode then
+                local L = _G.ExwindTools.L
+                local state = host.selection == "include" and "包含" or (host.selection == "exclude" and "不包含" or "不限")
+                GameTooltip:AddLine(L and L[state] or state)
+            end
+            if self._choiceItem.tooltip then GameTooltip:AddLine(self._choiceItem.tooltip, .8, .85, .9, true) end
+            GameTooltip:Show()
+        end
+    end)
+    button:SetScript("OnLeave", function(self)
+        self._choiceHover, self._choicePressed = false, false
+        Paint(self)
+        CloseTooltip(self)
+    end)
+    button:SetScript("OnMouseDown", function(self) self._choicePressed = true; Paint(self) end)
+    button:SetScript("OnMouseUp", function(self) self._choicePressed = false; Paint(self) end)
+    button:SetScript("OnHide", function(self) self._choicePressed = false; CloseTooltip(self) end)
+    button:EnableMouseWheel(host.variant == "tabs")
+    button:SetScript("OnMouseWheel", function(_, delta) host:ScrollBy(-delta * 80) end)
+    if host._choicePageScroll then
+        button:SetScript("OnMouseWheel", nil)
+        button:EnableMouseWheel(false)
+    end
+    button.seam:Hide()
+    Factory:AttachPoolRelease(button, function(self)
+        CloseTooltip(self)
+        self._choiceHost, self._choiceItem, self._choiceHover, self._choicePressed, self._choiceArrow = nil, nil, nil, nil, nil
+        self:SetScript("OnMouseWheel", nil); self:SetScript("OnMouseDown", nil)
+        self:SetScript("OnMouseUp", nil); self:SetScript("OnHide", nil)
+        self.line:Hide()
+        self.seam:Hide()
+        self.label:SetText("")
+        self.label:ClearAllPoints()
+        self:SetPushedTextOffset(0, 0)
+    end)
+    return button
+end
+
+function Methods:ScrollBy(delta)
+    if not self._choiceLease or self.variant ~= "tabs" then return end
+    self.offset = math.max(0, math.min(self.maxOffset or 0, (self.offset or 0) + delta))
+    Layout(self)
+end
+
+-- Opt-in for V2 page controls. Tabs retain their existing horizontal wheel path.
+function Methods:SetPageScroll()
+    if self.variant == "tabs" then return end
+    self._choicePageScroll = true
+    self:SetScript("OnMouseWheel", nil)
+    self:EnableMouseWheel(false)
+    self.viewport:SetScript("OnMouseWheel", nil)
+    self.viewport:EnableMouseWheel(false)
+    for _, button in ipairs(self.buttons) do
+        button:SetScript("OnMouseWheel", nil)
+        button:EnableMouseWheel(false)
+    end
+    for _, button in ipairs({self.previous, self.nextButton}) do
+        button:SetScript("OnMouseWheel", nil)
+        button:EnableMouseWheel(false)
+    end
+end
+
+Layout = function(host, reveal)
+    if not host._choiceLease or host._choiceLayout then return end
+    host._choiceLayout = true
+    local padding = (host.choiceStyle == "segmented" or host.choiceStyle == "connected") and 2 or 0
+    local width, gap, height = math.max(1, host:GetWidth() - padding * 2), host.gap, host.itemHeight - padding * 2
+    local count = #host.buttons
+    local columns = host.columns or (host.wrap and math.min(count, math.max(1, math.floor((width + gap) / (host.minItemWidth + gap)))) or count)
+    columns = math.max(1, columns)
+    local equalWidth = math.max(1, (width - (columns - 1) * gap) / columns)
+    local x, y, lastRight = 0, 0, 0
+    for index, button in ipairs(host.buttons) do
+        local size = host.sizing == "content" and math.max(host.minItemWidth, button.label:GetUnboundedStringWidth() + (button._choiceItem.icon and 36 or 20)) or equalWidth
+        if host.variant == "tabs" then size = math.max(host.minItemWidth, size) else size = math.min(width, size) end
+        if host.wrap and x > 0 and (x + size > width + .5 or (host.columns and (index - 1) % columns == 0)) then x, y = 0, y + height + gap end
+        button._choiceX, button._choiceY, button._choiceWidth = x, y, size
+        x = x + size + gap; lastRight = math.max(lastRight, x - gap)
+    end
+    local overflow = host.variant == "tabs" and lastRight > width + .5
+    local inset = overflow and 20 or 0
+    local visibleWidth = math.max(1, width - 2 * inset)
+    host.maxOffset = overflow and math.max(0, lastRight - visibleWidth) or 0
+    host.offset = math.max(0, math.min(host.maxOffset, host.offset or 0))
+    if reveal and overflow then
+        for _, button in ipairs(host.buttons) do
+            if Selected(host, button._choiceItem.id) then
+                if button._choiceX < host.offset then host.offset = button._choiceX
+                elseif button._choiceX + button._choiceWidth > host.offset + visibleWidth then
+                    host.offset = math.min(host.maxOffset, button._choiceX + button._choiceWidth - visibleWidth)
+                end
+                break
+            end
+        end
+    end
+    host.viewport:ClearAllPoints()
+    host.viewport:SetPoint("TOPLEFT", inset + padding, -padding)
+    host.viewport:SetSize(visibleWidth, y + height)
+    for index, button in ipairs(host.buttons) do
+        button:ClearAllPoints()
+        button:SetPoint("TOPLEFT", host.viewport, "TOPLEFT", button._choiceX - host.offset, -button._choiceY)
+        button:SetSize(button._choiceWidth, height)
+        LayoutLabel(button)
+        button.seam:Hide()
+    end
+    host.previous:SetShown(overflow); host.nextButton:SetShown(overflow)
+    host.previous:SetSize(18, height); host.nextButton:SetSize(18, height)
+    LayoutLabel(host.previous); LayoutLabel(host.nextButton)
+    host.previous._choiceItem.disabled = host.offset <= 0
+    host.nextButton._choiceItem.disabled = host.offset >= host.maxOffset
+    Paint(host.previous); Paint(host.nextButton)
+    host:SetHeight(y + height + padding * 2)
+    if host.choiceStyle == "connected" then
+        -- The shared outline follows the actual rows, not the available line width.
+        host:SetWidth(math.max(1, math.min(host:GetWidth(), lastRight + padding * 2)))
+    end
+    -- A reused host/button can keep the same size under a new parent scale.
+    UI:RefreshCompositeSurfaces(host)
+    host._choiceLayout = nil
+end
+
+local function CopyItems(items)
+    local copied, seen = {}, {}
+    for _, item in ipairs(items or {}) do
+        assert(type(item.id) == "string" or type(item.id) == "number", "Choice item requires a string/number id")
+        assert(not seen[item.id], "Duplicate choice id: " .. tostring(item.id))
+        seen[item.id] = true
+        assert(item.tone == nil or item.tone == "neutral" or item.tone == "include" or item.tone == "exclude", "Unknown choice tone")
+        copied[#copied + 1] = { id = item.id, label = tostring(item.label or item.id), icon = item.icon,
+            tooltip = item.tooltip, disabled = item.disabled == true, tone = item.tone }
+    end
+    return copied
+end
+
+function Methods:SetItems(items)
+    if not self._choiceLease then return end
+    local copied = CopyItems(items)
+    for index = #self.buttons, 1, -1 do Factory:Release(ITEM, self.buttons[index]); self.buttons[index] = nil end
+    self.items = copied
+    for _, item in ipairs(copied) do self.buttons[#self.buttons + 1] = AcquireButton(self, self.viewport, item) end
+    self:SetValue(self.selection)
+end
+
+function Methods:Release() Factory:Release(HOST, self) end
+
+local function Create(parent, options, tabs)
+    options = options or {}
+    local items = CopyItems(options.items)
+    local host = Factory:AcquireCompositeHost(HOST, parent)
+    for key, method in pairs(Methods) do host[key] = method end
+    host._choiceLease, host._choiceRevision = {}, 0
+    host.triStateMode, host.allowExclude, host._choicePageScroll = nil, nil, nil
+    host._gridType = "ChoiceGroup"
+    host.variant = tabs and "tabs" or "options"
+    host.choiceStyle = not tabs and (options.appearance == "compact" or options.appearance == "form" or options.appearance == "dungeon-aura" or options.appearance == "load-card" or options.appearance == "segmented" or options.appearance == "connected") and options.appearance or nil
+    if host.choiceStyle == "segmented" or host.choiceStyle == "connected" or host.choiceStyle == "compact" or host.choiceStyle == "load-card" then
+        UI:SetControlSurface(host, 4, Appearance.colors.input, Appearance.colors.inputBorder)
+    else
+        UI:ClearControlSurface(host)
+    end
+    host.mode = not tabs and options.mode == "multiple" and "multiple" or "single"
+    host.allowEmpty = not tabs and options.allowEmpty == true
+    host.sizing = options.sizing == "content" and "content" or "equal"
+    if host.choiceStyle == "connected" then host.sizing = "content" end
+    host.wrap = not tabs and options.wrap ~= false
+    host.columns = options.columns and math.max(1, math.floor(options.columns)) or nil
+    host.minItemWidth = math.max(16, options.minItemWidth or 44)
+    host.gap = math.max(0, options.gap or (tabs and 0 or 3))
+    if host.choiceStyle == "connected" then host.gap = 0 end
+    host.itemHeight = math.max(18, options.itemHeight or (tabs and 32 or 27))
+    host.disabled, host.offset, host.buttons, host.items = options.disabled == true, 0, {}, {}
+    host.selection = options.value
+    host.onChange = options.onChange
+    host.viewport = Factory:Acquire(VIEW, host)
+    host.viewport:SetClipsChildren(true)
+    host.viewport:EnableMouse(false)
+    host.previous = AcquireButton(host, host, { id = "previous", label = "‹" }, function() host:ScrollBy(-100) end)
+    host.nextButton = AcquireButton(host, host, { id = "next", label = "›" }, function() host:ScrollBy(100) end)
+    host.previous._choiceArrow, host.nextButton._choiceArrow = true, true
+    host.previous:SetPoint("TOPLEFT"); host.nextButton:SetPoint("TOPRIGHT")
+    host:EnableMouseWheel(tabs == true)
+    host:SetScript("OnMouseWheel", function(self, delta) self:ScrollBy(-delta * 80) end)
+    host:SetScript("OnSizeChanged", function(self) Layout(self, true) end)
+    Factory:AttachPoolRelease(host, function(self)
+        self._choiceLease, self.onChange = nil, nil
+        self:SetScript("OnSizeChanged", nil); self:SetScript("OnMouseWheel", nil)
+        for _, button in ipairs(self.buttons) do Factory:Release(ITEM, button) end
+        Factory:Release(ITEM, self.previous); Factory:Release(ITEM, self.nextButton)
+        Factory:Release(VIEW, self.viewport)
+        self.buttons, self.items, self.selection, self.viewport, self.previous, self.nextButton = nil, nil, nil, nil, nil, nil
+    end)
+    host:SetWidth(options.width or 240)
+    host:SetItems(items)
+    return host
+end
+
+-- appearance = "segmented": shared outer border; only selected items have a border.
+-- items = { { id, label, icon?, tooltip?, disabled?, tone? }, ... }
+-- single value = id; multiple value = { [id] = true }. onChange may return false.
+function UI:CreateTabGroup(parent, options) return Create(parent, options, true) end
+function UI:CreateOptionGroup(parent, options) return Create(parent, options, false) end
+
+-- One named chip, with explicit states; this is not boolean/multiple selection.
+function UI:CreateTriStateChip(parent, options)
+    options = options or {}
+    assert(type(options.label) == "string", "TriStateChip requires a label")
+    local host = Create(parent, {
+        items={{id="chip", label=options.label, tooltip=options.tooltip}},
+        width=options.width or 160, itemHeight=options.itemHeight or 28,
+        allowEmpty=true, sizing="content", wrap=false, disabled=options.disabled,
+        onChange=options.onChange,
+    }, false)
+    host.triStateMode, host.allowExclude = true, options.allowExclude ~= false
+    Appearance.ApplyTextRole(host.buttons[1].label, "fieldValue")
+    host.buttons[1].label:SetJustifyH("CENTER")
+    host.buttons[1].label:SetJustifyV("MIDDLE")
+    UI:ApplyVisualLayer(host.buttons[1].label, _G.EXFONTFRAME)
+    host:SetValue(options.value or "neutral")
+    host:SetWidth(options.width or math.max(64, host.buttons[1].label:GetUnboundedStringWidth() + 20))
+    host:SetPageScroll()
+    return host
+end

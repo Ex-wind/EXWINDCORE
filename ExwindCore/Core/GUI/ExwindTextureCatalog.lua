@@ -5,7 +5,7 @@ if not ExwindTools then return end
 
 ExwindTools.TextureCatalog = {
     version = 1,
-    count = 218,
+    count = 216,
     root = "Interface\\AddOns\\ExwindCore\\Textures\\",
     supportLabels = {
         native = "WoW 常用原生材质格式（仍需游戏实测）",
@@ -26,7 +26,7 @@ ExwindTools.TextureCatalog = {
         { id = "LOGO/ExwindTools", label = "LOGO/ExwindTools", count = 4 },
         { id = "Materials/EXBoss/Rings", label = "Materials/EXBoss/Rings", count = 3 },
         { id = "Materials/ExwindTools/PlayerPosition", label = "Materials/ExwindTools/PlayerPosition", count = 5 },
-        { id = "根目录", label = "根目录", count = 26 },
+        { id = "根目录", label = "根目录", count = 24 },
     },
     assets = {
         {
@@ -163,24 +163,6 @@ ExwindTools.TextureCatalog = {
             pathNoExtension = "Interface\\AddOns\\ExwindCore\\Textures\\flash",
             extension = ".png",
             support = "verify",
-        },
-        {
-            category = "根目录",
-            name = "GlassDemoCapsule.tga",
-            relativePath = "GlassDemoCapsule.tga",
-            path = "Interface\\AddOns\\ExwindCore\\Textures\\GlassDemoCapsule.tga",
-            pathNoExtension = "Interface\\AddOns\\ExwindCore\\Textures\\GlassDemoCapsule",
-            extension = ".tga",
-            support = "native",
-        },
-        {
-            category = "根目录",
-            name = "GlassDemoCard.tga",
-            relativePath = "GlassDemoCard.tga",
-            path = "Interface\\AddOns\\ExwindCore\\Textures\\GlassDemoCard.tga",
-            pathNoExtension = "Interface\\AddOns\\ExwindCore\\Textures\\GlassDemoCard",
-            extension = ".tga",
-            support = "native",
         },
         {
             category = "根目录",

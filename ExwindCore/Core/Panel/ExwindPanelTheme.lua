@@ -14,12 +14,12 @@ ExwindTools.PanelTheme = ExwindTools.PanelTheme or {
         APP_RAIL_WIDTH = 58,
         HEADER_HEIGHT = 26,
         -- Tab 只是路由切换，不应占用接近一列控件的垂直空间。
-        TOP_TAB_HEIGHT = 32,
+        TOP_TAB_HEIGHT = GC and ExwindTools.GUIMetrics.size.tabHeight or 38,
         TOP_TAB_FONT_SIZE = 14,
         CONTENT_GUTTER = 12,
         -- 所有 B+C 左右布局的唯一比例：B=25%，C=75%。不得由 Provider 覆写。
         NAV_RATIO = 0.25,
-        PREVIEW_DOCK_HEIGHT = 200, -- 标准顶部预览外框最小高度，Shell 同时以此为上限
+        PREVIEW_DOCK_HEIGHT = 160, -- 标准顶部预览外框最小高度，Shell 同时以此为上限
         SPLIT_CONTENT_GRID_COLS = 200,
         FULL_CONTENT_GRID_COLS = 64,
         DEFAULT_WIDTH = 1440,

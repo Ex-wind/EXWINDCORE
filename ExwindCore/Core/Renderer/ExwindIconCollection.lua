@@ -277,7 +277,8 @@ local function ApplyCooldown(collection, widget, cooldown)
         return
     end
     if cooldown.mode == "SECRET" then
-        widget:SetSecretCooldown(cooldown.duration, cooldown.clearIfZero)
+        widget:SetSecretCooldown(cooldown.duration, cooldown.clearIfZero, cooldown.durationTextProperty,
+            cooldown.durationTextOptions)
     elseif cooldown.mode == "DURATION" then
         widget:SetDurationObject(cooldown.duration, cooldown.clearIfZero, cooldown.durationTextProperty,
             cooldown.durationTextOptions)
@@ -983,12 +984,14 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
         if item then return item end
         item = NewItem(self, itemID)
         self.itemsByID[itemID] = item
+        self.geometryRevision = (self.geometryRevision or 0) + 1
         return item
     end
 
     function collection:ApplyItem(item, presentation)
         if not item or not item.widget then error("IconCollection ApplyItem requires an acquired item", 2) end
         if type(presentation) ~= "table" then error("IconCollection presentation must be table", 2) end
+        self.geometryRevision = (self.geometryRevision or 0) + 1
         item.presentation = presentation
         item.declaredBounds = RequireDeclaredBounds(presentation)
         item.localOffset = ResolveLocalOffset(self, presentation)
@@ -1024,6 +1027,18 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
         ApplyCooldown(self, widget, presentation.cooldown)
         if presentation.usable ~= nil then widget:SetUsable(presentation.usable) else widget:SetUsable(nil) end
         if presentation.desaturated ~= nil then widget:SetDesaturated(presentation.desaturated) else widget:SetDesaturated(nil) end
+        if presentation.hasIconColorComponents == true then
+            widget:SetColorComponents(presentation.iconColorComponents)
+        end
+        local textColors = presentation.textColorComponents
+        if textColors ~= nil then
+            if type(textColors) ~= "table" or (type(issecretvalue) == "function" and issecretvalue(textColors)) then
+                error("Icon textColorComponents must be an ordinary table", 2)
+            end
+            for slot, components in pairs(textColors) do
+                widget:SetTextColorComponents(slot, components)
+            end
+        end
         -- 先把 IconWidget 放到 ItemRoot。core.icon 就是这个 IconWidget 本体，
         -- 因而固定 core 布局必须在此之后应用；否则其 SetAnchor 会被下面的
         -- 默认居中锚点立刻覆盖，图标永远留在行中央。
@@ -1040,15 +1055,21 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
             presentation.renderExtraChildren(widget, hosts, presentation.extraChildren or {}, self.interactionMode, item)
         end
         item.regions:SetConfigContextID(presentation.regionConfigContextID)
-        item.regions:Apply(presentation.regionElements)
+        item.regions:Apply(presentation.regionElements, presentation.elementContent)
         ConfigureRuntimeTooltip(self, item, presentation.runtimeTooltip)
         ConfigureRuntimeAction(self, item, presentation.runtimeAction)
         ConfigureInteractionOverlays(self, item, presentation.interaction)
+        if item.visualEffects then
+            EXUI:ApplyCollectionItemVisualEffects(item.root, item.visualEffects, item.bodyWidth, item.bodyHeight)
+        end
+        if item._collectionClickSpec then EXUI:ApplyCollectionItemClick(item, item._collectionClickSpec) end
         item.root:Show()
         return item
     end
 
-    function collection:SetItems(items, layout)
+    function collection:SetItems(items, layout, geometryOnly)
+        local contentItems = items or {}
+        items, layout = self.layout:ResolveGeometryItems(self, items or {}, layout)
         -- WidgetLayout 的语义 FLOW 是等尺寸 Body contract；不能像旧手写页面
         -- 一样用最后一个 item 的尺寸悄悄覆盖前项。每次布局在所有 item 都
         -- Apply 完后校验，因而一次配置刷新可原子地改变整组的统一尺寸。
@@ -1066,6 +1087,10 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
         if bodyWidth then
             self.itemWidth, self.itemHeight = bodyWidth, bodyHeight
         end
+        if not geometryOnly then
+            self.contentItems = {}
+            for index, item in ipairs(contentItems) do self.contentItems[index] = item end
+        end
         local wanted = {}
         for _, item in ipairs(items or {}) do
             if item and item.id then wanted[item.id] = true end
@@ -1073,7 +1098,8 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
         for itemID, item in pairs(self.itemsByID) do
             if not wanted[itemID] and item.root then item.root:Hide() end
         end
-        self.layout:ApplyStyle(CopyLayout(layout, self.contentCenter))
+        self.geometryRevision = (self.geometryRevision or 0) + 1
+        self.layout:ApplyStyle(CopyLayout(layout, self.contentCenter), true)
         self.layout:SetSemanticItems(items or {}, self.itemWidth, self.itemHeight)
         self.currentItems = items or {}
         self.currentLayout = layout
@@ -1095,7 +1121,7 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
             end
         end
         if options.reapplyLayout ~= false then
-            self:SetItems(self.currentItems, self.currentLayout)
+            self:SetItems(self.currentItems, self.currentLayout, true)
         end
         return true
     end
@@ -1104,8 +1130,18 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
     -- Release、重建 Preview session 或重新生成 presentation。
     function collection:ReapplyCurrentLayout(layout)
         if self.released then return false end
-        self:SetItems(self.currentItems or {}, layout or self.currentLayout)
+        self:SetItems(self.contentItems or self.currentItems or {}, layout or self.currentLayout, true)
         return true
+    end
+
+    function collection:PrepareCurrentGeometry(geometryByItemID, layout)
+        if self.released then return nil, "COLLECTION_RELEASED" end
+        return self.layout:PrepareItemGeometry(self, geometryByItemID, layout)
+    end
+
+    function collection:ApplyPreparedGeometry(plan)
+        if self.released then return false, "COLLECTION_RELEASED" end
+        return self.layout:ApplyItemGeometry(self, plan)
     end
 
     -- 拓扑型 GUI 字段（例如频道勾选）只能在正常 Render 已物化的 Item
@@ -1167,11 +1203,28 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
 
     function collection:GetItems() return self.itemsByID end
 
+    function collection:SetItemVisualEffects(itemID, effects)
+        local item = self.itemsByID[itemID]
+        if not item or not item.root then return false end
+        item.visualEffects = type(effects) == "table" and effects or nil
+        EXUI:ApplyCollectionItemVisualEffects(item.root, item.visualEffects, item.bodyWidth, item.bodyHeight)
+        return true
+    end
+
+    function collection:SetItemClickAction(itemID, spec)
+        local item = self.itemsByID[itemID]
+        if not item or not item.root then return false end
+        return EXUI:ApplyCollectionItemClick(item, spec)
+    end
+
     function collection:ReleaseItem(itemID)
         local item = self.itemsByID[itemID]
         if not item then return end
         self.itemsByID[itemID] = nil
+        self.geometryRevision = (self.geometryRevision or 0) + 1
         StopCoreGlow(item)
+        EXUI:ReleaseCollectionItemClick(item)
+        EXUI:ReleaseCollectionItemVisualEffects(item.root)
         if type(item.presentation) == "table" and type(item.presentation.releaseExtraChildren) == "function" then
             item.presentation.releaseExtraChildren(item.widget, item)
         end
@@ -1191,6 +1244,7 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
         item.localOffset = nil
         item.coreLayoutRects = nil
         item.presentation = nil
+        item.visualEffects = nil
         item.interactionOverlay = nil
         item.interactionOverlays = nil
         item.extraChildHostIDs = nil
@@ -1203,6 +1257,7 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
         self.layout:Release()
         self.layout = nil
         self.currentItems = nil
+        self.contentItems = nil
         self.currentLayout = nil
         self.itemWidth = nil
         self.itemHeight = nil

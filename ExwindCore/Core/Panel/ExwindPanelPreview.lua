@@ -1,10 +1,8 @@
 -- =============================================================
 -- ExwindPanelPreview.lua
--- 设置页 PreviewDock 的唯一会话封装。
---
--- 这里不创建第二套视觉树、不解释模块业务，也不拥有 Dock 的页面几何。
--- 它只把同一份 presentation 交给已存在的 Icon/Text/TimerBar Collection，
--- 固定 interactionMode="panel"、contentCenter=true，并统一生命周期。
+-- 设置页顶部预览外壳、背景与 Panel 会话的唯一封装。
+-- 页面只提供宿主，将既有 renderer 挂入公共 canvas；不得另造预览卡片或覆盖背景。
+-- 会话复用 Icon/Text/TimerBar Collection，固定 panel interaction 与生命周期。
 -- =============================================================
 
 local ExwindTools = _G.ExwindTools
@@ -16,6 +14,157 @@ if not ExwindTools or not ExwindTools.UI then return end
 local EXUI = ExwindTools.UI
 local GC = ExwindTools.GUIColors
 if not GC then error("ExwindGUIColor.lua must load before ExwindPanelPreview.lua") end
+
+local GM = ExwindTools.GUIMetrics
+if not GM then error("ExwindGUIMetrics.lua must load before ExwindPanelPreview.lua") end
+
+-- 背景只属于 Core 的当前 GUI 会话；不读取或写入任何模块配置/SavedVariables。
+-- 所有预览卡片共用一份颜色，canvas 与两侧 rail 透明，只由外壳填充一次。
+local previewFill = { GC.panel[1], GC.panel[2], GC.panel[3], 1 }
+local previewShells = setmetatable({}, { __mode = "k" })
+local previewLayout = {
+    shellTop = 6,
+    shellBottom = 8,
+    minimumShellHeight = ExwindTools.PanelTheme.Layout.PREVIEW_DOCK_HEIGHT,
+    shellInset = 10,
+    canvasGap = 8,
+    leftRailWidth = 162,
+    rightRailWidth = 162,
+}
+
+function EXUI:ApplyStandardPreviewShellStyle(shell, useBackdrop)
+    if not shell then error("standard preview requires a shell Frame", 2) end
+    local mode = useBackdrop and "backdrop" or previewShells[shell] or "surface"
+    previewShells[shell] = mode
+    if mode == "backdrop" then
+        -- 既有特殊预览保留原 Backdrop 几何，只共用颜色。
+        shell:SetBackdropColor(unpack(previewFill))
+        shell:SetBackdropBorderColor(unpack(GC.panelBorder))
+    else
+        self:SetControlSurface(shell, GM.radius.popup, previewFill, GC.panelBorder)
+    end
+    if shell._exPreviewBackgroundSwatch then
+        shell._exPreviewBackgroundSwatch:SetVertexColor(unpack(previewFill))
+    end
+end
+
+local function SetPreviewBackground(r, g, b)
+    previewFill[1], previewFill[2], previewFill[3] = r, g, b
+    for shell in pairs(previewShells) do
+        EXUI:ApplyStandardPreviewShellStyle(shell)
+    end
+end
+
+local function OpenPreviewBackgroundPicker()
+    local picker = _G.ColorPickerFrame
+    if not picker then return end
+    local originalR, originalG, originalB = previewFill[1], previewFill[2], previewFill[3]
+    -- 同一个暴雪取色器开启新事务前，结束原事务，避免旧取消回调遗留。
+    if picker:IsShown() then
+        if picker.cancelFunc then picker.cancelFunc(picker.previousValues) end
+        picker:Hide()
+        originalR, originalG, originalB = previewFill[1], previewFill[2], previewFill[3]
+    end
+    picker:SetupColorPickerAndShow({
+        r = originalR,
+        g = originalG,
+        b = originalB,
+        hasOpacity = false,
+        swatchFunc = function()
+            SetPreviewBackground(picker:GetColorRGB())
+        end,
+        cancelFunc = function()
+            SetPreviewBackground(originalR, originalG, originalB)
+        end,
+    })
+end
+
+local function CreatePreviewToolbar(shell)
+    local toolbar = CreateFrame("Frame", nil, shell)
+    toolbar:SetPoint("TOPLEFT", shell, "TOPLEFT", previewLayout.shellInset, -previewLayout.shellTop)
+    toolbar:SetPoint("BOTTOMRIGHT", shell, "BOTTOMRIGHT", -previewLayout.shellInset, previewLayout.shellBottom)
+
+    local label = EXUI:CreateVisualFontString(toolbar, EXFONTFRAME, "GameFontHighlightSmall")
+    label:SetText(L["背景"])
+    label:SetTextColor(unpack(GC.textDim))
+    local button = EXUI:CreateButton(toolbar, 26, 26, "",
+        OpenPreviewBackgroundPicker, { compact = true })
+    button:ClearAllPoints()
+    button:SetPoint("TOPRIGHT", toolbar, "TOPRIGHT", -6, -16)
+    local swatch = EXUI:CreateVisualTexture(button, EXBORDERFRAME)
+    swatch:SetTexture("Interface\\Buttons\\WHITE8X8")
+    swatch:SetPoint("TOPLEFT", button, "TOPLEFT", 4, -4)
+    swatch:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -4, 4)
+    shell._exPreviewBackgroundSwatch = swatch
+    label:SetPoint("TOP", button, "TOP", 0, 15)
+    button:SetScript("OnEnter", function(self)
+        if GameTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:SetText(L["自定义预览背景"])
+            GameTooltip:Show()
+        end
+    end)
+    button:SetScript("OnLeave", function(self)
+        if GameTooltip and GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+    end)
+    EXUI:ApplyStandardPreviewShellStyle(shell)
+    return toolbar
+end
+
+-- 唯一顶部预览工厂：固定外围 GC.panel，整张卡片内部共用 previewFill。
+function EXUI:CreateStandardTopPreview(host)
+    local row = CreateFrame("Frame", nil, host)
+    row:SetFrameLevel((host:GetFrameLevel() or 0) + 1)
+    local background = self:CreateVisualTexture(row, EXBASEFRAME)
+    background:SetAllPoints(row)
+    background:SetColorTexture(unpack(GC.panel))
+
+    local shell = CreateFrame("Frame", nil, row)
+    self:ApplyStandardPreviewShellStyle(shell)
+    local canvas = CreateFrame("Frame", nil, shell)
+    local toolbar = CreatePreviewToolbar(shell)
+    canvas:SetPoint("TOPLEFT", toolbar, "TOPLEFT", previewLayout.leftRailWidth + previewLayout.canvasGap, 0)
+    canvas:SetPoint("TOPRIGHT", toolbar, "TOPRIGHT", -(previewLayout.rightRailWidth + previewLayout.canvasGap), 0)
+    self:SetPanelStylePresetControlsHost(canvas, toolbar, "preview-rail")
+    canvas:SetHeight(self:GetStandardPreviewMinimumCanvasHeight())
+
+    local top = { row = row, shell = shell, canvas = canvas, toolbar = toolbar }
+    function top:SyncHeight()
+        local height = EXUI:GetStandardPreviewShellHeight(self.canvas:GetHeight())
+        self.shell:SetHeight(height)
+        self.row:SetHeight(height)
+        return height
+    end
+    function top:Place(parent, scrollChildWidth, topOffset)
+        local grid = _G.ExwindGrid
+        if not grid or type(grid.ResolveSettingsListWidth) ~= "function" then
+            error("standard top preview requires ExwindGrid:ResolveSettingsListWidth", 2)
+        end
+        local defaults = type(grid.CardLayoutDefaults) == "table" and grid.CardLayoutDefaults or {}
+        local width = tonumber(scrollChildWidth) or tonumber(parent:GetWidth()) or 1
+        local available = math.max(1, width - math.max(0, tonumber(defaults.left) or 0)
+            - math.max(0, tonumber(defaults.right) or 0))
+        self.row:SetParent(parent)
+        self.row:ClearAllPoints()
+        self.row:SetPoint("TOPLEFT", parent, "TOPLEFT", 0, topOffset or 0)
+        self.row:SetPoint("TOPRIGHT", parent, "TOPRIGHT", 0, topOffset or 0)
+        self.shell:ClearAllPoints()
+        self.shell:SetPoint("TOP", self.row, "TOP", -4, 0)
+        self.shell:SetWidth(grid:ResolveSettingsListWidth(available, 75))
+        self:SyncHeight()
+    end
+    top:SyncHeight()
+    return top
+end
+
+function EXUI:GetStandardPreviewShellHeight(canvasHeight)
+    return math.max(previewLayout.minimumShellHeight,
+        previewLayout.shellTop + canvasHeight + previewLayout.shellBottom)
+end
+
+function EXUI:GetStandardPreviewMinimumCanvasHeight()
+    return previewLayout.minimumShellHeight - previewLayout.shellTop - previewLayout.shellBottom
+end
 
 -- GUI 修改 ModuleDB 后的唯一刷新注册表。注册项只能重套已经存在的
 -- presentation；创建、释放与完整 Render 仍只属于各自正常的生命周期入口。
@@ -287,6 +436,21 @@ local function ResolveBindingDB(source)
     return db
 end
 
+-- 活动页面必须属于 moduleKey：每张卡片都要有已解析的 moduleKey，且至少有一张是本模块的卡片。
+-- 页面可以另含绑定到其他正式 owner 的共享数据卡（例如 EXBoss 时间轴启用开关绑定
+-- ExBoss.GeneralOverview）；没有本模块卡片的页面（旧页面残留）或未解析 moduleKey 的卡片仍然拒绝。
+local function MountedStatesBelongToModule(mounted, moduleKey)
+    local owned = false
+    for _, entry in ipairs(mounted) do
+        local state = entry.state
+        if type(state) ~= "table" or type(state.moduleKey) ~= "string" or state.moduleKey == "" then
+            return false
+        end
+        if state.moduleKey == moduleKey then owned = true end
+    end
+    return owned
+end
+
 local function ResolveActiveMountedGrid(moduleKey, apiName)
     local Grid = _G.ExwindGrid
     local container = EXUI.ActivePageFrame
@@ -299,11 +463,9 @@ local function ResolveActiveMountedGrid(moduleKey, apiName)
         error((apiName or "standard preview interaction")
             .. " cannot validate active Grid for " .. tostring(moduleKey), 3)
     end
-    for _, entry in ipairs(mounted) do
-        if type(entry.state) ~= "table" or entry.state.moduleKey ~= moduleKey then
-            error((apiName or "standard preview interaction")
-                .. " active Grid module mismatch for " .. tostring(moduleKey), 3)
-        end
+    if not MountedStatesBelongToModule(mounted, moduleKey) then
+        error((apiName or "standard preview interaction")
+            .. " active Grid module mismatch for " .. tostring(moduleKey), 3)
     end
     return Grid, container, mounted, owner
 end
@@ -704,9 +866,7 @@ local function RefreshPanelResizeControls(moduleKey)
         or type(Grid.RefreshMountedValues) ~= "function" then return false end
     local mounted, owner = Grid:GetMountedContainerStates(container)
     if not owner or type(mounted) ~= "table" or #mounted == 0 then return false end
-    for _, entry in ipairs(mounted) do
-        if type(entry.state) ~= "table" or entry.state.moduleKey ~= moduleKey then return false end
-    end
+    if not MountedStatesBelongToModule(mounted, moduleKey) then return false end
     return Grid:RefreshMountedValues(container) == true
 end
 
@@ -951,8 +1111,7 @@ local function CreatePanelPresetThumbnail(parent, width, height)
     local view = CreateFrame("Frame", nil, parent, "BackdropTemplate")
     view:SetSize(width, height)
     view:SetBackdrop({ bgFile = "Interface\\Buttons\\WHITE8X8", edgeFile = "Interface\\Buttons\\WHITE8X8", edgeSize = 1 })
-    view:SetBackdropColor(unpack(GC.card))
-    view:SetBackdropBorderColor(unpack(GC.panelBorder))
+    EXUI:ApplyStandardPreviewShellStyle(view, true)
     if type(view.SetClipsChildren) == "function" then view:SetClipsChildren(true) end
     local host = CreateFrame("Frame", nil, view)
     host:SetPoint("CENTER", view, "CENTER", 0, 0)
@@ -2966,7 +3125,7 @@ function EXUI:CreateStandardTimelinePanelPreview(dock, moduleKey)
         root:Show()
         -- A declaration may deliberately extend name/alert geometry beyond the
         -- semantic track.  Fit the complete visual union rather than guessing
-        -- with track width, so an external-left dock never cuts off text.
+        -- with track width, so the standard canvas never cuts off text.
         FitTimelineRootToDock(self, timeline, anchor, timelineX, timelineY)
         return self
     end

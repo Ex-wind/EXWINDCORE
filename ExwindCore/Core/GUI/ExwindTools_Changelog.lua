@@ -264,6 +264,7 @@ local function EnsureViewerFrame()
     local title = viewerFrame:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
     title:SetPoint("TOPLEFT", 20, -15)
     viewerFrame.Title = title
+    EXUI:ApplyDialogStyle(viewerFrame, title)
     local close = CreateFrame("Button", nil, viewerFrame, "UIPanelCloseButton")
     close:SetPoint("TOPRIGHT", -3, -3)
     close:SetScript("OnClick", function() viewerFrame:Hide() end)

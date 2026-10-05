@@ -29,7 +29,10 @@ Locale\itIT.lua
 # 1. 主引擎
 Core\ExwindTools_Metadata.lua
 Core\ExwindTools.lua
+Core\ExwindCapability.lua
 Core\GUI\ExwindGUIColor.lua
+Core\GUI\ExwindGUIMetrics.lua
+Core\GUI\ExwindGUIIcons.lua
 Core\Panel\ExwindPanelTheme.lua
 Core\Renderer\ExwindVisualLayers.lua
 Core\ExwindMedia.lua
@@ -52,6 +55,7 @@ Core\GUI\ExwindGUISettingsList.lua
 Core\GUI\ExwindGUIComposite.lua
 Core\GUI\ExwindControlAppearance.lua
 Core\GUI\ExwindChoiceGroup.lua
+Core\GUI\ExwindGUITree.lua
 Core\GUI\ExwindTextureCatalog.lua
 Core\GUI\ExwindTextureBrowser.lua
 Core\Renderer\ExwindWidgets.lua
@@ -69,8 +73,6 @@ Core\Renderer\ExwindStandardPreview.lua
 Core\Renderer\ExwindStandardTimerBar.lua
 Core\Renderer\ExwindGlow.lua
 Core\GUI\ExwindGrid.lua
-Core\GUI\ExwindGridCardShowcase.lua
-Core\GUI\ExwindGUIShowcase.lua
 Core\GUI\ExwindToolsUI.lua
 Core\GUI\ExwindSettingsV2.lua
 Core\Renderer\ExwindModuleDefinition.lua
@@ -85,9 +87,9 @@ Core\Panel\ExwindToolsPanelProvider.lua
 Core\Panel\ExwindPanelRouter.lua
 
 # 4. 配置/队伍专精
-# [临时排查内存增长]
 Core\ExwindExport.lua
-# Core\PartySync.lua
+Core\PartySync.lua
+# [临时排查内存增长：PartySpec 仍停用]
 # Core\PartySpec.lua
 
 # 5. UI 皮肤集成（可选，检测到对应插件时自动生效）

@@ -14,6 +14,7 @@ end
 -- 确保 EXUI 命名空间存在（可能在 ExwindToolsUI.lua 之前加载）
 local EXUI = ExwindTools.UI or {}
 ExwindTools.UI = EXUI
+local GM = ExwindTools.GUIMetrics
 
 local Grid = {
     Cols = 50,
@@ -390,6 +391,14 @@ function Grid:GetPixelRect(x, y, w, h, container)
     return px, py, pw, ph
 end
 
+local function DefaultControlHeight(element)
+    if element.h ~= nil then return nil end
+    local kind = element.type
+    if kind == "input" or kind == "button" or kind == "checkbox" or kind == "color" then
+        return GM.size.controlHeight
+    end
+end
+
 -- 这是 Grid 唯一的最终布局落点。所有由 Grid 承载的都是设置页静态 GUI；
 -- 不在这里出现 runtime 条、图标或文字 renderer。用 PixelUtil 同时量化位置和尺寸，
 -- 避免只量化 1px 线却仍把其父 Frame 放在半像素上的伪修复。
@@ -399,7 +408,7 @@ local function LayoutBossSummaryEnabled(widget)
     widget:ClearAllPoints()
     widget:SetPoint("LEFT", saved.host, "LEFT", 0, 0)
     widget:SetPoint("RIGHT", saved.host, "RIGHT", 0, 0)
-    widget:SetHeight(28)
+    widget:SetHeight(GM.size.checkboxRowHeight)
     return true
 end
 
@@ -409,19 +418,39 @@ function Grid:ApplyPixelLayout(widget, container, element)
 
     local px, py, pw, ph = self:GetPixelRect(element.x, element.y, element.w, element.h, container)
     local width = widget._exGridWidth or pw
-    local height = widget._exGridFixedHeight or widget._exGridCardMeasuredHeight or ph
+    local height = widget._exGridFixedHeight or widget._exGridCardMeasuredHeight
+        or DefaultControlHeight(element) or ph
 
-    -- CreateButton 已按共享主题钳制普通文字按钮；Grid 是最终尺寸落点，不能再
-    -- 用声明格尺寸把它缩回主题下限以下。compact 必须由调用方显式声明，不能
-    -- 根据窄宽度猜测，否则普通按钮会绕过统一语义。
+    -- Grid is the final size owner. A text button may grow into free space on
+    -- its row, but cannot cover the next declared control or the card edge.
+    -- Explicit compact/icon buttons keep their declared width.
     if element.type == "button" and widget._exButtonCompact ~= true then
         local theme = EXUI and EXUI.ModernTheme
         local style = theme and theme.buttonStyle
         local metrics = theme and theme.metrics
         local minimumWidth = style and tonumber(style.minWidth)
+        local label = widget.GetFontString and widget:GetFontString()
+        local textWidth = label and label.GetUnboundedStringWidth and label:GetUnboundedStringWidth() or 0
+        local naturalWidth = textWidth + GM.space.buttonPaddingX * 2
         local paddingY = style and tonumber(style.paddingY)
         local textHeight = metrics and tonumber(metrics.button)
-        if minimumWidth then width = math.max(width, minimumWidth) end
+        width = math.max(width, minimumWidth or 0)
+        if naturalWidth > width then
+            local padding = self:GetContainerPadding(container)
+            local right = container:GetWidth() - padding.right
+            local state = self.ContainerStates[container]
+            local top, bottom = tonumber(element.y) or 0,
+                (tonumber(element.y) or 0) + (tonumber(element.h) or 2)
+            for _, peer in ipairs(state and state.layout or {}) do
+                local peerX, peerY = tonumber(peer.x), tonumber(peer.y)
+                if peer ~= element and peerX and peerY and peerX > (tonumber(element.x) or 0)
+                    and top < peerY + (tonumber(peer.h) or 2) and peerY < bottom then
+                    local peerPixelX = (peerX - 1) * self.CellSize + padding.left
+                    right = math.min(right, peerPixelX - self.Padding)
+                end
+            end
+            width = math.min(naturalWidth, math.max(width, right - px))
+        end
         if paddingY and textHeight then
             height = math.max(height, textHeight + paddingY * 2)
         end
@@ -542,6 +571,10 @@ function Grid:GetCustomRenderer(key)
     end
     return self.CustomRenderers[key]
 end
+
+-- Core 公共自定义渲染器：人物卡片网格（实现与声明说明见 ExwindGUIComposite.lua 的 PersonCards）。
+assert(EXUI.PersonCardsRenderer, "ExwindGUIComposite.lua must load before ExwindGrid.lua")
+Grid:RegisterCustomRenderer("EXUI.PersonCards", EXUI.PersonCardsRenderer)
 
 function Grid:ReleaseWidgetInstance(widget)
     if not widget then
@@ -1010,6 +1043,14 @@ local function BindTooltip(target, ele, enableMouse)
     if not target or not target.SetScript then
         return
     end
+    -- OnEnter/OnLeave 这两个槽位同时承载 Core 的 hover 画器，画器是
+    -- HookScript 接在同一槽位的链上；SetScript 会把整条链一起清掉
+    -- （用户 2026-10-05 游戏内实测）。所以先走 ClearControlScript 既清槽位
+    -- 又丢掉画器的安装记录，再用 SetScript 放 tooltip；调用方紧随其后的
+    -- ApplyControlAppearance 会把画器重新 Hook 到 tooltip 之上，两者共存。
+    -- 重复调用也只覆盖 tooltip 处理器本身，不会叠加。
+    EXUI:ClearControlScript(target, "OnEnter")
+    EXUI:ClearControlScript(target, "OnLeave")
     if ele.tooltip or ele.spellID then
         if enableMouse and target.EnableMouse then
             target:EnableMouse(true)
@@ -1030,8 +1071,7 @@ local function BindTooltip(target, ele, enableMouse)
         if enableMouse and target.EnableMouse then
             target:EnableMouse(false)
         end
-        target:SetScript("OnEnter", nil)
-        target:SetScript("OnLeave", nil)
+        -- 置 nil 的一支由上面的 ClearControlScript 一并完成，这里不再裸 SetScript。
     end
 end
 
@@ -1138,6 +1178,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
     end
 
     local px, py, pw, ph = self:GetPixelRect(ele.x, ele.y, ele.w, ele.h, container)
+    ph = DefaultControlHeight(ele) or ph
     local widget
     local invalidItemRecord
 
@@ -1172,7 +1213,7 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         if type(text) == "function" then text = text() end
         widget = EXUI:CreateSubheader(container, text or "", pw)
     elseif ele.type == "divider" then
-        widget = EXUI:CreateDivider(container, pw)
+        widget = EXUI:CreateSettingsSeparator(container, pw)
     elseif ele.type == "button" then
         widget = EXUI:CreateButton(container, pw, ph, ele.label, function()
             if ele.func then ele.func() end
@@ -1395,7 +1436,8 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
                     if not IsCurrentCardContent() then return false end
                     local height
                     if first == ctx then height = second else height = first end
-                    return cardOwner.session:_SetReportedContentHeight(cardOwner.card, height)
+                    return cardOwner.session:_SetReportedContentHeight(cardOwner.card,
+                        ele._exCardSourceItem or ele, height)
                 end
                 ctx.GetContentWidth = function()
                     if not IsCurrentCardContent() then return 0 end
@@ -1516,13 +1558,11 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         widget = EXUI:CreateMultiSelectDropdown(container, pw, ele.label, itemsList, curVal, function()
             NotifyCompositeWrite(moduleKey, fullPath)
         end, ele)
-    elseif ele.type == "itemenabled" or ele.type == "itemidentity"
+    elseif ele.type == "itemenabled"
         or ele.type == "itemquantity" or ele.type == "itemdelete" then
         if type(curVal) ~= "table" then
             invalidItemRecord = true
-            local text = ele.type == "itemidentity"
-                and (L["无效物品记录"] .. " (" .. tostring(ele.itemID or dataKey) .. "): " .. tostring(curVal))
-                or "—"
+            local text = "—"
             widget = EXUI:CreateDescription(container, text, pw)
         elseif ele.type == "itemenabled" then
             widget = EXUI:CreateCheckbox(container, ele.label or "", curVal.enabled == true, function(value)
@@ -1532,13 +1572,8 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
             widget._exGridRefreshItemRecordCell = function(self)
                 self:SetChecked(curVal.enabled == true)
             end
-        elseif ele.type == "itemidentity" then
-            widget = EXUI:CreateItemIdentity(container, pw, ph, tonumber(ele.itemID) or curVal.id or 0)
-            widget._exGridRefreshItemRecordCell = function(self)
-                self:_exUpdateItemIdentity()
-            end
         elseif ele.type == "itemquantity" then
-            widget = EXUI:CreateEditBox(container, tostring(curVal.quantity or 1), pw, 26, nil, {})
+            widget = EXUI:CreateEditBox(container, tostring(curVal.quantity or 1), pw, GM.size.inputHeight, nil, {})
             widget:SetJustifyH("CENTER")
             widget:SetNumeric(true)
             -- Preserve the original ItemConfig Enter/focus-loss write order,
@@ -1585,26 +1620,6 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
             items = ele.items or {},
             value = curVal,
             disabled = ele.disabled,
-            sizing = ele.sizing,
-            minItemWidth = ele.minItemWidth,
-            itemHeight = ele.itemHeight,
-            onChange = Setter,
-        })
-    elseif ele.type == "optiongroup" then
-        if ele.mode == "multiple" and type(curVal) ~= "table" then
-            SetConfigValue(config, ele, {}, moduleKey, fullPath, "silent")
-            curVal = ReadCurrentValue() or {}
-        end
-        widget = EXUI:CreateOptionGroup(container, {
-            width = pw,
-            items = ele.items or {},
-            value = curVal,
-            mode = ele.mode,
-            allowEmpty = ele.allowEmpty,
-            disabled = ele.disabled,
-            appearance = ele.appearance,
-            wrap = ele.wrap,
-            columns = ele.columns,
             sizing = ele.sizing,
             minItemWidth = ele.minItemWidth,
             itemHeight = ele.itemHeight,
@@ -1761,30 +1776,6 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
         local timerBarPath = bindRoot and (contextPath or "") or fullPath
         widget = EXUI:CreateTimerBarGroup(container, timerBarGroupWidth, ele.label, curVal, nil, function() NotifyCompositeWrite(moduleKey, timerBarPath) end, BuildCompositeOptions(ele.opts, moduleKey, timerBarPath))
         widget._exGridWidth = timerBarGroupWidth
-    elseif ele.type == "auradurationbargroup" then
-        local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
-        widget = EXUI:CreateAuraDurationBarGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
-        widget._exGridWidth = pw
-    elseif ele.type == "auraapplicationbargroup" then
-        local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
-        widget = EXUI:CreateAuraApplicationBarGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
-        widget._exGridWidth = pw
-    elseif ele.type == "auradispelbordergroup" then
-        local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
-        widget = EXUI:CreateAuraDispelBorderGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end)
-        widget._exGridWidth = pw
-    elseif ele.type == "aurasortgroup" then
-        local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
-        widget = EXUI:CreateAuraSortGroup(container, pw, ele.label, auraConfig, ele.key, function() NotifyCompositeWrite(moduleKey, fullPath) end)
-        widget._exGridWidth = pw
-    elseif ele.type == "aurachildelementsgroup" then
-        local auraConfig = contextPath and (GetConfigPath(config, contextPath) or config) or config
-        -- Aura child elements can be bound directly to display.aura.  In
-        -- root mode `key` remains the Grid identity only; passing it through
-        -- would create the invalid aura.children.children table.
-        local bindKey = (type(ele.opts) == "table" and ele.opts.bindRoot == true) and nil or ele.key
-        widget = EXUI:CreateAuraChildElementsGroup(container, pw, ele.label, auraConfig, bindKey, function() NotifyCompositeWrite(moduleKey, fullPath) end, BuildCompositeOptions(ele.opts, moduleKey, fullPath))
-        widget._exGridWidth = pw
     end
 
     if widget then
@@ -1841,16 +1832,20 @@ function Grid:CreateWidget(container, ele, config, moduleKey, contextPath)
             if widget.EnableMouse then
                 widget:EnableMouse(false)
             end
-            widget:SetScript("OnEnter", nil)
-            widget:SetScript("OnLeave", nil)
+            -- 这些槽位上挂着 Core 的 checkbox 画器（本体 OnLeave 负责 pressed
+            -- 复位）。裸 SetScript(nil) 会把画器连同安装记录的「已装」状态一起
+            -- 留成不一致，下面的 ApplyControlAppearance 就补不回来；走
+            -- ClearControlScript 同时丢掉记录，画器正好在那一步重装。
+            EXUI:ClearControlScript(widget, "OnEnter")
+            EXUI:ClearControlScript(widget, "OnLeave")
             if widget.checkbox then
                 if widget.checkbox.EnableMouse then
                     widget.checkbox:EnableMouse(true)
                 end
-                widget.checkbox:SetScript("OnEnter", nil)
-                widget.checkbox:SetScript("OnLeave", nil)
-                widget.checkbox:SetScript("PreClick", nil)
-                widget.checkbox:SetScript("PostClick", nil)
+                EXUI:ClearControlScript(widget.checkbox, "OnEnter")
+                EXUI:ClearControlScript(widget.checkbox, "OnLeave")
+                EXUI:ClearControlScript(widget.checkbox, "PreClick")
+                EXUI:ClearControlScript(widget.checkbox, "PostClick")
             end
         end
 
@@ -1926,6 +1921,18 @@ do
             and text and text.IsObjectType and text:IsObjectType("FontString") or false
     end
 
+    -- [WEB-REQ 28] 普通行右侧控件的最小可用宽（窄栏下文字列收窄/控件换行的依据）；
+    -- 整行、特殊 profile（EXBoss 技能行）与非矩形控件返回 nil，沿用旧算法。
+    local function SettingsRowControlMinWidth(widget, ordinaryControl, row)
+        if row.fullWidth == true or not widget then return nil end
+        if ordinaryControl then
+            return widget._gridType == "GridSlider" and GM.size.settingsRowSliderMinWidth
+                or GM.size.settingsRowControlMinWidth
+        end
+        if widget._gridType == "GridButton" then return GM.size.settingsRowControlMinWidth end
+        return nil
+    end
+
     local function IsOrdinarySettingsControl(widget)
         if not widget then return false end
         local kind = widget._gridType
@@ -1952,11 +1959,11 @@ do
         return session and not session.released and session or nil
     end
 
-    function SettingsListMixin:ScheduleDeferredPillHoverRefresh(widgets)
+    function SettingsListMixin:ScheduleDeferredCardHoverRefresh(widgets)
         if self.released or not (_G.C_Timer and type(_G.C_Timer.After) == "function") then return end
         local owner = self.grid.CardSessionOwners[self.parent]
         local cardSession = owner and owner.session
-        local request = self.pillHoverRefreshRequest
+        local request = self.cardHoverRefreshRequest
         if request then
             request.widgets = widgets
             return
@@ -1965,41 +1972,41 @@ do
             widgets = widgets, parent = self.parent,
             cardSession = cardSession, generation = cardSession and cardSession.generation,
         }
-        self.pillHoverRefreshRequest = request
+        self.cardHoverRefreshRequest = request
         _G.C_Timer.After(0, function()
             if self.released or sessions[request.parent] ~= self
-                or self.pillHoverRefreshRequest ~= request then return end
-            self.pillHoverRefreshRequest = nil
+                or self.cardHoverRefreshRequest ~= request then return end
+            self.cardHoverRefreshRequest = nil
             local currentOwner = self.grid.CardSessionOwners[request.parent]
             local currentSession = currentOwner and currentOwner.session
             if currentSession ~= request.cardSession or (currentSession
                 and (currentSession.released or currentSession.generation ~= request.generation)) then
-                self.pillHoverRefreshNeeded = nil
+                self.cardHoverRefreshNeeded = nil
                 return
             end
             -- A later stable layout consumes this request if another layout
             -- is already pending. This callback never polls or reschedules itself.
             if self.busy or (currentSession and (currentSession.reflowBusy
                 or currentSession.reflowPending or currentSession.reflowScheduled)) then return end
-            self.pillHoverRefreshNeeded = nil
-            self:RefreshPillVisuals(false, request.widgets)
+            self.cardHoverRefreshNeeded = nil
+            self:RefreshCardVisuals(false, request.widgets)
         end)
     end
 
-    function SettingsListMixin:RefreshPillVisuals(allowDeferred, expectedWidgets)
+    function SettingsListMixin:RefreshCardVisuals(allowDeferred, expectedWidgets)
         if self.released then return end
         local widgets, needsDeferred = {}, false
         local function Refresh(widget)
-            if not widget or widget._exSettingsPresentation ~= "pill" then return end
+            if not widget or widget._exSettingsPresentation ~= "card" then return end
             local expected = expectedWidgets and expectedWidgets[widget]
             if expectedWidgets and (not expected or widget:GetParent() ~= expected.parent
                 or widget.checkbox ~= expected.checkbox
                 or widget._exSettingsListVisualState ~= expected.visualState) then return end
             if allowDeferred == false then
-                EXUI:RefreshSettingsListPillHoverVisual(widget)
+                EXUI:RefreshSettingsListCardHoverVisual(widget)
                 return
             end
-            local _, wasPending = EXUI:RefreshSettingsListPillVisual(widget)
+            local _, wasPending = EXUI:RefreshSettingsListCardVisual(widget)
             needsDeferred = needsDeferred or wasPending
             widgets[widget] = {
                 parent = widget:GetParent(), checkbox = widget.checkbox,
@@ -2013,8 +2020,8 @@ do
             end
         end
         if allowDeferred ~= false then
-            self.pillHoverRefreshNeeded = self.pillHoverRefreshNeeded or needsDeferred
-            if self.pillHoverRefreshNeeded then self:ScheduleDeferredPillHoverRefresh(widgets) end
+            self.cardHoverRefreshNeeded = self.cardHoverRefreshNeeded or needsDeferred
+            if self.cardHoverRefreshNeeded then self:ScheduleDeferredCardHoverRefresh(widgets) end
         end
     end
 
@@ -2045,7 +2052,8 @@ do
             local entry = session.entries[index]
             if entry.visible then
                 if not entry.informational and (entry.widget or entry.controls or entry.cells) then
-                    EXUI:SetSettingsRowLast(entry.host, not nextRow or nextSection ~= entry.section)
+                    EXUI:SetSettingsRowLast(entry.host,
+                        session.showDividers == false or not nextRow or nextSection ~= entry.section)
                     nextRow, nextSection = true, entry.section
                 else
                     nextRow, nextSection = false, nil
@@ -2084,7 +2092,7 @@ do
                         local textRegion = cell.widget.text
                             or (cell.widget.GetStringHeight and cell.widget)
                         if cell.role == "tableText" and textRegion then
-                            local measuredHeight = math.max(cell.borrowedKind == "text" and 1 or 28, textRegion:GetStringHeight())
+                            local measuredHeight = math.max(cell.borrowedKind == "text" and 1 or GM.size.checkboxRowHeight, textRegion:GetStringHeight())
                             cell.widget:SetHeight(measuredHeight)
                             metrics[index].height = measuredHeight
                         elseif cell.widget._gridType == "GridDescription" and cell.widget.text then
@@ -2104,10 +2112,24 @@ do
                 end
             elseif entry.controls then
                 local metrics = {}
+                -- 选项块（card）的文字区 = 宽度 - 左 14 - 右 30（右侧给蓝色对勾角标），
+                -- 所以自然宽必须按文字实际宽度算；同一行所有选项块取同一个最大值，保持等宽。
+                -- 这个自然宽同时就是选项块的请求宽度：选项块不参与剩余空间平分，
+                -- 否则一行只放得下一个，整行被单个块吃满。
+                local cardNaturalWidth
+                for _, control in ipairs(entry.controls) do
+                    if control.presentation == "card" and control.widget:IsShown() then
+                        local card = control.widget.checkbox._exSettingsCardSurface
+                        local natural = 14 + (control.widget._exSettingsCardIcon and 24 or 0)
+                            + math.ceil(card.Title:GetUnboundedStringWidth()) + 30
+                        cardNaturalWidth = math.max(cardNaturalWidth or 0, natural)
+                    end
+                end
                 for index, control in ipairs(entry.controls) do
-                    local naturalWidth = control.presentation == "pill"
-                        and control.widget._exSettingsPillNaturalWidth or control.preparedWidth
+                    local naturalWidth = control.presentation == "card"
+                        and cardNaturalWidth or control.preparedWidth
                     metrics[index] = {
+                        minWidth = control.presentation == "card" and cardNaturalWidth or nil,
                         widget = entry.specializationControlsLayout and control.widget or nil,
                         slotKind = entry.specializationControlsLayout,
                         height = control.widget:GetHeight(),
@@ -2117,7 +2139,7 @@ do
                         visible = control.widget:IsShown(),
                         width = (control.requestedWidth == "content" and naturalWidth
                             or control.requestedWidth)
-                            or (control.presentation == "pill" and naturalWidth or nil),
+                            or (control.presentation == "card" and naturalWidth or nil),
                     }
                 end
                 local rects
@@ -2153,8 +2175,8 @@ do
                     elseif session.presentationProfile == "exbossSkill" and entry.htmlControlsLayout
                         and control.role == "label" and widget._gridType == "GridCheckbox" and widget.label then
                         -- Only the row reserves wrapped label space. The original
-                        -- checkbox and its 28px control body keep their size.
-                        measuredHeight = math.max(28, math.ceil(widget.label:GetStringHeight()))
+                        -- checkbox and its GM.size.checkboxRowHeight control body keep their size.
+                        measuredHeight = math.max(GM.size.checkboxRowHeight, math.ceil(widget.label:GetStringHeight()))
                         metrics[index].labelBodyHeight = widget:GetHeight()
                     end
                     metrics[index].height = measuredHeight
@@ -2230,23 +2252,23 @@ do
         session.height = math.max(1, y)
         if not session.grid.CardSessionOwners[session.parent] then
             session.parent:SetHeight(session.height)
-            session:RefreshPillVisuals()
+            session:RefreshCardVisuals()
         end
         return session.height
     end
 
-    function SettingsListMixin:Relayout(width, pillVisualReflow)
+    function SettingsListMixin:Relayout(width, cardVisualReflow)
         if self.released then return self.height or 1 end
         if self.visualLayoutBusy then return self.height or 1 end
         if self.busy then
-            if pillVisualReflow then
+            if cardVisualReflow then
                 self.relayoutPending = true
                 if width ~= nil then self.relayoutPendingWidth = width end
             end
             return self.height or 1
         end
         local result
-        -- A final pill paint can discover its new natural width after the
+        -- A final card paint can discover its new natural width after the
         -- first measurement. Consume that visual request once, without timers
         -- or recursive layout; the second pass measures the stored new width.
         for pass = 1, 2 do
@@ -2298,7 +2320,7 @@ do
             self.summaryEnabled = nil
         end
         self.relayoutPending, self.relayoutPendingWidth = nil, nil
-        self.pillHoverRefreshRequest, self.pillHoverRefreshNeeded = nil, nil
+        self.cardHoverRefreshRequest, self.cardHoverRefreshNeeded = nil, nil
         sessions[self.parent] = nil
         for _, saved in ipairs(self.suppressedDividers or {}) do saved.widget:SetShown(saved.shown) end
         for _, saved in ipairs(self.externalDescriptions or {}) do
@@ -2356,6 +2378,9 @@ do
     function Grid:MountSettingsList(parent, declaration)
         if not parent or type(declaration) ~= "table" then
             error("[ExwindGrid] settings list requires a parent and presentation declaration", 2)
+        end
+        if declaration.showDividers ~= nil and type(declaration.showDividers) ~= "boolean" then
+            error("[ExwindGrid] settings list showDividers must be boolean", 2)
         end
         if self:GetSettingsListSession(parent) then
             error("[ExwindGrid] release the existing settings list before mounting", 2)
@@ -2459,6 +2484,7 @@ do
             end
         end
         local session = setmetatable({ grid = self, parent = parent, entries = {},
+            showDividers = declaration.showDividers,
             presentationProfile = declaration.presentationProfile,
             headerlessColumns = declaration.tableHeader == false and declaration.columns or nil },
             { __index = SettingsListMixin })
@@ -2490,7 +2516,9 @@ do
                 local saved = { widget = widget, width = widget:GetWidth(), height = widget:GetHeight(), points = {} }
                 session.externalDescriptions[#session.externalDescriptions + 1] = saved
                 for index = 1, widget:GetNumPoints() do saved.points[index] = { widget:GetPoint(index) } end
-                EXUI:PrepareSettingsListControl(widget, { role = "description" })
+                EXUI:PrepareSettingsListControl(widget, {
+                    role = "description", descriptionFontSize = declaration.externalDescriptionFontSize,
+                })
                 WatchVisibility(widget)
             end
             AddHeading({ title = declaration.title, description = declaration.description,
@@ -2525,10 +2553,10 @@ do
                     local widget = row.widget
                     local ordinaryControl = not row.fullWidth and not informational
                         and not row.controls and not row.cells
-                        and row.presentation ~= "pill" and row.presentation ~= "switch"
+                        and row.presentation ~= "card" and row.presentation ~= "switch"
                         and IsOrdinarySettingsControl(widget)
                     local staticCells = {}
-                    for index, cell in ipairs(row.cells or {}) do staticCells[index] = cell.text end
+                    for index, cell in ipairs(row.cells or {}) do staticCells[index] = cell.text ~= nil and cell or nil end
                     local specializationLayout = row.controlsLayout == "specQueue" or row.controlsLayout == "specAlpha"
                     local htmlLayout = row.controlsLayout == "fieldRow" or row.controlsLayout == "compactVoice"
                     local host = informational and EXUI:CreateSettingsSection(parent, {
@@ -2544,6 +2572,7 @@ do
                         htmlControlsLayout = htmlLayout and row.controlsLayout or nil,
                         controlWidth = row.controlWidth,
                         controlKind = ordinaryControl and "ordinary" or nil,
+                        controlMinWidth = SettingsRowControlMinWidth(widget, ordinaryControl, row),
                         inputWidthPercent = row.inputWidthPercent,
                         fullWidth = row.fullWidth == true,
                         isLast = rowIndex == #section.rows,
@@ -2931,6 +2960,7 @@ do
                 cardState.emptySharedTableMember = tableGroup ~= nil and tableHeader == false
                     and #rows == 0 and #externalDescriptions == 0 and #sectionDescriptions == 0
                 local mounted, list = pcall(self.MountSettingsList, self, cardState.body, {
+                    showDividers = presentation.showDividers,
                     presentationProfile = presentation.cardPresentation,
                     columns = tableGroup and tableGroup.tableColumns or presentation.columns,
                     tableHeader = tableHeader,
@@ -3459,8 +3489,9 @@ local function BuildCardMeasuredItems(grid, container, sourceItems, config, cont
         if item.measure == nil and item.type == "slider" then item.measure = true end
 
         local pixelHeight
-        if item._exCardState == cardState and cardState.reportedHeight ~= nil then
-            pixelHeight = cardState.reportedHeight
+        local reportedHeight = cardState.reportedHeights and cardState.reportedHeights[source]
+        if reportedHeight ~= nil then
+            pixelHeight = reportedHeight
         else
             local _, _, pixelWidth = grid:GetPixelRect(item.x, item.y, item.w, item.h, container)
             pixelHeight = NormalizeMeasuredHeight(GetMeasureResult(grid, item, pixelWidth, scopedDB))
@@ -3691,17 +3722,24 @@ function CardSessionMixin:GetDiagnostics()
     return result
 end
 
-function CardSessionMixin:_SetReportedContentHeight(cardState, height)
+function CardSessionMixin:_SetReportedContentHeight(cardState, sourceItem, height)
     if self.released or not cardState then return false end
     height = tonumber(height)
     if not height or height ~= height or height < 0 then
         self:_Diagnostic(cardState, "height", "SetContentHeight requires a finite value >= 0")
         return false
     end
-    if cardState.reportedHeight ~= nil and math.abs(cardState.reportedHeight - height) < 0.01 then
+    -- Each custom element owns its measurement, even when several share one Card.
+    local heights = cardState.reportedHeights
+    local previous = heights and heights[sourceItem]
+    if previous ~= nil and math.abs(previous - height) < 0.01 then
         return false
     end
-    cardState.reportedHeight = height
+    if not heights then
+        heights = {}
+        cardState.reportedHeights = heights
+    end
+    heights[sourceItem] = height
     self.grid:RequestReflow(cardState.body)
     return true
 end
@@ -4156,7 +4194,7 @@ local function PerformSessionRelayout(session)
     ClampSessionScroll(session, totalHeight)
     for _, cardState in ipairs(session.cards) do
         local list = session.grid:GetSettingsListSession(cardState.body)
-        if list then list:RefreshPillVisuals() end
+        if list then list:RefreshCardVisuals() end
     end
     if session.typedSections then session.grid:CheckSettingsDeclarationBounds(session) end
 end
@@ -4238,7 +4276,7 @@ local function ReleaseCardBody(session, cardState)
     cardState.widgetsByOrdinal = {}
     cardState.identityByOrdinal = {}
     cardState.renderableCount = 0
-    cardState.reportedHeight = nil
+    cardState.reportedHeights = nil
     cardState.lastContentHeight = nil
     if not released then error(releaseReason, 0) end
 end
@@ -4595,9 +4633,9 @@ do
     local itemFields = { key=true, type=true, label=true, description=true, inputWidthPercent=true,
         parentKey=true, subKey=true, setKey=true, options=true, optionsSource=true,
         min=true, max=true, step=true, itemID=true, canDelete=true, baseLabel=true, func=true, multiple=true,
-        media=true, search=true, originalOptions=true }
+        media=true, search=true, originalOptions=true, presentation=true }
     local ordinaryTypes = { switch=true, input=true, select=true, slider=true, color=true, button=true }
-    local recordTypes = { itemenabled=true, itemidentity=true, itemquantity=true, itemdelete=true }
+    local recordTypes = { itemenabled=true, itemquantity=true, itemdelete=true }
     local tableInformationTypes = { description=true }
     local function Item(item, location, keys, tableCell, moduleKey)
         Fields(item, itemFields, location)
@@ -4609,6 +4647,10 @@ do
             Fail(location, "unsupported control type " .. tostring(item.type))
         end
         String(item.label, location .. ".label", tableCell)
+        if item.presentation ~= nil and (item.type ~= "switch"
+            or (item.presentation ~= "card" and item.presentation ~= "card")) then
+            Fail(location, "presentation requires an original switch with card appearance")
+        end
         if type(item.description) == "table" then
             local description = item.description
             Fields(description, { key=true, type=true, label=true }, location .. ".description")
@@ -4725,8 +4767,11 @@ do
         for index, cell in ipairs(row.cells) do
             local at = location .. ".cells[" .. index .. "]"
             if type(cell) == "table" and cell.text ~= nil then
-                Fields(cell, { text=true }, at)
+                Fields(cell, { text=true, icon=true, itemID=true }, at)
                 String(cell.text, at .. ".text", true)
+                if cell.icon ~= nil and type(cell.icon) ~= "string" and type(cell.icon) ~= "number" then Fail(at .. ".icon", "texture path or file ID required") end
+                if type(cell.icon) == "number" then Finite(cell.icon, at .. ".icon") end
+                if cell.itemID ~= nil then Finite(cell.itemID, at .. ".itemID") end
             else
                 Item(cell, at, keys, true)
             end
@@ -4826,6 +4871,7 @@ do
             local kinds = { button=true, checkbox=true, dropdown=true, lsm_background=true,
                 lsm_border=true, lsm_texture=true, input=true, color=true, slider=true }
             local fieldNames = { key=true, path=true, type=true, label=true, description=true,
+                disabled=true,
                 min=true, max=true, step=true, items=true, onClick=true, row=true, column=true,
                 presentation=true, valuePosition=true, controlWidth=true, inputWidthPercent=true,
                 minWidth=true, preferredWidth=true, width=true, span=true, fullWidth=true, variant=true }
@@ -4835,13 +4881,16 @@ do
                 if not kinds[field.type] then Fail(at, "unsupported original common-settings field type") end
                 String(field.label, at .. ".label", true)
                 String(field.description, at .. ".description", true)
+                if field.disabled ~= nil and type(field.disabled) ~= "boolean" then
+                    Fail(at, "disabled must be boolean")
+                end
                 if field.type ~= "button" then String(field.path or field.key, at .. ".path/key") end
                 if field.key ~= nil then String(field.key, at .. ".key") end
                 if field.path ~= nil then String(field.path, at .. ".path") end
                 if field.items ~= nil and (field.type ~= "dropdown" or type(field.items) ~= "table") then Fail(at, "items require dropdown") end
                 if field.onClick ~= nil and (field.type ~= "button" or type(field.onClick) ~= "function") then Fail(at, "onClick requires an original button callback") end
-                if field.presentation ~= nil and field.presentation ~= "switch" and field.presentation ~= "pill" then
-                    Fail(at, "presentation must be switch or pill")
+                if field.presentation ~= nil and field.presentation ~= "switch" and field.presentation ~= "card" then
+                    Fail(at, "presentation must be switch or card")
                 end
                 if field.valuePosition ~= nil and field.valuePosition ~= "right" and field.valuePosition ~= "top" then
                     Fail(at, "valuePosition must be right or top")
@@ -4918,7 +4967,7 @@ do
                             if Array(item.controls, where .. ".controls") == 0 then Fail(where, "control row cannot be empty") end
                             for index, control in ipairs(item.controls) do
                                 local cell = where .. ".controls[" .. index .. "]"
-                                Fields(control, { type=true, key=true, label=true,
+                                Fields(control, { type=true, key=true, label=true, presentation=true,
                                     parentKey=true, subKey=true, setKey=true }, cell)
                                 if control.type ~= "switch" then Fail(cell, "control row requires original independent switches") end
                                 Item(control, cell, keys, false, context.moduleKey or context.pageId)
@@ -5071,7 +5120,7 @@ do
             end
         end
         source.x, source.y, source.w, source.h = 1, ordinal, CARD_GRID_COLS, 1
-        source.measure = { preferredHeight=28, minHeight=28 }
+        source.measure = { preferredHeight=GM.size.controlHeight, minHeight=GM.size.controlHeight }
         return source
     end
     local function BuildTypedTable(section, resolve)
@@ -5081,17 +5130,19 @@ do
         local function Row(record, add)
             local row = { cells={} }
             for index, item in ipairs(record.cells) do
-                if item.text ~= nil then row.cells[index] = { text=item.text }
+                if item.text ~= nil then
+                    row.cells[index] = { text=item.text, icon=item.icon, itemID=item.itemID }
+                    if item.icon then columns[index].weight = 1.6 end
                 else
                     local widget, borrowedKind = resolve(item)
                     row.cells[index] = { widget=widget,
-                        ordinaryControl=not tableInformationTypes[item.type], borrowedKind=borrowedKind,
+                        ordinaryControl=item.type ~= "actions" and not tableInformationTypes[item.type], borrowedKind=borrowedKind,
                         hideLabel=#columns > 1,
                         valuePosition=item.type == "slider" and "right" or nil,
                         presentation=add and item.type == "button" and "primary" or nil }
                     local fixed = widths[item.type]
                     if fixed and #columns > 1 then columns[index].width = math.max(columns[index].width or 0, fixed) end
-                    if item.type == "itemidentity" then columns[index].weight = 1.6 end
+                    if item.icon then columns[index].weight = 1.6 end
                 end
             end
             rows[#rows + 1] = row
@@ -5150,18 +5201,24 @@ do
             if not widget then Fail(CardLocation(cardState.session.context, cardState.id), "factory did not mount " .. item.key) end
             return widget
         end
+        local sectionDescriptionWidget = type(section.description) == "table"
+            and Widget(section.description) or nil
+        local footerDescriptionWidget = section.footerDescription and Widget(section.footerDescription) or nil
+        local externalDescriptions = {}
+        if sectionDescriptionWidget then externalDescriptions[#externalDescriptions + 1] = sectionDescriptionWidget end
+        if footerDescriptionWidget then externalDescriptions[#externalDescriptions + 1] = footerDescriptionWidget end
+        cardState.settingsDescriptionWidgets = #externalDescriptions > 0 and externalDescriptions or nil
+        if cardState.settingsSection then
+            cardState.settingsSection._exSettingsSectionDescriptionWidgets = cardState.settingsDescriptionWidgets or {}
+        end
         if section.kind == "settings" then
-            if type(section.description) == "table" then
-                rows[#rows+1] = { widget=Widget(section.description), informational=true,
-                    descriptionFontSize=section.description.fontSize }
-            end
             local lastClass, classRow
             for _, item in ipairs(section.items) do
                 if item.controls then
                     local row = { label=item.label, controls={} }
                     for _, control in ipairs(item.controls) do
                         row.controls[#row.controls+1] = {
-                            widget=Widget(control), presentation="pill", hideLabel=false,
+                            widget=Widget(control), presentation=control.presentation or "card", hideLabel=false,
                         }
                     end
                     rows[#rows+1] = row
@@ -5180,20 +5237,24 @@ do
                         description=type(item.description) == "string" and item.description or nil,
                         descriptionWidget=type(item.description) == "table" and Widget(item.description) or nil,
                         inputWidthPercent=item.inputWidthPercent,
-                        presentation=item.type == "switch" and "switch" or nil }
+                        -- [WEB-REQ 26] 单个 switch 项必须透传声明的 card；未声明才用默认的 switch 开关。
+                        presentation=item.type == "switch" and (item.presentation or "switch") or nil }
                     lastClass, classRow = nil, nil
                 end
                 end
             end
-            if section.footerDescription then
-                rows[#rows+1] = { widget=Widget(section.footerDescription), informational=true, omitEmpty=true,
-                    descriptionFontSize=section.footerDescription.fontSize }
-            end
+            -- A retained footer FontString is displayed below the external section
+            -- title, never as an independent gray row inside the settings card.
         else
             rows, columns = BuildTypedTable(section, Widget)
         end
         PrepareTypedCard(cardState)
-        local list = grid:MountSettingsList(cardState.body, { columns=columns, sections={{ rows=rows }} })
+        local list = grid:MountSettingsList(cardState.body, {
+            columns=columns, externalDescriptionWidgets=cardState.settingsDescriptionWidgets,
+            externalDescriptionFontSize=(sectionDescriptionWidget and section.description.fontSize)
+                or (section.footerDescription and section.footerDescription.fontSize) or nil,
+            sections={{ rows=rows }},
+        })
         list.card = cardState.card
     end
 
@@ -5237,7 +5298,7 @@ do
             if column.title == nil then Fail(at, "column title is required") end
         end
         if type(declaration.supportsAdd) ~= "boolean" then Fail(at, "supportsAdd must be boolean") end
-        local kinds = { input=true, switch=true, select=true, slider=true, color=true, button=true, text=true, multiline=true }
+        local kinds = { input=true, switch=true, select=true, slider=true, color=true, button=true, text=true, multiline=true, actions=true }
         local seen = {}
         if descriptionWidget then seen[descriptionWidget] = true end
         local function Row(row, location)
@@ -5262,6 +5323,9 @@ do
                     if widget:GetParent() ~= parent then
                         Fail(where, "borrowed control must be an existing same-parent region")
                     end
+                    if cell.type == "actions" and widget._isCompositeHost ~= true then
+                        Fail(where, "borrowed actions require their original CompositeHost")
+                    end
                     if cell.type == "slider" and widget._gridType ~= "GridSlider" then
                         Fail(where, "borrowed slider requires its original GridSlider")
                     end
@@ -5280,6 +5344,7 @@ do
         Array(declaration.records, at .. ".records")
         for index, row in ipairs(declaration.records) do Row(row, at .. ".records[" .. index .. "]") end
         local rows, columns = BuildTypedTable(declaration, function(cell)
+            if cell.type == "actions" then return cell.widget end
             return cell.widget, cell.widget._gridType == nil and cell.type or nil
         end)
         local height = parent:GetHeight()
@@ -5538,7 +5603,8 @@ do
                 -- Special cards/settingsGroups retain their original collapse behavior.
                 cardState.settingsSection = EXUI:CreateSettingsSection(parent,
                     { kind="section", title=section.title,
-                        description=type(section.description) == "string" and section.description or nil })
+                        description=type(section.description) == "string" and section.description or nil,
+                        descriptionWidgets=cardState.settingsDescriptionWidgets })
                 BuildTypedBody(self, cardState)
                 card:SetLayoutInvalidationHandler(function() self:RequestReflow(card) end)
             end
@@ -5803,67 +5869,19 @@ function Grid:ShiftRows(startY, delta)
 end
 
 function Grid:ShowRowContextMenu(row, x, y)
-    if not self.ContextMenu then
-        local cm = CreateFrame("Frame", "ExwindGridContextMenu", UIParent, "BackdropTemplate")
-        cm:SetSize(140, 75)
-        cm:SetBackdrop({
-            bgFile = "Interface\\Buttons\\WHITE8X8",
-            edgeFile = "Interface\\Buttons\\WHITE8X8",
-            edgeSize = 1,
-            insets = { left = 1, right = 1, top = 1, bottom = 1 }
-        })
-        cm:SetBackdropColor(0.05, 0.05, 0.1, 0.95)
-
-        -- 保持高层级，确保在任何 Frame 之上
-        cm:SetFrameStrata("TOOLTIP")
-        cm:SetFrameLevel(9500)
-
-        local function CreateMenuBtn(text, parent, yOff)
-            local btn = CreateFrame("Button", nil, parent, "UIPanelButtonTemplate")
-            btn:SetSize(125, 26)
-            btn:SetPoint("TOP", 0, yOff)
-            btn:SetText(text)
-            return btn
-        end
-
-        cm.InsertBtn = CreateMenuBtn(L["插入行"], cm, -10)
-        cm.InsertBtn:SetScript("OnClick", function()
-            local targetRow = Grid.ContextMenu.targetRow
-            Grid:ShiftRows(targetRow, 1)
-            Grid.ContextMenu:Hide()
-            if Grid.MenuCloser then Grid.MenuCloser:Hide() end
-        end)
-
-        cm.DeleteBtn = CreateMenuBtn(L["删除行"], cm, -38)
-        cm.DeleteBtn:SetScript("OnClick", function()
-            local targetRow = Grid.ContextMenu.targetRow
-            Grid:ShiftRows(targetRow + 1, -1)
-            Grid.ContextMenu:Hide()
-            if Grid.MenuCloser then Grid.MenuCloser:Hide() end
-        end)
-
-        self.ContextMenu = cm
-    end
-
-    self.ContextMenu.targetRow = row
-    self.ContextMenu:ClearAllPoints()
-    self.ContextMenu:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
-    self.ContextMenu:Show()
-
-    if not self.MenuCloser then
-        self.MenuCloser = CreateFrame("Button", nil, UIParent)
-        self.MenuCloser:SetAllPoints()
-        self.MenuCloser:SetFrameStrata("FULLSCREEN_DIALOG")
-        self.MenuCloser:SetFrameLevel(9000)
-        self.MenuCloser:SetScript("OnClick", function(f)
-            f:Hide()
-            Grid.ContextMenu:Hide()
-        end)
-    end
-    self.MenuCloser:SetFrameLevel(9000)
-    self.ContextMenu:SetFrameLevel(9500)
-
-    self.MenuCloser:Show()
+    EXUI:ShowContextMenu({
+        title = string.format("%s %d", L["行"] or "Row", row),
+        x = x, y = y,
+        items = {
+            { text = L["插入行"], icon = "add", onClick = function()
+                Grid:ShiftRows(row, 1)
+            end },
+            { divider = true },
+            { text = L["删除行"], icon = "delete", danger = true, onClick = function()
+                Grid:ShiftRows(row + 1, -1)
+            end },
+        },
+    })
 end
 
 function Grid:WrapWidgetForEdit(widget, key, container)
@@ -5944,7 +5962,7 @@ function Grid:WrapWidgetForEdit(widget, key, container)
             local newH = (wy - my) + 5
 
             -- Dropdown/LSM 的固定高度不仅是最终渲染规则，也是 Grid 编辑
-            -- 规则；否则预览会在重绘后回到 30px，但逻辑 h 已扩大，留下
+            -- 规则；否则预览会在重绘后回到固定高度（GM.size.dropdownHeight），但逻辑 h 已扩大，留下
             -- 看不见的碰撞占位。固定高度控件在编辑时只允许调整宽度。
             local fixedHeight = widget._exGridFixedHeight
             local previewHeight = fixedHeight or math.max(10, newH)
@@ -6136,24 +6154,24 @@ function Grid:ShowToolbar()
     tb:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
     tb:SetFrameStrata("HIGH")
 
-    local b1 = CreateFrame("Button", nil, tb, "UIPanelButtonTemplate")
-    b1:SetSize(140, 28); b1:SetPoint("LEFT", 10, 0)
-    b1:SetText(self:GetLiveCardSession() and L["导出 Card 包"] or L["导出导入包"])
-    b1:SetScript("OnClick", function() Grid:ExportImportPackage() end)
+    local b1 = EXUI:CreateButton(tb, 140, 28,
+        self:GetLiveCardSession() and L["导出 Card 包"] or L["导出导入包"],
+        function() Grid:ExportImportPackage() end, { compact = true })
+    b1:SetPoint("LEFT", 10, 0)
     tb.ExportButton = b1
 
-    local b2 = CreateFrame("Button", nil, tb, "UIPanelButtonTemplate")
-    b2:SetSize(100, 28); b2:SetPoint("LEFT", 155, 0); b2:SetText(L["保存退出"])
-    b2:SetScript("OnClick", function() Grid:ToggleLiveEdit(Grid.LiveContainer) end)
+    local b2 = EXUI:CreateButton(tb, 100, 28, L["保存退出"],
+        function() Grid:ToggleLiveEdit(Grid.LiveContainer) end, { compact = true })
+    b2:SetPoint("LEFT", 155, 0)
 
-    local b3 = CreateFrame("Button", nil, tb, "UIPanelButtonTemplate")
-    b3:SetSize(100, 28); b3:SetPoint("LEFT", 260, 0); b3:SetText(L["组件库"])
-    b3:SetScript("OnClick",
-        function() if Grid.Palette:IsShown() then Grid.Palette:Hide() else Grid.Palette:Show() end end)
+    local b3 = EXUI:CreateButton(tb, 100, 28, L["组件库"],
+        function() if Grid.Palette:IsShown() then Grid.Palette:Hide() else Grid.Palette:Show() end end,
+        { compact = true })
+    b3:SetPoint("LEFT", 260, 0)
 
-    local b4 = CreateFrame("Button", nil, tb, "UIPanelButtonTemplate")
-    b4:SetSize(125, 28); b4:SetPoint("LEFT", 365, 0); b4:SetText(L["导出默认值"])
-    b4:SetScript("OnClick", function() Grid:ExportDefaultsImportPackage() end)
+    local b4 = EXUI:CreateButton(tb, 125, 28, L["导出默认值"],
+        function() Grid:ExportDefaultsImportPackage() end, { compact = true })
+    b4:SetPoint("LEFT", 365, 0)
 
     self.LiveToolbar = tb
 end
@@ -6179,10 +6197,10 @@ function Grid:ShowPalette()
     }
     local y = -15
     for _, i in ipairs(types) do
-        local b = CreateFrame("Button", nil, p, "UIPanelButtonTemplate"); b:SetSize(140, 24); b:SetPoint("TOP", 0, y); b
-            :SetText(i.n); b:SetScript("OnClick", function()
+        local b = EXUI:CreateButton(p, 140, 24, i.n, function()
                 Grid:AddNewWidget(i.t, Grid.LiveEditContainer or Grid.LiveContainer)
-            end)
+            end, { compact = true })
+        b:SetPoint("TOP", 0, y)
         y = y - 28
     end
     self.Palette = p
@@ -6332,8 +6350,7 @@ function Grid:CreatePropertyPanel()
     p.lpos.b3 = CreatePosBtn("Right", "right", 140)
     p.lpos.b4 = CreatePosBtn("Default", nil, 210); p.lpos.b4:SetWidth(60)
 
-    local s = CreateFrame("Button", nil, p, "UIPanelButtonTemplate"); s:SetSize(130, 32); s:SetPoint("BOTTOMLEFT", 20, 20); s
-        :SetText(L["保存设置"]); s:SetScript("OnClick", function()
+    local s = EXUI:CreateButton(p, 130, 32, L["保存设置"], function()
         local e = Grid.Cur; if e then
             local before = { key = e.key, label = e.label, w = e.w, h = e.h, x = e.x, y = e.y }
             e.key = p.k.eb:GetText();
@@ -6380,11 +6397,11 @@ function Grid:CreatePropertyPanel()
             -- [Core] Label 属性已由实时控件更新到 'e' 中，此处**不要**从隐藏的 EditBox 覆盖它们
         end
         p:Hide(); Grid:RefreshLiveEditLayout(Grid.LiveEditContainer or Grid.LiveContainer)
-    end)
+    end, { compact = true })
+    s:SetPoint("BOTTOMLEFT", 20, 20)
 
 
-    local d = CreateFrame("Button", nil, p, "UIPanelButtonTemplate"); d:SetSize(130, 32); d:SetPoint("BOTTOMRIGHT", -20,
-        20); d:SetText(L["|cffff0000删除组件|r"]); d:SetScript("OnClick", function()
+    local d = EXUI:CreateButton(p, 130, 32, L["删除组件"], function()
         local current = Grid.Cur
         local source = current and current._exCardSourceItem
         local owner = Grid.LiveEditContainer and Grid.CardSessionOwners[Grid.LiveEditContainer]
@@ -6399,7 +6416,8 @@ function Grid:CreatePropertyPanel()
             end
         end
         p:Hide(); Grid:RefreshLiveEditLayout(Grid.LiveEditContainer or Grid.LiveContainer)
-    end)
+    end, { variant = "danger", compact = true })
+    d:SetPoint("BOTTOMRIGHT", -20, 20)
     self.PropPanel = p
 end
 
@@ -6956,19 +6974,13 @@ function Grid:ExportModuleSpec()
         print("|cffff8080[ExwindGrid]|r " .. (reason or L["当前页面没有可导出的模块定义"]))
         return false
     end
-    StaticPopupDialogs["EX_EXPORT_MODULE_SPEC"] = {
-        text = L["复制 MODULE_SPEC（当前预设默认值与 GUI 布局）:"],
-        button1 = L["好的"],
-        hasEditBox = 1,
-        OnShow = function(dialog)
-            dialog.EditBox:SetText(moduleSpecStr:gsub("|", "||"))
-            dialog.EditBox:HighlightText()
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true,
-    }
-    StaticPopup_Show("EX_EXPORT_MODULE_SPEC")
+    EXUI:ShowDialog({
+        sourceAddon = "ExwindCore", sourceModule = self.ModuleKey or L["布局"],
+        id = "EX_EXPORT_MODULE_SPEC", title = L["复制 MODULE_SPEC（当前预设默认值与 GUI 布局）:"], width = 650,
+        input = { text = moduleSpecStr:gsub("|", "||"), multiline = true, readOnly = true, highlight = true },
+        cancelButton = "close", defaultButton = "close",
+        buttons = { { id = "close", text = L["好的"], variant = "primary" } },
+    })
 end
 
 -- 独立默认值包不读取 MODULE_SPEC.gui，也不读取在线编辑器的工作布局。
@@ -6984,19 +6996,13 @@ function Grid:ExportDefaultsImportPackage()
         .. "    moduleKey = " .. string.format("%q", defaultData.moduleKey) .. ",\n"
         .. "    defaults = " .. serializeTable(defaultData.defaults, 2) .. ",\n"
         .. "}\n"
-    StaticPopupDialogs["EX_EXPORT_DEFAULTS_IMPORT_PACKAGE"] = {
-        text = L["复制默认值导入包（发送给 Codex 验收并导入）:"],
-        button1 = L["好的"],
-        hasEditBox = 1,
-        OnShow = function(dialog)
-            dialog.EditBox:SetText(package:gsub("|", "||"))
-            dialog.EditBox:HighlightText()
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true,
-    }
-    StaticPopup_Show("EX_EXPORT_DEFAULTS_IMPORT_PACKAGE")
+    EXUI:ShowDialog({
+        sourceAddon = "ExwindCore", sourceModule = self.ModuleKey or L["布局"],
+        id = "EX_EXPORT_DEFAULTS_IMPORT_PACKAGE", title = L["复制默认值导入包（发送给 Codex 验收并导入）:"], width = 650,
+        input = { text = package:gsub("|", "||"), multiline = true, readOnly = true, highlight = true },
+        cancelButton = "close", defaultButton = "close",
+        buttons = { { id = "close", text = L["好的"], variant = "primary" } },
+    })
     return true
 end
 
@@ -7016,19 +7022,13 @@ function Grid:ExportImportPackage()
             package = package .. "    defaults = " .. serializeTable(cardPage.defaults, 2) .. ",\n"
         end
         package = package .. "}\n"
-        StaticPopupDialogs["EX_EXPORT_IMPORT_PACKAGE"] = {
-            text = L["复制完整 Card 导出包（发送给 Codex 验收）:"],
-            button1 = L["好的"],
-            hasEditBox = 1,
-            OnShow = function(dialog)
-                dialog.EditBox:SetText(package:gsub("|", "||"))
-                dialog.EditBox:HighlightText()
-            end,
-            timeout = 0,
-            whileDead = true,
-            hideOnEscape = true,
-        }
-        StaticPopup_Show("EX_EXPORT_IMPORT_PACKAGE")
+        EXUI:ShowDialog({
+            sourceAddon = "ExwindCore", sourceModule = self.ModuleKey or L["布局"],
+            id = "EX_EXPORT_IMPORT_PACKAGE", title = L["复制完整 Card 导出包（发送给 Codex 验收）:"], width = 650,
+            input = { text = package:gsub("|", "||"), multiline = true, readOnly = true, highlight = true },
+            cancelButton = "close", defaultButton = "close",
+            buttons = { { id = "close", text = L["好的"], variant = "primary" } },
+        })
         return true
     end
 
@@ -7056,19 +7056,13 @@ function Grid:ExportImportPackage()
         dialogText = L["复制完整导入包（发送给 Codex 验收并导入）:"]
     end
 
-    StaticPopupDialogs["EX_EXPORT_IMPORT_PACKAGE"] = {
-        text = dialogText,
-        button1 = L["好的"],
-        hasEditBox = 1,
-        OnShow = function(dialog)
-            dialog.EditBox:SetText(package:gsub("|", "||"))
-            dialog.EditBox:HighlightText()
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true,
-    }
-    StaticPopup_Show("EX_EXPORT_IMPORT_PACKAGE")
+    EXUI:ShowDialog({
+        sourceAddon = "ExwindCore", sourceModule = self.ModuleKey or L["布局"],
+        id = "EX_EXPORT_IMPORT_PACKAGE", title = dialogText, width = 650,
+        input = { text = package:gsub("|", "||"), multiline = true, readOnly = true, highlight = true },
+        cancelButton = "close", defaultButton = "close",
+        buttons = { { id = "close", text = L["好的"], variant = "primary" } },
+    })
 end
 
 -- 仅导出布局
@@ -7076,19 +7070,13 @@ function Grid:ExportLayoutOnly()
     local cardPage = self:BuildCardPageExportData()
     if cardPage then
         local layoutStr = "gui = " .. serializeTable(cardPage.gui, 1, true)
-        StaticPopupDialogs["EX_EXPORT_LAYOUT"] = {
-            text = L["复制 Card gui 区块（保留 version/cards 结构）:"],
-            button1 = L["好的"],
-            hasEditBox = 1,
-            OnShow = function(dialog)
-                dialog.EditBox:SetText(layoutStr:gsub("|", "||"))
-                dialog.EditBox:HighlightText()
-            end,
-            timeout = 0,
-            whileDead = true,
-            hideOnEscape = true,
-        }
-        StaticPopup_Show("EX_EXPORT_LAYOUT")
+        EXUI:ShowDialog({
+            sourceAddon = "ExwindCore", sourceModule = self.ModuleKey or L["布局"],
+            id = "EX_EXPORT_LAYOUT", title = L["复制 Card gui 区块（保留 version/cards 结构）:"], width = 650,
+            input = { text = layoutStr:gsub("|", "||"), multiline = true, readOnly = true, highlight = true },
+            cancelButton = "close", defaultButton = "close",
+            buttons = { { id = "close", text = L["好的"], variant = "primary" } },
+        })
         return true
     end
 
@@ -7104,19 +7092,13 @@ function Grid:ExportLayoutOnly()
         dialogText = L["复制布局代码 (粘贴到模块结尾):"]
     end
 
-    StaticPopupDialogs["EX_EXPORT_LAYOUT"] = {
-        text = dialogText,
-        button1 = L["好的"],
-        hasEditBox = 1,
-        OnShow = function(s)
-            s.EditBox:SetText(layoutStr:gsub("|", "||"));
-            s.EditBox:HighlightText()
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true
-    }
-    StaticPopup_Show("EX_EXPORT_LAYOUT")
+    EXUI:ShowDialog({
+        sourceAddon = "ExwindCore", sourceModule = self.ModuleKey or L["布局"],
+        id = "EX_EXPORT_LAYOUT", title = dialogText, width = 650,
+        input = { text = layoutStr:gsub("|", "||"), multiline = true, readOnly = true, highlight = true },
+        cancelButton = "close", defaultButton = "close",
+        buttons = { { id = "close", text = L["好的"], variant = "primary" } },
+    })
 end
 
 -- 仅导出默认值
@@ -7147,19 +7129,13 @@ function Grid:ExportDefaultsOnly()
         dialogText = L["复制默认值代码 (粘贴到模块开头):"]
     end
 
-    StaticPopupDialogs["EX_EXPORT_DEFAULTS"] = {
-        text = dialogText,
-        button1 = L["好的"],
-        hasEditBox = 1,
-        OnShow = function(s)
-            s.EditBox:SetText(defaultsStr:gsub("|", "||"));
-            s.EditBox:HighlightText()
-        end,
-        timeout = 0,
-        whileDead = true,
-        hideOnEscape = true
-    }
-    StaticPopup_Show("EX_EXPORT_DEFAULTS")
+    EXUI:ShowDialog({
+        sourceAddon = "ExwindCore", sourceModule = self.ModuleKey or L["布局"],
+        id = "EX_EXPORT_DEFAULTS", title = dialogText, width = 650,
+        input = { text = defaultsStr:gsub("|", "||"), multiline = true, readOnly = true, highlight = true },
+        cancelButton = "close", defaultButton = "close",
+        buttons = { { id = "close", text = L["好的"], variant = "primary" } },
+    })
 end
 
 function ExwindTools:ToggleDevMode()

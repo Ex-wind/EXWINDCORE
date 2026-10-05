@@ -994,18 +994,12 @@ local function ShowMissingExwindToolsWarning()
         return false
     end
 
-    if not StaticPopupDialogs["EXWINDTOOLS_MISSING_WARNING"] then
-        StaticPopupDialogs["EXWINDTOOLS_MISSING_WARNING"] = {
-            text = "%s",
-            button1 = L["确定"],
-            timeout = 0,
-            whileDead = true,
-            hideOnEscape = true,
-            preferredIndex = 3,
-        }
-    end
-
-    StaticPopup_Show("EXWINDTOOLS_MISSING_WARNING", message)
+    ExwindTools.UI:ShowDialog({
+        sourceAddon = "ExwindCore", sourceModule = "ExwindTools",
+        id = "EXWINDTOOLS_MISSING_WARNING", title = L["提示"], text = message,
+        cancelButton = "close", defaultButton = "close",
+        buttons = { { id = "close", text = L["确定"], variant = "primary" } },
+    })
     ExwindTools:Print(message)
     return true
 end

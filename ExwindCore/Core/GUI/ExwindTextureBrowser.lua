@@ -1,5 +1,5 @@
--- Read-only, session-only browser for ExwindCore/Textures.
--- The browser deliberately does not bind to SavedVariables or module config.
+-- Session-only browser/picker for ExwindCore/Textures.
+-- Selection is submitted only by the caller's guarded owner callback.
 
 local ExwindTools = _G.ExwindTools
 local VirtualList = _G.ExwindVirtualList
@@ -23,6 +23,7 @@ local selectedName
 local selectedMeta
 local countText
 local selectedAsset
+local picker, selectPathButton
 local selectedCategory = ALL_CATEGORIES
 local searchText = ""
 local filteredAssets = {}
@@ -52,6 +53,7 @@ end
 
 local function UpdateSelection(asset)
     selectedAsset = asset
+    if selectPathButton then selectPathButton:SetEnabled(asset ~= nil) end
     if not selectedName then return end
 
     if not asset then
@@ -171,15 +173,26 @@ local function BindGridRow(row, assets)
 end
 
 local function CreateCategoryItems()
+    local categoryIcons = {
+        Borders = "square", GUI = "settings", ["Icons/EXBoss"] = "image",
+        ["Images/EXBoss"] = "image", ["Images/ExwindTools/EJ-UI"] = "castle",
+        LOGO = "image", ["LOGO/ExwindTools"] = "image",
+        ["Materials/EXBoss/Rings"] = "crosshair",
+        ["Materials/ExwindTools/PlayerPosition"] = "map-pin",
+    }
     local items = {
         {
             id = ALL_CATEGORIES,
             label = string.format("全部 (%d)", tonumber(Catalog.count) or #Catalog.assets),
+            icon = EXUI:GetIcon("layout-grid"),
         },
     }
     for _, category in ipairs(Catalog.categories or {}) do
+        local icon = categoryIcons[category.id]
+            or (category.id:find("Icons/ExwindTools/font_options", 1, true) == 1 and "type" or nil)
         items[#items + 1] = {
             id = category.id,
+            icon = icon and EXUI:GetIcon(icon) or nil,
             label = string.format("%s (%d)", tostring(category.label or category.id),
                 tonumber(category.count) or 0),
         }
@@ -201,7 +214,11 @@ local function EnsureWindow()
     window:RegisterForDrag("LeftButton")
     window:SetScript("OnDragStart", window.StartMoving)
     window:SetScript("OnDragStop", window.StopMovingOrSizing)
-    EXUI:ApplyModernPanel(window)
+    window:SetScript("OnHide", function()
+        if picker then picker.alive = false; picker = nil end
+        if selectPathButton then selectPathButton:SetText("选中路径") end
+    end)
+    EXUI:ApplyDialogStyle(window)
 
     local title = EXUI:CreateVisualFontString(window, EXFONTFRAME, "GameFontNormalHuge")
     title:SetPoint("TOPLEFT", 22, -18)
@@ -215,7 +232,7 @@ local function EnsureWindow()
         { variant = "soft", compact = true })
     close:SetPoint("TOPRIGHT", -16, -15)
 
-    local divider = EXUI:CreateSeparator(window, WINDOW_WIDTH - 44)
+    local divider = EXUI:CreateSettingsSeparator(window, WINDOW_WIDTH - 44)
     divider:SetPoint("TOPLEFT", 22, -64)
 
     local categoryTabs = EXUI:CreateTabGroup(window, {
@@ -282,9 +299,17 @@ local function EnsureWindow()
 
     local selectPath = EXUI:CreateButton(selectionCard, 108, 30, "选中路径", function()
         if not selectedAsset then return end
+        if picker and picker.alive then
+            local lease, asset = picker, selectedAsset
+            local ok, failure = pcall(lease.onSelect, asset.path, asset)
+            lease:Release()
+            if not ok then error(failure, 0) end
+            return
+        end
         pathInput:SetFocus()
         pathInput:HighlightText()
     end, { compact = true })
+    selectPathButton = selectPath
     selectPath:SetPoint("LEFT", pathInput, "RIGHT", 10, 0)
 
     window:Hide()
@@ -295,8 +320,44 @@ local function EnsureWindow()
 end
 
 local function ToggleBrowser()
+    if picker then picker:Release() end
     local browser = EnsureWindow()
     browser:SetShown(not browser:IsShown())
+end
+
+-- value retains the existing path representation; this API never writes config.
+-- Owners wrap onSelect with their Context.Guard and Release the lease on departure.
+function EXUI:OpenTexturePicker(options)
+    assert(type(options) == "table" and type(options.onSelect) == "function", "texture picker requires onSelect")
+    if picker then picker:Release() end
+    local browser = EnsureWindow()
+    local lease = { alive=true, onSelect=options.onSelect }
+    function lease:IsOpen()
+        return self.alive == true and picker == self and browser:IsShown()
+    end
+    function lease:OwnsFrame(frame)
+        if not self:IsOpen() then return false end
+        while frame do
+            if frame == browser then return true end
+            frame = frame.GetParent and frame:GetParent() or nil
+        end
+        return false
+    end
+    function lease:Release()
+        if not self.alive then return end
+        self.alive = false
+        if picker == self then picker = nil; browser:Hide() end
+    end
+    picker = lease
+    local matched
+    for _, asset in ipairs(Catalog.assets) do
+        if asset.path == options.value then matched = asset; break end
+    end
+    SelectAsset(matched)
+    pathInput:ClearFocus()
+    selectPathButton:SetText("使用材质")
+    browser:Show()
+    return lease
 end
 
 _G.SLASH_EXWINDTEXTURES1 = "/extextures"

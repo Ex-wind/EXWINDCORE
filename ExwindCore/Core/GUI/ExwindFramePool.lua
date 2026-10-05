@@ -10,6 +10,7 @@ local L = (ExwindTools and ExwindTools.L)
 
 if not ExwindTools then return end
 local EXUI = ExwindTools.UI
+local GM = ExwindTools.GUIMetrics
 
 local EXFactory = {}
 _G.ExwindFactory = EXFactory
@@ -38,12 +39,12 @@ local function StandardReset(pool, frame)
     -- 通过独有方法 UpdateButton 识别
     local isThreeSlice = frame.UpdateButton ~= nil
     if not isDropdown then
-        frame:SetScript("OnEnter", nil)
-        frame:SetScript("OnLeave", nil)
-        -- SetScript clears only the primary handler. HookScript callbacks are
-        -- attached for the frame lifetime and cannot be removed, so their
-        -- installation markers must remain set across pool leases; clearing the
-        -- markers here would append another identical hook on every reuse.
+        -- SetScript 清掉的是整个 extrinsic 槽位，EXUI 画器用 HookScript 接在同一个
+        -- 槽位里，会被一起清掉（用户 2026-10-05 游戏内实测，Postcall 绑定同样保不住）。
+        -- 因此这里一律走 EXUI:ClearControlScript：它在清槽位的同时丢掉该槽位的画器
+        -- 安装记录，下一次 ApplyModernXxx 正好重装一份，既不会缺画器也不会叠加。
+        EXUI:ClearControlScript(frame, "OnEnter")
+        EXUI:ClearControlScript(frame, "OnLeave")
     end
 
     -- [Fix] 只有按钮才有 OnClick，先判断类型再操作
@@ -53,8 +54,8 @@ local function StandardReset(pool, frame)
         frame:SetScript("PostClick", nil)
         -- DropdownButton / ThreeSliceButton 的 OnMouseDown/OnMouseUp 是模板视觉脚本，保留
         if not isDropdown and not isThreeSlice then
-            frame:SetScript("OnMouseDown", nil)
-            frame:SetScript("OnMouseUp", nil)
+            EXUI:ClearControlScript(frame, "OnMouseDown")
+            EXUI:ClearControlScript(frame, "OnMouseUp")
         end
         if frame.Enable then
             frame:Enable()
@@ -110,15 +111,17 @@ local function StandardReset(pool, frame)
     if frame.checkbox and not frame._isCompositeHost then
         if frame.checkbox.SetScript then
             frame.checkbox:SetScript("OnClick", nil)
-            frame.checkbox:SetScript("OnEnter", nil)
-            frame.checkbox:SetScript("OnLeave", nil)
-            frame.checkbox:SetScript("PreClick", nil)
-            frame.checkbox:SetScript("PostClick", nil)
-            frame.checkbox:SetScript("OnShow", nil)
-            frame.checkbox:SetScript("OnHide", nil)
+            -- 同上：这些槽位里有 EXUI 的 pressed 画器，清槽位时一并丢掉安装记录，
+            -- 由下一次 ApplyModernCheckbox 重装。
+            EXUI:ClearControlScript(frame.checkbox, "OnEnter")
+            EXUI:ClearControlScript(frame.checkbox, "OnLeave")
+            EXUI:ClearControlScript(frame.checkbox, "PreClick")
+            EXUI:ClearControlScript(frame.checkbox, "PostClick")
+            EXUI:ClearControlScript(frame.checkbox, "OnShow")
+            EXUI:ClearControlScript(frame.checkbox, "OnHide")
         end
-        -- Checkbox 外观由持久的只读子 Frame 观察原生状态，不依赖这里被清理的
-        -- OnEnter/OnLeave；业务 OnClick 仍由每次借用重绑。
+        -- checked 仍由持久的只读子 Frame 观察原生状态（SetChecked 是 C 函数，不发
+        -- 事件）；pressed / hover 的画器由每次借用重装，业务 OnClick 同样重绑。
         if frame.checkbox.SetChecked then
             frame.checkbox:SetChecked(false)
         end
@@ -154,6 +157,8 @@ local function StandardReset(pool, frame)
     frame._formatter = nil
     frame._exModernHover = nil
     frame._exModernPressed = nil
+    -- 三态勾选框（CreateTriStateCheckbox）的“部分”标记随租约结束，下一次借用恢复普通勾选框。
+    frame._exTriState = nil
     if frame._exSidebarLabel then
         frame._exSidebarLabel:SetText("")
         frame._exSidebarLabel:ClearAllPoints()
@@ -165,6 +170,10 @@ local function StandardReset(pool, frame)
     frame._exButtonPresentation = nil
     frame._exSidebarSelected = nil
     frame._exSidebarLevel = nil
+    if frame._exSidebarIcon then
+        frame._exSidebarIcon:SetTexture(nil)
+        frame._exSidebarIcon:Hide()
+    end
     if frame._exSidebarBackground then
         if frame._exSidebarBackground._exButtonColor then
             frame._exSidebarBackground._exButtonColor.group:Stop()
@@ -448,18 +457,19 @@ local function ResetGridWidget(pool, frame)
     frame._customRenderer = nil
     frame._customRendererKey = nil
     frame._customContext = nil
-    -- 清理所有事件脚本
+    -- 清理所有事件脚本。OnEditFocusLost 槽位里有输入框的焦点画器，
+    -- 走 ClearControlScript 一并丢掉安装记录，由下一次 ApplyModernInput 重装。
     if frame.SetScript then
         frame:SetScript("OnValueChanged", nil)
         frame:SetScript("OnTextChanged", nil)
-        frame:SetScript("OnEditFocusLost", nil)
+        EXUI:ClearControlScript(frame, "OnEditFocusLost")
         frame:SetScript("OnEnterPressed", nil)
     end
 end
 
 -- 8. GridCheckbox - 复选框容器 (与 EXUI:CreateCheckbox 结构一致)
 EXFactory:InitPool("GridCheckbox", "Frame", nil, function(f)
-    f:SetSize(200, 28)
+    f:SetSize(200, GM.size.checkboxRowHeight)
 
     -- 创建 CheckButton (使用暴雪现代版模板)
     local cb = CreateFrame("CheckButton", nil, f, "MinimalCheckboxTemplate")
@@ -484,7 +494,7 @@ end)
 -- 9. GridButton - 按钮
 -- 9. GridButton - 通用按钮
 EXFactory:InitPool("GridButton", "Button", "SharedButtonLargeTemplate", function(f)
-    f:SetSize(120, 32)
+    f:SetSize(120, GM.size.buttonHeight)
     f._gridType = "GridButton"
 end)
 
@@ -522,7 +532,7 @@ end)
 
 -- 11. GridDropdown - 下拉菜单 (与 EXUI:CreateDropdown 结构一致)
 EXFactory:InitPool("GridDropdown", "DropdownButton", "WowStyle1DropdownTemplate", function(f)
-    f:SetSize(180, 30)
+    f:SetSize(180, GM.size.dropdownHeight)
     f.labelText = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     f.labelText:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, 2)
     f._gridType = "GridDropdown"
@@ -542,7 +552,7 @@ end)
 
 -- 12. GridInput - 输入框
 EXFactory:InitPool("GridInput", "EditBox", "BackdropTemplate", function(f)
-    f:SetSize(180, 28)
+    f:SetSize(180, GM.size.inputHeight)
     f:SetAutoFocus(false)
 
     f:SetTextInsets(10, 10, 0, 0)
@@ -688,8 +698,6 @@ EXFactory:InitCompositePool("EXAuraDisplayCommonSettingsGroupTexture")
 EXFactory:InitCompositePool("EXAuraDisplayCommonSettingsGroupBar")
 EXFactory:InitCompositePool("EXAuraDisplayCommonSettingsGroupApplication")
 EXFactory:InitCompositePool("EXAuraApplicationBarSettingsGroup")
-EXFactory:InitCompositePool("CompositeAuraApplicationBarGroup")
-EXFactory:InitCompositePool("CompositeAuraApplicationBarMainGroup")
 EXFactory:InitCompositePool("CompositeTimerBarApplicationGroup")
 EXFactory:InitCompositePool("TimerBarModuleCommonSettingsGroup")
 EXFactory:InitCompositePool("TimerBarExtraTextureSettingsGroup")
@@ -704,7 +712,7 @@ EXFactory:InitCompositePool("MythicCastModuleCommonSettingsGroup")
 
 -- 23. GridLSMDropdown - LSM 材质选择器
 EXFactory:InitPool("GridLSMDropdown", "DropdownButton", "WowStyle1DropdownTemplate", function(f)
-    f:SetSize(180, 30)
+    f:SetSize(180, GM.size.dropdownHeight)
     f.labelText = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     f.labelText:SetPoint("BOTTOMLEFT", f, "TOPLEFT", 0, 2)
     f._gridType = "GridLSMDropdown"

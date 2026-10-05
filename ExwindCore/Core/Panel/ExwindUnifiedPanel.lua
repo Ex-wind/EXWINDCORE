@@ -405,7 +405,7 @@ function Panel:SetTopTabs(providerID, tabs, activeKey, onSelect, options)
     if options and options.choiceGroup then
         local items = {}
         for _, tab in ipairs(tabs or {}) do
-            items[#items + 1] = { id = tab.key, label = tab.label, disabled = tab.disabled }
+            items[#items + 1] = { id = tab.key, label = tab.label, icon = tab.icon, disabled = tab.disabled }
         end
         local group = EXUI:CreateTabGroup(self.TopTabHost, {
             items = items, value = activeKey, sizing = "content", itemHeight = Layout.TOP_TAB_HEIGHT - 2,
@@ -435,26 +435,40 @@ function Panel:SetTopTabs(providerID, tabs, activeKey, onSelect, options)
                 button.label = MakeText(button, "OVERLAY", Layout.TOP_TAB_FONT_SIZE or 14, Color.muted, "OUTLINE")
                 button.label:SetPoint("CENTER", 0, 0)
                 button.accent = EXUI:CreateVisualTexture(button, EXBASEFRAME)
-                button.accent:SetPoint("BOTTOMLEFT", 8, 0)
-                button.accent:SetPoint("BOTTOMRIGHT", -8, 0)
+                button.accent:SetPoint("BOTTOMLEFT", 8, 3)
+                button.accent:SetPoint("BOTTOMRIGHT", -8, 3)
                 button.accent:SetHeight(2)
                 self.TopTabButtons[index] = button
             end
 
             button._tabKey = tab.key
             button.label:SetText(tab.label)
+            button.label:ClearAllPoints()
+            if tab.icon then
+                if not button.icon then
+                    button.icon = EXUI:CreateVisualTexture(button, EXBORDERFRAME)
+                    button.icon:SetSize(20, 20)
+                end
+                button.icon:SetTexture(_G.ExwindTools.GUIIcons.ids[tab.icon] and EXUI:GetIcon(tab.icon) or tab.icon)
+                button.icon:ClearAllPoints()
+                button.icon:SetPoint("LEFT", button, "LEFT", 12, 0)
+                button.icon:Show()
+                button.label:SetPoint("LEFT", button.icon, "RIGHT", 6, 0)
+            else
+                if button.icon then button.icon:SetTexture(nil); button.icon:Hide() end
+                button.label:SetPoint("CENTER", 0, 0)
+            end
             button:ClearAllPoints()
             if previous then
                 button:SetPoint("LEFT", previous, "RIGHT", 5, 0)
             else
                 button:SetPoint("LEFT", self.TopTabHost, "LEFT", 14, 0)
             end
-            button:SetWidth(math.max(68, button.label:GetStringWidth() + 26))
+            button:SetWidth(math.max(68, button.label:GetStringWidth() + (tab.icon and 50 or 26)))
             local active = tab.key == activeKey
-            local provider = self.Providers and self.Providers[providerID]
-            local accent = Color[provider and provider.accent or "cyan"] or Color.cyan
             button.label:SetTextColor(CopyColor(active and Color.text or Color.muted))
-            button.accent:SetColorTexture(CopyColor(accent))
+            if button.icon then button.icon:SetVertexColor(CopyColor(active and Color.text or Color.muted)) end
+            button.accent:SetColorTexture(CopyColor(GC.tabIndicator)) -- 统一主色（原 Provider accent）
             button.accent:SetShown(active)
             button.hover:SetShown(active)
             button:SetScript("OnEnter", function(self)
@@ -482,7 +496,7 @@ local function SetRailButtonState(button, active)
     if not button then return end
     button._active = active == true
     SetRailButtonSurface(button, active and GC.shell.railActive or GC.shell.railTransparent)
-    button.accent:SetShown(active == true)
+    button.accent:Hide() -- 选中不再显示左侧竖线（原 SetShown(active == true)）
     button.label:SetTextColor(CopyColor(active and Color.text or Color.muted))
 end
 

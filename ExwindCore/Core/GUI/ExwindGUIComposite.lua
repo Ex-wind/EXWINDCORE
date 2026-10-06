@@ -5403,10 +5403,12 @@ do
         local base = BaseMetricsFor(opts)
         local plain = opts.surface == "plain"
         local noAvatar = base.chip and opts.showAvatar == false
-        if not plain and not noAvatar and not opts.avatarSize then return base end
+        if not plain and not noAvatar and not opts.avatarSize and not opts.avatarStyle and not opts.avatarRing then return base end
         local m = {}
         for key, value in pairs(base) do m[key] = value end
         m.plain = plain or nil
+        m.avatarIcon = opts.avatarStyle == "icon"
+        m.avatarRing = opts.avatarRing
         if opts.avatarSize then m.avatar = opts.avatarSize end
         if noAvatar then
             m.noAvatar, m.circle = true, nil
@@ -5416,7 +5418,7 @@ do
         end
         return m
     end
-    -- 圆形头像的遮罩与圆底复用 Core 现有白色实心圆材质。
+    -- 人物头像使用无大幅透明留白的高清圆形材质。
     local CIRCLE_TEXTURE = "Interface\\AddOns\\ExwindCore\\Textures\\Materials\\ExwindTools\\PlayerPosition\\Circle.png"
     -- 竖排卡头像背后的柔光：白色径向渐变（四边全透明），着主色后以 ADD 叠加。
     local GLOW_TEXTURE = "Interface\\AddOns\\ExwindCore\\Textures\\GUI\\SoftGlow.png"
@@ -5460,6 +5462,11 @@ do
             "PersonCards: opts.layout must be row, portrait or chip")
         assert(not (opts.compact and (opts.layout == "portrait" or opts.layout == "chip")),
             "PersonCards: compact cannot be combined with portrait or chip")
+        assert(opts.avatarRing == nil or (opts.layout == "portrait" and type(opts.avatarRing) == "table"
+            and type(opts.avatarRing.texture) == "string" and type(opts.avatarRing.texCoords) == "table"
+            and #opts.avatarRing.texCoords == 4), "PersonCards: avatarRing requires texture and four texCoords")
+        assert(opts.avatarStyle == nil or (opts.avatarStyle == "icon" and opts.layout == "portrait"),
+            "PersonCards: avatarStyle = icon only applies to portrait layout")
         assert(opts.avatarSize == nil or (opts.layout == "portrait" and type(opts.avatarSize) == "number"
             and opts.avatarSize > 0 and opts.avatarSize < math.huge),
             "PersonCards: avatarSize must be a finite positive number for portrait layout")
@@ -5628,10 +5635,6 @@ do
         card.avatarMask = avatar:CreateMaskTexture()
         card.avatarMask:SetTexture(CIRCLE_TEXTURE, "CLAMPTOBLACKADDITIVE", "CLAMPTOBLACKADDITIVE")
         card.avatarMask:SetAllPoints(avatar)
-        -- Circle 素材的实心圆只占中间一半，去掉透明留白后尺寸才对应实际直径。
-        for _, region in ipairs({ card.avatarRing, card.avatarGap, card.avatarDisc, card.avatarMask }) do
-            region:SetTexCoord(0.25, 0.75, 0.25, 0.75)
-        end
         -- 柔光画在卡片填充之上、边框之下（公共表面：填充 BACKGROUND 0，边框 BORDER）。
         card.portraitGlow = card:CreateTexture(nil, "BACKGROUND", nil, 3)
         card.portraitGlow:SetTexture(GLOW_TEXTURE)
@@ -5720,9 +5723,18 @@ do
         card.avatarFrame:SetShown(not m.noAvatar)
         card.avatarFrame:SetSize(math.max(1, m.avatar), math.max(1, m.avatar))
         card.avatarImage:ClearAllPoints()
+        card.avatarRing:SetTexture(CIRCLE_TEXTURE)
+        card.avatarRing:SetTexCoord(0, 1, 0, 1)
+        card.avatarMask:SetShown(person.avatar ~= nil and not m.avatarIcon)
+        if m.avatarIcon then
+            card.avatarRing:Hide()
+            card.avatarGap:Hide()
+            card.avatarDisc:Hide()
+            card.portraitGlow:Hide()
+        end
         if m.circle then
             card.avatarImage:SetAllPoints(card.avatarFrame)
-            if m.portrait then
+            if m.portrait and not m.avatarIcon and not m.avatarRing then
                 card.avatarRing:SetSize(m.avatar + PORTRAIT_RING * 2, m.avatar + PORTRAIT_RING * 2)
                 card.avatarRing:SetVertexColor(unpack(m.plain and GC.cardBorder or GC.primaryFill))
                 card.avatarRing:Show()
@@ -5743,10 +5755,10 @@ do
             card.avatarImage:SetTexture(person.avatar)
             card.avatarImage:Show()
             card.avatarInitial:Hide()
-            if m.circle then
+            if m.circle and not m.avatarIcon then
                 card.avatarImage:AddMaskTexture(card.avatarMask)
                 card.avatarMasked = true
-            else
+            elseif not m.avatarIcon then
                 EXUI:SetControlSurface(card.avatarFrame, GM.radius.control, GC.input, GC.subcardBorder)
             end
         else
@@ -5754,12 +5766,23 @@ do
             StyleText(card.avatarInitial, m.initialFont, GC.accent)
             card.avatarInitial:SetText(FirstCharacter(person.name))
             card.avatarInitial:Show()
-            if m.circle then
+            if m.circle and not m.avatarRing then
                 card.avatarDisc:SetVertexColor(unpack(m.plain and GC.transparent or GC.tagSelected))
                 card.avatarDisc:Show()
-            else
+            elseif not m.avatarRing then
                 EXUI:SetControlSurface(card.avatarFrame, GM.radius.control, GC.tagSelected, GC.tagSelectedBorder)
             end
+        end
+
+        if m.avatarRing then
+            card.avatarGap:Hide()
+            card.avatarDisc:Hide()
+            card.portraitGlow:Hide()
+            card.avatarRing:SetTexture(m.avatarRing.texture)
+            card.avatarRing:SetTexCoord(unpack(m.avatarRing.texCoords))
+            card.avatarRing:SetSize(m.avatar, m.avatar)
+            card.avatarRing:SetVertexColor(unpack(m.plain and GC.cardBorder or GC.primaryFill))
+            card.avatarRing:Show()
         end
 
         if person.badge then
@@ -5772,6 +5795,11 @@ do
             card.badgeDisc:SetVertexColor(color[1], color[2], color[3], color[4] or 1)
             card.badgeIcon:SetSize(math.floor(BADGE_SIZE * 0.7), math.floor(BADGE_SIZE * 0.7))
             card.badgeIcon:SetTexture(person.badge.icon)
+            if person.badge.texCoords then
+                card.badgeIcon:SetTexCoord(unpack(person.badge.texCoords))
+            else
+                card.badgeIcon:SetTexCoord(0, 1, 0, 1)
+            end
             for _, region in ipairs({ card.badgeGap, card.badgeDisc, card.badgeIcon }) do
                 region:ClearAllPoints()
                 region:SetPoint("CENTER", card.avatarFrame, "BOTTOMRIGHT", -inset, inset)

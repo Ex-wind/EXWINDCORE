@@ -2,6 +2,7 @@
 ## Title: |cffff0000Exwind|r |cff00ffffCore|r
 ## Notes: ExwindTools 核心引擎
 ## Version: 6.0.0
+## X-Wago-ID: ANzkjM64
 ## Author: Exwind
 ## LoadSavedVariablesFirst: 1
 ## OptionalDeps: SharedMedia, LibSharedMedia-3.0,MythicDungeonTools

@@ -86,6 +86,7 @@ end
 
 local function CreateCompositePopupHost(owner, width, height)
     local popup = CreateFrame("Frame", nil, UIParent, "BackdropTemplate")
+    popup:SetClampedToScreen(true)
     if EXUI.SetControlAppearance then
         EXUI:SetControlAppearance(popup, EXUI:GetControlAppearance(owner))
     end
@@ -135,12 +136,12 @@ local function ValidateCompositeCommitWritesMetadata(metadata)
     return metadata.commitWrites
 end
 
-local function RegisterCompositeControl(host, control, path, kind, metadata)
+local function RegisterCompositeControl(host, control, path, kind, metadata, displayDefault)
     if not control then return control end
     local commitWrites = ValidateCompositeCommitWritesMetadata(metadata)
     host._exCompositeControls = host._exCompositeControls or {}
     host._exCompositeControls[#host._exCompositeControls + 1] = {
-        control = control, path = path, kind = kind,
+        control = control, path = path, kind = kind, displayDefault = displayDefault,
         -- 仅允许声明式 commitWrites；禁止把私有 callback 塞进控件 metadata。
         commitWrites = commitWrites,
     }
@@ -166,6 +167,9 @@ end
 local function RefreshCompositeControl(entry, db)
     local control, value = entry.control, CompositePathValue(db, entry.path)
     if not control then return end
+    -- Construction defaults are presentation only; re-reading an absent field
+    -- must retain that same display without adding a field to the saved DB.
+    if value == nil then value = entry.displayDefault end
     if entry.kind == "color" then
         -- 颜色按钮保存的是嵌套目标表引用。组合组从对象池复用时，必须像其它
         -- 控件一样重绑到本轮 DB；仅 UpdateColor 会继续写入上一次页面的表。
@@ -302,8 +306,8 @@ local function AttachCompositeRelease(host)
     end)
 end
 
-local function CompositeEmitUpdate(host)
-    if host._exCompositeOnUpdate then host._exCompositeOnUpdate(host._exCompositeDb) end
+local function CompositeEmitUpdate(host, changedField)
+    if host._exCompositeOnUpdate then host._exCompositeOnUpdate(host._exCompositeDb, changedField) end
 end
 
 -- =========================================================
@@ -381,9 +385,18 @@ local function CompositeStackTops(heights, rangeHeight)
     return tops
 end
 
-local function BuildCompositeColumnsLayout(width, metricLeftSlots, metricRightSlots, leftSlots, rightSlots)
+-- actionTexts：功能区左右两列的控件文字。宽布局下列宽放不下其中任何一条时整体改用窄布局
+-- （功能区落到指标区下方、列宽加倍），文字不被截断。
+local function BuildCompositeColumnsLayout(width, metricLeftSlots, metricRightSlots, leftSlots, rightSlots, actionTexts)
     width = tonumber(width) or 750
     local narrow = width < 720
+    if not narrow and actionTexts then
+        local wideColumn = math.floor((CompositeColumnWidth(width) * 2 + COMPOSITE_GAP) / 2)
+            - COMPOSITE_ACTION_PAD - COMPOSITE_ACTION_INNER_GAP
+        for _, text in ipairs(actionTexts) do
+            if EXUI:MeasureButtonWidth(text) > wideColumn then narrow = true; break end
+        end
+    end
     local controlWidth = narrow and (width - COMPOSITE_PAD_X * 2)
         or (CompositeColumnWidth(width) * 2 + COMPOSITE_GAP)
     local metricsWidth = narrow and (width - COMPOSITE_PAD_X * 2)
@@ -485,14 +498,17 @@ local function FontGroupLayout(width)
     local row, line = GM.size.sliderHeight, GM.size.controlHeight
     local dropdown = CompositeDropdownHeight()
     return BuildCompositeColumnsLayout(width, { line, dropdown, dropdown }, { row, row, row },
-        { line, line, dropdown, dropdown }, { line, line, line })
+        { line, line, dropdown, dropdown }, { line, line, line },
+        { L["显示文字"], L["启用阴影"], L["阴影设置"], L["布局设置"], L["高级设置"] })
 end
 
 local function IconGroupLayout(width, opts)
     local row, line = GM.size.sliderHeight, GM.size.controlHeight
     local metricSlots = opts and opts.hidePositionControls == true and { row } or { row, row }
     return BuildCompositeColumnsLayout(width, metricSlots, metricSlots,
-        { line, line, line, line }, { line, line, line, line })
+        { line, line, line, line }, { line, line, line, line },
+        { L["显示图标"], L["显示边框"], L["裁切图标"], L["图标倒数"],
+            L["外观设置"], L["边框设置"], L["裁切设置"], L["倒数设置"] })
 end
 
 -- 计时条组功能区：applicationBar 的图标与填充控件对原生条无效、整组隐藏，
@@ -509,7 +525,8 @@ local function TimerBarGroupLayout(width, opts)
     -- 第三行是两个整列宽的颜色按钮；条体材质下拉落到底部的跨整行槽。
     return BuildCompositeColumnsLayout(width,
         { row, row, line, { h = CompositeDropdownHeight(), span = true } }, { row, row, line },
-        actionLeft, actionRight)
+        actionLeft, actionRight,
+        { L["显示图标"], L["显示边框"], L["图标设置"], L["边框设置"], L["填充设置"] })
 end
 
 function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
@@ -638,7 +655,7 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
         if phase ~= "live" then EmitUpdate() end
     end
 
-    -- 旧 RegisterModuleLayout 的 FontGroup 可以声明 registry 生命周期。每次按下
+    -- FontGroup 的设置绑定声明输入事务生命周期。每次按下
     -- 都从当前 pooled group 的 opts 取合同，避免把上一个模块的 moduleKey/path
     -- 闭包带到本页面；拖动只写真实 DB 并 patch 已挂载 Panel，commit 才正式刷新。
     local function CreateFontPreviewLifecycle(field, onWrite)
@@ -777,6 +794,9 @@ function EXUI:CreateFontGroup(parent, width, label, db, onUpdate, opts)
     local shadowCheck = self:CreateCheckbox(controlCard, L["启用阴影"], db.shadow, function(v)
         CommitFontValue("shadow", v)
     end)
+    -- 开关量统一用开关：标签在左、开关贴右（设置行规格）。
+    EXUI:PrepareSettingsListControl(showText, { presentation = "switch", labelLeft = true })
+    EXUI:PrepareSettingsListControl(shadowCheck, { presentation = "switch", labelLeft = true })
 
     local alignmentWidth = fontLayout.actionColumnWidth
     local justifyHItems = { { L["左对齐"], "LEFT" }, { L["居中"], "CENTER" }, { L["右对齐"], "RIGHT" } }
@@ -1806,7 +1826,7 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
         if phase ~= "live" and onUpdate then onUpdate() end
     end
 
-    -- 旧 RegisterModuleLayout 的 IconGroup 可声明公开 registry 生命周期。每次
+    -- IconGroup 的设置绑定声明输入事务生命周期。每次
     -- 按下均从当前 pooled group 的 opts 解析，绝不复用上一模块的 moduleKey/path；
     local function CreateIconNotifyFlow(field)
         local activeOpts = container._exCompositeOpts or {}
@@ -1948,6 +1968,11 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
     local cbCooldown = EXUI:CreateCheckbox(actionCard, L["图标倒数"], iconDb.showCooldown, function(v)
         CommitIconValue("showCooldown", v)
     end)
+    -- 开关量统一用开关：标签在左、开关贴右（设置行规格）。
+    EXUI:PrepareSettingsListControl(cbShow, { presentation = "switch", labelLeft = true })
+    EXUI:PrepareSettingsListControl(cbShowBorder, { presentation = "switch", labelLeft = true })
+    EXUI:PrepareSettingsListControl(cbCrop, { presentation = "switch", labelLeft = true })
+    EXUI:PrepareSettingsListControl(cbCooldown, { presentation = "switch", labelLeft = true })
     local function CreatePopup(titleText, width, height)
         local popup = CreateCompositePopupHost(container, width, height)
         EXUI:SetControlSurface(popup, GM.radius.card, palette.panel, palette.border)
@@ -2149,18 +2174,18 @@ function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
     RegisterCompositeControl(container, cbCrop, "enableCrop", "check")
     RegisterCompositeControl(container, cbCooldown, "showCooldown", "check")
     RegisterCompositeControl(container, inputIcon, "iconID", "edit")
-    RegisterCompositeControl(container, alpha, "alpha", "slider")
+    RegisterCompositeControl(container, alpha, "alpha", "slider", nil, 1)
     RegisterCompositeControl(container, cbDesaturated, "desaturated", "check")
     RegisterCompositeControl(container, iconColor, "color", "color")
-    RegisterCompositeControl(container, blendDrop, "blendMode", "dropdown")
+    RegisterCompositeControl(container, blendDrop, "blendMode", "dropdown", nil, "BLEND")
     RegisterCompositeControl(container, rotation, "rotation", "slider")
-    RegisterCompositeControl(container, cropLeft, "cropLeft", "slider")
-    RegisterCompositeControl(container, cropRight, "cropRight", "slider")
-    RegisterCompositeControl(container, cropTop, "cropTop", "slider")
-    RegisterCompositeControl(container, cropBottom, "cropBottom", "slider")
+    RegisterCompositeControl(container, cropLeft, "cropLeft", "slider", nil, 0.08)
+    RegisterCompositeControl(container, cropRight, "cropRight", "slider", nil, 0.92)
+    RegisterCompositeControl(container, cropTop, "cropTop", "slider", nil, 0.08)
+    RegisterCompositeControl(container, cropBottom, "cropBottom", "slider", nil, 0.92)
     RegisterCompositeControl(container, borderBtn, "borderColor", "color")
-    RegisterCompositeControl(container, borderDrop, "borderTexture", "dropdown")
-    RegisterCompositeControl(container, sBorderSize, "borderSize", "slider")
+    RegisterCompositeControl(container, borderDrop, "borderTexture", "dropdown", nil, "None")
+    RegisterCompositeControl(container, sBorderSize, "borderSize", "slider", nil, 1)
     RegisterCompositeControl(container, sBorderPad, "borderPadding", "slider")
     RegisterCompositeControl(container, cbReverse, "reverse", "check")
     RegisterCompositeControl(container, cbSwipe, "cooldown.showSwipe", "check")
@@ -2511,7 +2536,7 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
     local borderPad = AddPopupSlider(borderPopup, 245, L["边框间距 (Padding)"], "borderPadding", -10, 10, 0.1)
     borderPad:SetPoint("TOPLEFT", 280, -112)
 
-    local iconPopup = CreatePopup(L["图标设置"], 700, 306)
+    local iconPopup = CreatePopup(L["图标设置"], 700, 286 + GM.size.sliderHeight + 14)
     local iconColumnWidth, iconColumn2 = 320, 362
     local iconSides = { { L["左侧"], "LEFT" }, { L["中间"], "CENTER" }, { L["右侧"], "RIGHT" } }
     local iconSide = EXUI:CreateDropdown(iconPopup, iconColumnWidth, L["图标位置"], iconSides, db.iconSide, function(value)
@@ -2536,14 +2561,14 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
     local iconBorderTexture = EXUI:CreateLSMTextureDropdown(iconPopup, "border", iconColumnWidth, L["图标边框材质"], db.iconBorderTexture, function(value)
         CommitTimerBarValue("iconBorderTexture", value)
     end)
-    iconBorderTexture:SetPoint("TOPLEFT", 14, -208)
+    iconBorderTexture:SetPoint("TOPLEFT", 14, -232)
     local iconBorderColor = EXUI:CreateColorButton(iconPopup, L["图标边框颜色"], db, "iconBorderColor", true, EmitUpdate,
         { _changeFlow = CreateColorTransaction("iconBorderColor") })
-    iconBorderColor:SetPoint("TOPLEFT", iconColumn2, -204)
+    iconBorderColor:SetPoint("TOPLEFT", iconColumn2, -228)
     local iconBorderSize = AddPopupSlider(iconPopup, iconColumnWidth, L["图标边框粗细"], "iconBorderSize", 0, 20, 0.1)
-    iconBorderSize:SetPoint("TOPLEFT", 14, -262)
+    iconBorderSize:SetPoint("TOPLEFT", 14, -286)
     local iconBorderPad = AddPopupSlider(iconPopup, iconColumnWidth, L["图标边框间距"], "iconBorderPadding", -10, 10, 0.1)
-    iconBorderPad:SetPoint("TOPLEFT", iconColumn2, -262)
+    iconBorderPad:SetPoint("TOPLEFT", iconColumn2, -286)
 
     local fillPopup = CreatePopup(L["填充设置"], 540, 126)
     local fillOptions = opts.fillModeOnly == true and {
@@ -2579,6 +2604,9 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
     local showBorder = EXUI:CreateCheckbox(actionCard, L["显示边框"], db.showBorder, function(value)
         CommitTimerBarValue("showBorder", value)
     end)
+    -- 开关量统一用开关：标签在左、开关贴右（设置行规格）。
+    EXUI:PrepareSettingsListControl(showIcon, { presentation = "switch", labelLeft = true })
+    EXUI:PrepareSettingsListControl(showBorder, { presentation = "switch", labelLeft = true })
     local borderButton = ActionButton(L["边框设置"], function(self) TogglePopup(borderPopup, self) end)
 
     local fillLabel = EXUI:CreateVisualFontString(actionCard, EXFONTFRAME, "GameFontHighlight")
@@ -2699,6 +2727,41 @@ end
 -- =========================================================
 EXUI.CreateGlowSettingsLegacy = EXUI.CreateGlowSettings
 
+-- 发光设置组的列数与高度：三列放不下滑条标题、样式选项或开关标签时改两列。
+-- 实际摆放与 Grid 测量读同一个函数；行距 62 与原三列布局一致。
+local function GLOW_STYLE_ITEMS()
+    return {
+        { L["呼吸发光（Alpha + Scale）"], "PULSE" },
+        { L["边框线条流光（原生 Translation）"], "EDGE_FLOW" },
+        { L["触发光环（原生 Proc）"], "PROC_FLIPBOOK" },
+    }
+end
+
+local function GlowRowTop(row)
+    return row == 0 and -14 or (-76 - 62 * (row - 1))
+end
+
+local function GlowSettingsLayout(width)
+    width = tonumber(width) or 750
+    local padding, gap = GM.space.compositePadX + COMPOSITE_CONTROL_X, 16
+    local function ItemWidth(columns)
+        return math.floor((width - padding * 2 - gap * (columns - 1)) / columns)
+    end
+    -- 滑条标题行 = 标题 + 数值框；下拉 = 选项文字 + 箭头；开关 = 标签 + 开关。
+    local need = 0
+    for _, title in ipairs({ L["数量"], L["长度"], L["粗度"], L["速度"], L["大小倍率"], L["间距（负值向内）"] }) do
+        need = math.max(need, EXUI:MeasureButtonWidth(title) + GM.size.sliderInputWidth)
+    end
+    for _, item in ipairs(GLOW_STYLE_ITEMS()) do
+        need = math.max(need, EXUI:MeasureButtonWidth(item[1]) + GM.size.toggleDropdownArrowWidth)
+    end
+    need = math.max(need, EXUI:MeasureButtonWidth(L["启用发光"]) + GM.size.switchTrackWidth)
+    local columns = ItemWidth(3) >= need and 3 or 2
+    local rows = math.ceil(9 / columns)
+    return { columns = columns, itemWidth = ItemWidth(columns),
+        height = -GlowRowTop(rows) + 4 + 46 }
+end
+
 function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate, opts)
     db = type(db) == "table" and db or {}
     opts = type(opts) == "table" and opts or {}
@@ -2743,19 +2806,18 @@ function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate, opts)
     local content = CreateFrame("Frame", nil, group)
     content:SetPoint("TOPLEFT", 0, 0)
     content:SetSize(groupWidth, groupHeight)
-    local padding, gap = 15, 16
-    local itemWidth = math.floor((groupWidth - padding * 2 - gap * 2) / 3)
-    local col1, col2, col3 = padding, padding + itemWidth + gap, padding + (itemWidth + gap) * 2
+    local padding, gap = GM.space.compositePadX + COMPOSITE_CONTROL_X, 16
+    local layout = GlowSettingsLayout(groupWidth)
+    local itemWidth = layout.itemWidth
 
     local function EmitUpdate()
         if onUpdate then onUpdate(db) end
     end
-    local function MakeSlider(text, suffix, min, max, step, x, y)
+    local function MakeSlider(text, suffix, min, max, step)
         local slider = EXUI:CreateSlider(content, itemWidth, text, min, max, db[key .. suffix], step, nil, function(value)
             db[key .. suffix] = value
             EmitUpdate()
         end, { numberInputPosition = "title" })
-        slider:SetPoint("TOPLEFT", x, y)
         table.insert(group._exStandardSliderControls, {
             control = slider,
             path = key .. suffix,
@@ -2767,29 +2829,21 @@ function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate, opts)
         db[key .. "Enabled"] = value
         EmitUpdate()
     end)
-    enabled:SetPoint("TOPLEFT", col2, -8)
-    enabled:SetSize(itemWidth, GM.size.checkboxRowHeight)
+    EXUI:PrepareSettingsListControl(enabled, { presentation = "switch", labelLeft = true })
 
-    local styles = {
-        { L["呼吸发光（Alpha + Scale）"], "PULSE" },
-        { L["边框线条流光（原生 Translation）"], "EDGE_FLOW" },
-        { L["触发光环（原生 Proc）"], "PROC_FLIPBOOK" },
-    }
-    local styleDrop = EXUI:CreateDropdown(content, itemWidth, L["发光样式"], styles, db[key .. "Style"], function(value)
+    local styleDrop = EXUI:CreateDropdown(content, itemWidth, L["发光样式"], GLOW_STYLE_ITEMS(), db[key .. "Style"], function(value)
         db[key .. "Style"] = value
         group:RefreshLayout()
         EmitUpdate()
     end)
-    styleDrop:SetPoint("TOPLEFT", col3, -14)
     local color = EXUI:CreateColorButton(content, L["发光颜色"], db, key .. "Color", true, EmitUpdate)
-    color:SetPoint("TOPLEFT", col1, -14)
 
-    local lines = MakeSlider(L["数量"], "Lines", 1, 36, 1, col1, -76)
-    local length = MakeSlider(L["长度"], "Length", 8, 120, 1, col2, -76)
-    local thickness = MakeSlider(L["粗度"], "Thickness", 1, 20, 0.5, col3, -76)
-    local frequency = MakeSlider(L["速度"], "Frequency", 0.1, 5, 0.1, col1, -138)
-    local scale = MakeSlider(L["大小倍率"], "Scale", 0.25, 3, 0.05, col2, -138)
-    local offset = MakeSlider(L["间距（负值向内）"], "Offset", -20, 50, 1, col2, -138)
+    local lines = MakeSlider(L["数量"], "Lines", 1, 36, 1)
+    local length = MakeSlider(L["长度"], "Length", 8, 120, 1)
+    local thickness = MakeSlider(L["粗度"], "Thickness", 1, 20, 0.5)
+    local frequency = MakeSlider(L["速度"], "Frequency", 0.1, 5, 0.1)
+    local scale = MakeSlider(L["大小倍率"], "Scale", 0.25, 3, 0.05)
+    local offset = MakeSlider(L["间距（负值向内）"], "Offset", -20, 50, 1)
     local directionItems = {
         { L["顺时针"], "CLOCKWISE" },
         { L["逆时针"], "COUNTERCLOCKWISE" },
@@ -2798,32 +2852,37 @@ function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate, opts)
         db[key .. "Direction"] = value
         EmitUpdate()
     end)
-    direction:SetPoint("TOPLEFT", col3, -144)
     local info = EXUI:CreateVisualFontString(content, EXFONTFRAME, "GameFontNormalSmall")
-    info:SetPoint("TOPLEFT", col1, -204)
-    info:SetPoint("TOPRIGHT", -15, -204)
     info:SetJustifyH("LEFT")
     MODERN.ApplyTextRole(info, "hint")
 
+    -- 三列放不下任何一个标题或选项时改成两列（GlowSettingsLayout），文字不截断；按顺序逐格排。
     function group:RefreshLayout()
         local style = db[key .. "Style"]
         local isTrail = style == "EDGE_FLOW"
-        local function Place(control, shown, x, y)
+        local order = isTrail
+            and { color, enabled, styleDrop, lines, length, thickness, frequency, offset, direction }
+            or { color, enabled, styleDrop, frequency, scale, offset }
+        for _, control in ipairs({ lines, length, thickness, frequency, scale, offset, direction }) do
             control:ClearAllPoints()
-            control:SetShown(shown)
-            if shown then control:SetPoint("TOPLEFT", x, y) end
+            control:Hide()
         end
-
-        -- 线条样式有线条专属参数；Pulse 与 Proc 共用速度、大小、外扩边距。
-        Place(lines, isTrail, col1, -76)
-        Place(length, isTrail, col2, -76)
-        Place(thickness, isTrail, col3, -76)
-        Place(frequency, true, col1, isTrail and -138 or -76)
-        Place(scale, not isTrail, col2, -76)
-        Place(offset, true, isTrail and col2 or col3, isTrail and -138 or -76)
-        direction:ClearAllPoints()
-        direction:SetShown(isTrail)
-        if isTrail then direction:SetPoint("TOPLEFT", col3, -144) end
+        local columns = layout.columns
+        for index, control in ipairs(order) do
+            local column, row = (index - 1) % columns, math.floor((index - 1) / columns)
+            local x = padding + column * (itemWidth + gap)
+            local top = GlowRowTop(row)
+            -- 下拉与颜色按钮的标题行比滑条矮，低 6；开关与它们同一行时居中对齐。
+            if control == styleDrop or control == direction or control == color then top = top - (row == 0 and 0 or 6)
+            elseif control == enabled then top = top + 6 end
+            control:ClearAllPoints()
+            control:SetPoint("TOPLEFT", content, "TOPLEFT", x, top)
+            control:Show()
+        end
+        local infoTop = GlowRowTop(math.ceil(#order / columns)) - 4
+        info:ClearAllPoints()
+        info:SetPoint("TOPLEFT", content, "TOPLEFT", padding, infoTop)
+        info:SetPoint("TOPRIGHT", content, "TOPRIGHT", -padding, infoTop)
         if isTrail then
             info:SetText(L["数量 = 同时环绕的线条数；间距可为负，负值让线条向图标内部收。四边移动完全由原生 Translation 处理。"])
         elseif style == "PROC_FLIPBOOK" then
@@ -2832,30 +2891,25 @@ function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate, opts)
             info:SetText(L["使用 Alpha + Scale 原生循环；速度控制呼吸节奏，大小与外扩边距控制发光范围。"])
         end
     end
-    group:RefreshLayout()
     group._glowDb = db
     group._exGridOwnedControls = {
         enabled, styleDrop, color, lines, length, thickness,
         frequency, scale, offset, direction,
     }
     group._exCompositeReflow = function(self, nextWidth, nextHeight)
-        itemWidth = math.floor((nextWidth - padding * 2 - gap * 2) / 3)
-        col1, col2, col3 = padding, padding + itemWidth + gap, padding + (itemWidth + gap) * 2
+        layout = GlowSettingsLayout(nextWidth)
+        itemWidth = layout.itemWidth
         content:ClearAllPoints()
         content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
         content:SetSize(nextWidth, nextHeight)
         enabled:SetSize(itemWidth, GM.size.checkboxRowHeight)
-        enabled:ClearAllPoints(); enabled:SetPoint("TOPLEFT", content, "TOPLEFT", col2, -8)
-        styleDrop:SetWidth(itemWidth)
-        styleDrop:ClearAllPoints(); styleDrop:SetPoint("TOPLEFT", content, "TOPLEFT", col3, -14)
-        color:SetWidth(itemWidth)
-        color:ClearAllPoints(); color:SetPoint("TOPLEFT", content, "TOPLEFT", col1, -14)
-        for _, control in ipairs({ lines, length, thickness, frequency, scale, offset, direction }) do
+        for _, control in ipairs({ styleDrop, color, lines, length, thickness, frequency, scale, offset, direction }) do
             control:SetWidth(itemWidth)
         end
         self:RefreshLayout()
         EXUI:ClearControlSurface(self)
     end
+    groupHeight = layout.height
     EXUI:LayoutCompositeGroup(group, groupWidth, groupHeight)
     return group
 end
@@ -3481,7 +3535,8 @@ function EXUI:CreateAnchorGroup(parent, width, label, db, key, onUpdate, opts)
     local defaultX = tonumber(opts.defaultOffsetX) or 0
     local defaultY = tonumber(opts.defaultOffsetY) or 0
     local groupWidth = width or 760
-    local groupHeight = 52
+    -- 锚点组就是一行标准设置行：左边标签，右边依次是目标框架输入框、选择框架按钮、启用开关。
+    local groupHeight = GM.settings.rowMinHeight
 
     if db[xKey] == nil then db[xKey] = defaultX end
     if db[yKey] == nil then db[yKey] = defaultY end
@@ -3504,44 +3559,64 @@ function EXUI:CreateAnchorGroup(parent, width, label, db, key, onUpdate, opts)
     group:SetSize(groupWidth, groupHeight)
     EXUI:ClearControlSurface(group)
 
-    local function EmitUpdate() CompositeEmitUpdate(group) end
+    local function EmitUpdate(field) CompositeEmitUpdate(group, field) end
     -- 锚点是否启用只控制是否跟随目标；X/Y 仍是模块自身的控件配置，不能在此覆盖。
-    -- 输入框与选择器常驻，方便先填路径再启用，不因勾选状态造成控件跳动。
-    local attach, target, picker
+    -- 输入框与选择器常驻，方便先填路径再启用，不因开关状态造成控件跳动。
+    local attach, target, picker, row
     if supportsCustomAttach then
+        row = EXUI:CreateSettingsRow(group, { label = L["启用自由依附"], isLast = true })
+        group._exAnchorRow = row
         attach = EXUI:CreateCheckbox(group, L["启用"], db[attachKey] == true, function(value)
             db[attachKey] = value == true
-            EmitUpdate()
+            EmitUpdate(attachKey)
         end)
-        attach:SetPoint("TOPLEFT", 16, -15)
+        EXUI:PrepareSettingsListControl(attach, { presentation = "switch", hideLabel = true })
         RegisterCompositeControl(group, attach, attachKey, "check")
 
-        local targetWidth = math.max(180, groupWidth - 330)
-        target = EXUI:CreateEditBox(group, tostring(db[targetKey] or ""), targetWidth, GM.size.inputHeight, nil, {
-            onEnter = function(value) db[targetKey] = value or ""; EmitUpdate() end,
-            onEditFocusLost = function(value) db[targetKey] = value or ""; EmitUpdate() end,
+        target = EXUI:CreateEditBox(group, tostring(db[targetKey] or ""), 180, GM.settings.controlHeight, nil, {
+            onEnter = function(value) db[targetKey] = value or ""; EmitUpdate(targetKey) end,
+            onEditFocusLost = function(value) db[targetKey] = value or ""; EmitUpdate(targetKey) end,
         })
-        target:SetPoint("TOPLEFT", 142, -10)
         RegisterCompositeControl(group, target, targetKey, "edit")
 
-        picker = EXUI:CreateButton(group, 108, GM.size.buttonHeight, L["选择框架"], function()
+        picker = EXUI:CreateButton(group, 108, GM.settings.controlHeight, L["选择框架"], function()
             if type(group._exCompositeOpts.onPickFrame) == "function" then
                 group._exCompositeOpts.onPickFrame(group._exCompositeDb)
             end
         end)
-        picker:SetPoint("TOPRIGHT", -16, -10)
         picker:SetShown(type(opts.onPickFrame) == "function")
     end
 
     group._anchorDb = proxy
-    group._exCompositeReflow = function(self, nextWidth, nextHeight)
+    group._exCompositeReflow = function(self, nextWidth)
         EXUI:ClearControlSurface(self)
         if not supportsCustomAttach then return end
-        local nextTargetWidth = math.max(180, nextWidth - 330)
-        target:SetWidth(nextTargetWidth)
-        attach:ClearAllPoints(); attach:SetPoint("LEFT", self, "LEFT", 16, 0)
-        target:ClearAllPoints(); target:SetPoint("LEFT", self, "LEFT", 142, 0)
-        picker:ClearAllPoints(); picker:SetPoint("RIGHT", self, "RIGHT", -16, 0)
+        local gap = GM.space.dialogButtonGap
+        local controlHeight = GM.settings.controlHeight
+        local switchWidth = GM.size.switchTrackWidth
+        local pickerWidth = picker:IsShown() and picker:GetWidth() or 0
+        local fixed = switchWidth + gap + (pickerWidth > 0 and (pickerWidth + gap) or 0)
+        -- 控件列：输入框按剩余宽度伸缩，但不窄于设置行控件最小宽，也不超过 260。
+        local available = math.max(1, nextWidth - GM.settings.rowPaddingX * 2)
+        local inputWidth = math.max(GM.settings.controlMinWidth,
+            math.min(260, available - fixed - GM.settings.controlMinWidth - GM.settings.labelControlGap))
+        row._exSettingsRowControlWidth = fixed + inputWidth
+        row:ClearAllPoints()
+        row:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
+        local height, controlX, controlY = EXUI:UpdateSettingsRowLayout(row, nextWidth, controlHeight, nil)
+        self:SetHeight(height)
+        local x = controlX
+        target:ClearAllPoints(); target:SetSize(inputWidth, controlHeight)
+        target:SetPoint("TOPLEFT", row, "TOPLEFT", x, -controlY)
+        x = x + inputWidth + gap
+        picker:ClearAllPoints()
+        if pickerWidth > 0 then
+            picker:SetHeight(controlHeight)
+            picker:SetPoint("TOPLEFT", row, "TOPLEFT", x, -controlY)
+            x = x + pickerWidth + gap
+        end
+        attach:ClearAllPoints(); attach:SetSize(switchWidth, controlHeight)
+        attach:SetPoint("TOPLEFT", row, "TOPLEFT", x, -controlY)
     end
     EXUI:LayoutCompositeGroup(group, groupWidth, groupHeight)
     AttachCompositeRelease(group)
@@ -3659,7 +3734,7 @@ function EXUI:CreateTextureGroup(parent, width, label, db, key, onUpdate, opts)
 
     local color = EXUI:CreateColorButton(group, L["材质颜色"], db, "color", true, EmitUpdate)
     color:SetPoint("TOPLEFT", 580, -164)
-    RegisterCompositeControl(group, color, "", "color")
+    RegisterCompositeControl(group, color, "color", "color")
     local blend = EXUI:CreateDropdown(group, math.min(220, groupWidth - 48), L["混合模式"], {
         { "BLEND", "BLEND" }, { "ADD", "ADD" }, { "MOD", "MOD" },
         { "ALPHAKEY", "ALPHAKEY" }, { "DISABLE", "DISABLE" },
@@ -3733,8 +3808,11 @@ EXUI:RegisterGridComponentMeasure("fontgroup", ColumnsGroupMeasure(FontGroupLayo
 EXUI:RegisterGridComponentMeasure("icongroup", ColumnsGroupMeasure(IconGroupLayout))
 EXUI:RegisterGridComponentMeasure("timerbargroup", ColumnsGroupMeasure(TimerBarGroupLayout))
 EXUI:RegisterGridComponentMeasure("texturegroup", FixedGridMeasure(250))
-EXUI:RegisterGridComponentMeasure("anchorgroup", FixedGridMeasure(52))
-EXUI:RegisterGridComponentMeasure("glow_settings", FixedGridMeasure(250))
+EXUI:RegisterGridComponentMeasure("anchorgroup", FixedGridMeasure(GM.settings.rowMinHeight))
+EXUI:RegisterGridComponentMeasure("glow_settings", function(width)
+    local height = GlowSettingsLayout(width).height
+    return { minHeight = height, preferredHeight = height }
+end)
 EXUI:RegisterGridComponentMeasure("soundgroup", function(width, opts)
     local height = EXUI:BuildSoundGroupLayout(width, opts).height
     return { minHeight = height, preferredHeight = height }
@@ -4107,6 +4185,7 @@ end
 --   CreateToggleDropdownButton  开关加下拉合一按钮
 --   CreateFlowDirectionThumb / CreateFlowDirectionPicker  群组方向缩略图与 8 种方向选择
 --   CreatePerLineSelector       每行个数选择
+--   CreateButtonStrip           胶囊按钮组（顶部全局按钮：一条圆角胶囊分成几段）
 -- 全部是纯数据选项；外观只取 GUIColors / GUIStates / GUIMetrics；组合宿主走 Factory 的
 -- 组合池，借用时重绑、归还时清掉本租约的回调与子控件。不读写任何配置。
 -- =========================================================
@@ -4276,14 +4355,16 @@ local function PaintToggleDropdown(button)
     local checked = button._exTdChecked
     local hasToggle = checked ~= nil
     local on = checked == true
-    local toggleEnabled = hasToggle and button._exTdToggleEnabled == true
-    local hover = (button._exTdHoverLeft and (not hasToggle or toggleEnabled)) or button._exTdHoverRight
-    local pressed = button._exTdPressed == true
-    -- 开启 = 主要按钮配色；关闭或没有开关 = 次要按钮配色。
-    local state = (on and GS.primary or GS.button)[pressed and "pressed" or hover and "hover" or "normal"]
+    local enabled = button._exTdEnabled ~= false
+    local toggleEnabled = hasToggle and enabled and button._exTdToggleEnabled == true
+    local hover = enabled and ((button._exTdHoverLeft and (not hasToggle or toggleEnabled)) or button._exTdHoverRight)
+    local pressed = enabled and button._exTdPressed == true
+    -- 开启 = 主要按钮配色；关闭或没有开关 = 次要按钮配色；整体禁用 = 禁用配色。
+    local state = not enabled and GS.button.disabled
+        or (on and GS.primary or GS.button)[pressed and "pressed" or hover and "hover" or "normal"]
     EXUI:SetControlSurface(button, GM.radius.control, state.fill, state.border)
     button._exTdLabel:SetTextColor(unpack(state.text))
-    button._exTdArrow:SetVertexColor(unpack(on and state.text or (hover and MC.white or MC.muted)))
+    button._exTdArrow:SetVertexColor(unpack((on or not enabled) and state.text or (hover and MC.white or MC.muted)))
     local divider = button._exTdDivider
     divider:SetShown(hasToggle)
     divider:SetColorTexture(unpack(state.border))
@@ -4305,15 +4386,15 @@ end
 local function LayoutToggleDropdown(button)
     local hasToggle = button._exTdChecked ~= nil
     local left, right, label = button._exTdLeft, button._exTdRight, button._exTdLabel
+    local divider = button._exTdDivider
     right:ClearAllPoints()
+    left:ClearAllPoints()
+    divider:ClearAllPoints()
     right:SetPoint("TOPRIGHT", button, "TOPRIGHT", 0, 0)
     right:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", 0, 0)
     right:SetWidth(GM.size.toggleDropdownArrowWidth)
-    left:ClearAllPoints()
     left:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
     left:SetPoint("BOTTOMRIGHT", right, "BOTTOMLEFT", 0, 0)
-    local divider = button._exTdDivider
-    divider:ClearAllPoints()
     divider:SetPoint("TOPLEFT", right, "TOPLEFT", 0, -GM.radius.control)
     divider:SetPoint("BOTTOMLEFT", right, "BOTTOMLEFT", 0, GM.radius.control)
     divider:SetWidth(1)
@@ -4330,6 +4411,13 @@ local function LayoutToggleDropdown(button)
         label:SetPoint("RIGHT", left, "RIGHT", -GM.space.toggleDropdownGap, 0)
         label:SetJustifyH("CENTER")
     end
+end
+
+-- 整体可用 × 开关可用 → 左右两半的可点状态。
+local function ApplyToggleDropdownEnabled(button)
+    local enabled = button._exTdEnabled ~= false
+    button._exTdLeft:SetEnabled(enabled and (button._exTdChecked == nil or button._exTdToggleEnabled == true))
+    button._exTdRight:SetEnabled(enabled)
 end
 
 local function ToggleDropdownOpen(button)
@@ -4412,7 +4500,13 @@ local function BuildToggleDropdown(button)
     end
     function button:SetToggleEnabled(enabled)
         self._exTdToggleEnabled = enabled == true
-        if self._exTdChecked ~= nil then self._exTdLeft:SetEnabled(self._exTdToggleEnabled) end
+        ApplyToggleDropdownEnabled(self)
+        PaintToggleDropdown(self)
+    end
+    function button:SetEnabled(enabled)
+        self._exTdEnabled = enabled == true
+        if not self._exTdEnabled then self._exTdPressed = false end
+        ApplyToggleDropdownEnabled(self)
         PaintToggleDropdown(self)
     end
     function button:Release() Factory:ReleaseCompositeHost(self) end
@@ -4421,10 +4515,11 @@ end
 -- options（纯数据）:
 --   text          按钮文字
 --   checked       boolean：有开关（点左半切换，点右半展开）；nil：没有开关，整块按钮点哪里都展开
---   toggleEnabled 可选，默认 true；false 时开关半边不可点（右半展开仍可用）
---   onToggle(checked, button)  左半点击后调用（控件已切到新状态；业务拒绝时调用 button:SetChecked 改回）
+--   toggleEnabled 可选，默认 true；false 时开关半边不可点（展开仍可用）
+--   onToggle(checked, button)  开关点击后调用（控件已切到新状态；业务拒绝时调用 button:SetChecked 改回）
 --   onDropdown(button)         展开动作；弹窗内容与位置由调用方负责，锚点用 button 本身
--- 返回池化宿主：SetChecked(bool)（静默）、GetChecked()、SetLabel(text)、SetToggleEnabled(bool)、Release()。
+-- 返回池化宿主：SetChecked(bool)（静默）、GetChecked()、SetLabel(text)、
+-- SetToggleEnabled(bool)、SetEnabled(bool)（整体可用）、Release()。悬停提示挂在 _exTdLeft / _exTdRight。
 function EXUI:CreateToggleDropdownButton(parent, width, height, options)
     options = options or {}
     if type(options) ~= "table" then error("CreateToggleDropdownButton: options must be a table", 2) end
@@ -4443,20 +4538,494 @@ function EXUI:CreateToggleDropdownButton(parent, width, height, options)
     button:SetSize(width, height or GM.size.controlHeight)
     button._exTdChecked = options.checked
     button._exTdToggleEnabled = options.toggleEnabled ~= false
+    button._exTdEnabled = true
     button._exTdOnToggle, button._exTdOnDropdown = options.onToggle, options.onDropdown
     button._exTdHoverLeft, button._exTdHoverRight, button._exTdPressed = false, false, false
-    button._exTdLeft:SetEnabled(options.checked == nil or button._exTdToggleEnabled)
+    ApplyToggleDropdownEnabled(button)
     button._exTdLabel:SetText(options.text or "")
     LayoutToggleDropdown(button)
     PaintToggleDropdown(button)
     Factory:AttachPoolRelease(button, function(self)
-        self._exTdChecked, self._exTdToggleEnabled = nil, nil
+        self._exTdChecked, self._exTdToggleEnabled, self._exTdEnabled = nil, nil, nil
         self._exTdOnToggle, self._exTdOnDropdown = nil, nil
         self._exTdHoverLeft, self._exTdHoverRight, self._exTdPressed = nil, nil, nil
         self._exTdLabel:SetText("")
         self._exTdLeft:Enable()
+        self._exTdRight:Enable()
     end)
     return button
+end
+
+-- ---------------------------------------------------------
+-- 图标按钮（可选开关状态）
+-- ---------------------------------------------------------
+local ICON_BUTTON_POOL = "EXUI.IconButton"
+Factory:InitCompositePool(ICON_BUTTON_POOL)
+local ICON_BUTTON_APPEARANCE = { field = true, ghost = true, input = true, dark = true }
+-- 能当开关（options.checked）的外观。
+local ICON_BUTTON_CHECKABLE = { field = true, input = true, dark = true }
+
+local function PaintIconButton(host)
+    local enabled = host._exIbEnabled ~= false
+    local hover = enabled and host._exIbHover == true
+    local pressed = enabled and host._exIbPressed == true
+    local appearance = host._exIbAppearance
+    local fill, border, iconColor
+    if appearance == "ghost" then
+        -- 无底：只有图标，悬停与按下时提亮；写了 iconColor 时平常图标用它。
+        iconColor = not enabled and MC.disabledText
+            or ((hover or pressed) and MC.white or (host._exIbIconColor or MC.muted))
+    elseif appearance == "input" then
+        -- 输入框同款底和边：悬停、按下换输入框悬停边，按下或开启（checked）底换输入框悬停底；
+        -- 图标默认正文色，开启时白色。
+        local checked = host._exIbChecked == true
+        fill = not enabled and GC.inputDisabled or ((pressed or checked) and GC.inputHover or GC.input)
+        border = not enabled and GC.inputDisabledBorder or ((hover or pressed or checked) and GC.inputHoverBorder or GC.inputBorder)
+        iconColor = not enabled and GC.textDisabled or (checked and GC.white or (host._exIbIconColor or GC.text))
+    elseif appearance == "dark" then
+        -- 黑色轨道：叠在彩色底上的黑 0.20 小钮，不画边；悬停、按下出白 0.35 边、图标变白；
+        -- 开启（checked）白 0.24 底、白图标；停用整体淡到 35%。
+        local checked = host._exIbChecked == true
+        fill = not enabled and GC.iconDarkDisabledFill or (checked and GC.iconDarkChecked or GC.iconDarkFill)
+        border = (enabled and (hover or pressed)) and GC.iconDarkHoverBorder or GC.transparent
+        iconColor = not enabled and GC.iconDarkDisabledIcon
+            or ((checked or hover or pressed) and GC.white or (host._exIbIconColor or GC.iconDarkIcon))
+    else
+        local state = not enabled and GS.button.disabled
+            or (host._exIbChecked == true and GS.primary or GS.button)[pressed and "pressed" or hover and "hover" or "normal"]
+        fill, border, iconColor = state.fill, state.border, state.text
+        -- 浮层外观（EXUI:SetControlOverlayAppearance）：没开、可用时底与平常边换浮层色；开启、禁用照旧。
+        if host._exOverlay and enabled and host._exIbChecked ~= true then
+            fill = GC.floatControlFill
+            if not hover and not pressed then border = GC.floatControlBorder end
+        end
+    end
+    -- 悬停换色（hoverBorderColor / hoverIconColor）：可用且悬停或按下时，边、图标改用指定色；没写照外观规则。
+    if hover or pressed then
+        if host._exIbHoverBorder and border then border = host._exIbHoverBorder end
+        if host._exIbHoverIcon then iconColor = host._exIbHoverIcon end
+    end
+    if appearance == "ghost" then EXUI:ClearControlSurface(host)
+    else EXUI:SetControlSurface(host, GM.radius.control, fill, border) end
+    host._exIbIcon:SetVertexColor(unpack(iconColor))
+end
+
+local function BuildIconButton(host)
+    local hit = CreateFrame("Button", nil, host)
+    hit:SetAllPoints(host)
+    hit:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    local icon = EXUI:CreateVisualTexture(hit, EXBORDERFRAME)
+    icon:SetPoint("CENTER", hit, "CENTER", 0, 0)
+    host.button, host._exIbIcon = hit, icon
+    host._exOverlayRefresh = PaintIconButton
+    hit:SetScript("OnEnter", function() host._exIbHover = true; PaintIconButton(host) end)
+    hit:SetScript("OnLeave", function()
+        host._exIbHover, host._exIbPressed = false, false
+        PaintIconButton(host)
+    end)
+    hit:SetScript("OnMouseDown", function(self, mouseButton)
+        if mouseButton == "LeftButton" and self:IsEnabled() then
+            host._exIbPressed = true
+            PaintIconButton(host)
+        end
+    end)
+    hit:SetScript("OnMouseUp", function()
+        host._exIbPressed = false
+        PaintIconButton(host)
+    end)
+    hit:SetScript("OnClick", function(_, mouseButton)
+        local checked = host._exIbChecked
+        if checked == nil then
+            local callback = host._exIbOnClick
+            if callback then callback(host, mouseButton) end
+            return
+        end
+        if mouseButton ~= "LeftButton" then return end
+        host._exIbChecked = not checked
+        PaintIconButton(host)
+        local callback = host._exIbOnToggle
+        if callback then callback(host._exIbChecked, host) end
+    end)
+    function host:SetChecked(checked)
+        if self._exIbChecked == nil then error("IconButton:SetChecked requires options.checked", 2) end
+        if type(checked) ~= "boolean" then error("IconButton:SetChecked expects a boolean", 2) end
+        self._exIbChecked = checked
+        PaintIconButton(self)
+    end
+    function host:GetChecked() return self._exIbChecked end
+    function host:SetIcon(id)
+        self._exIbIcon:SetTexture(EXUI:GetIcon(id))
+    end
+    -- 平常状态的图标颜色（ghost / input / dark 外观）；nil 回到外观默认色。
+    function host:SetIconColor(color)
+        if color ~= nil and type(color) ~= "table" then error("IconButton:SetIconColor expects a color table or nil", 2) end
+        self._exIbIconColor = color
+        PaintIconButton(self)
+    end
+    -- 悬停换色：悬停、按下时的边色与图标色（ghost 没有边，只换图标）；nil 回到外观默认。
+    function host:SetHoverColors(borderColor, iconColor)
+        if (borderColor ~= nil and type(borderColor) ~= "table") or (iconColor ~= nil and type(iconColor) ~= "table") then
+            error("IconButton:SetHoverColors expects color tables or nil", 2)
+        end
+        self._exIbHoverBorder, self._exIbHoverIcon = borderColor, iconColor
+        PaintIconButton(self)
+    end
+    -- 换外观（"field" / "ghost" / "input" / "dark"）；开关按钮不能换到 ghost。
+    function host:SetAppearance(appearance)
+        if not ICON_BUTTON_APPEARANCE[appearance] then error("IconButton:SetAppearance expects field, ghost, input or dark", 2) end
+        if self._exIbChecked ~= nil and not ICON_BUTTON_CHECKABLE[appearance] then
+            error("IconButton:SetAppearance: a checked button needs field, input or dark appearance", 2)
+        end
+        self._exIbAppearance = appearance
+        PaintIconButton(self)
+    end
+    function host:SetEnabled(enabled)
+        self._exIbEnabled = enabled == true
+        if not self._exIbEnabled then self._exIbPressed = false end
+        self.button:SetEnabled(self._exIbEnabled)
+        PaintIconButton(self)
+    end
+    function host:Release() Factory:ReleaseCompositeHost(self) end
+end
+
+-- options（纯数据）:
+--   icon        必填，GUIIcons 图标 ID
+--   iconSize    可选，图标边长，默认 GM.size.iconGlyphSize
+--   appearance  可选，"field"（默认：次要按钮底，开启时主色底）、"ghost"（无底，只有图标；不支持开关）、
+--               "input"（输入框同款底和边，图标正文色；开启时输入框悬停底 + 白图标）、
+--               "dark"（黑色轨道：黑 0.20 底无边，悬停白 0.35 边，开启白 0.24 底；叠在彩色底上用）
+--   iconColor   可选，ghost / input / dark 平常状态的图标颜色（悬停、开启、停用照外观规则）；之后可 SetIconColor
+--   hoverBorderColor / hoverIconColor  可选，可用时悬停、按下的边色 / 图标色（ghost 只换图标）；不写照外观规则；
+--               之后可 SetHoverColors(border, icon)
+--   checked     boolean：开关按钮（左键切换后调用 onToggle；field、input、dark 外观）；nil：普通按钮（点击调用 onClick）
+--   onToggle(checked, button)   开关切换后调用（控件已切到新状态；业务拒绝时调用 SetChecked 改回）
+--   onClick(button, mouseButton) 普通按钮点击
+-- 返回池化宿主：SetChecked(bool)（静默）、GetChecked()、SetIcon(id)、SetIconColor(color)、SetHoverColors(border, icon)、
+-- SetAppearance(name)、
+-- SetEnabled(bool)、Release()；
+-- 悬停提示挂在 button.button（实际接收鼠标的 Button）。
+function EXUI:CreateIconButton(parent, width, height, options)
+    if type(options) ~= "table" then error("CreateIconButton: options must be a table", 2) end
+    if type(width) ~= "number" or width <= 0 or type(height) ~= "number" or height <= 0 then
+        error("CreateIconButton: width and height must be positive numbers", 2)
+    end
+    if not ExwindTools.GUIIcons.ids[options.icon] then error("CreateIconButton: options.icon must be a registered icon id", 2) end
+    local appearance = options.appearance or "field"
+    if not ICON_BUTTON_APPEARANCE[appearance] then error("CreateIconButton: options.appearance must be field, ghost, input or dark", 2) end
+    if options.checked ~= nil and (type(options.checked) ~= "boolean" or not ICON_BUTTON_CHECKABLE[appearance]) then
+        error("CreateIconButton: options.checked must be boolean and requires field, input or dark appearance", 2)
+    end
+    for _, key in ipairs({ "iconColor", "hoverBorderColor", "hoverIconColor" }) do
+        if options[key] ~= nil and type(options[key]) ~= "table" then
+            error("CreateIconButton: options." .. key .. " must be a color table", 2)
+        end
+    end
+    if options.iconSize ~= nil and (type(options.iconSize) ~= "number" or options.iconSize <= 0) then
+        error("CreateIconButton: options.iconSize must be a positive number", 2)
+    end
+    for _, key in ipairs({ "onToggle", "onClick" }) do
+        if options[key] ~= nil and type(options[key]) ~= "function" then
+            error("CreateIconButton: options." .. key .. " must be a function", 2)
+        end
+    end
+    local host, isNew = Factory:AcquireCompositeHost(ICON_BUTTON_POOL, parent)
+    if isNew then BuildIconButton(host) end
+    host:SetSize(width, height)
+    host._exIbAppearance = appearance
+    host._exIbIconColor = options.iconColor
+    host._exIbHoverBorder, host._exIbHoverIcon = options.hoverBorderColor, options.hoverIconColor
+    host._exIbChecked = options.checked
+    host._exIbEnabled = true
+    host._exIbOnToggle, host._exIbOnClick = options.onToggle, options.onClick
+    host._exIbHover, host._exIbPressed = false, false
+    local size = options.iconSize or GM.size.iconGlyphSize
+    host._exIbIcon:SetSize(size, size)
+    host._exIbIcon:SetTexture(EXUI:GetIcon(options.icon))
+    host.button:Enable()
+    PaintIconButton(host)
+    Factory:AttachPoolRelease(host, function(self)
+        self._exIbAppearance, self._exIbChecked, self._exIbEnabled = nil, nil, nil
+        self._exIbIconColor, self._exIbHoverBorder, self._exIbHoverIcon = nil, nil, nil
+        self._exIbOnToggle, self._exIbOnClick = nil, nil
+        self._exIbHover, self._exIbPressed = nil, nil
+        self._exIbIcon:SetTexture(nil)
+        self.button:Enable()
+        EXUI:ClearControlSurface(self)
+    end)
+    return host
+end
+
+-- ---------------------------------------------------------
+-- 胶囊按钮组
+-- 一条圆角胶囊（host 底 + 1px bDef 边）分成几段，每段图标 + 文字；段间 1px 竖线上下各缩一截。
+-- 悬停白 0.07 底；按下（pressed）白 0.14 底 + 1px 白 0.55 内描边，它两边的竖线隐藏。
+-- 首尾段的底色跟着胶囊圆角裁（_exJoinedEdge = "first" / "last"），中间段是直角。
+-- 段是胶囊宿主自己的子 Button，跟宿主一起进出对象池。
+-- ---------------------------------------------------------
+local BUTTON_STRIP_POOL = "EXUI.ButtonStrip"
+Factory:InitCompositePool(BUTTON_STRIP_POOL)
+local BUTTON_STRIP_TONES = { ok = true, danger = true }
+local BUTTON_STRIP_FIELDS = { icon = true, text = true, tooltip = true, pressed = true }
+
+-- 一段的文字与图标颜色：ok 绿、danger 红；没有 tone 时按下白、平常正文色。
+local function StripSegmentColor(item)
+    if item.tone == "ok" then return GC.capsuleAddText end
+    if item.tone == "danger" then return GC.capsuleDangerText end
+    return item.pressed and GC.white or GC.text
+end
+
+local function PaintStripSegment(segment)
+    local strip, item = segment._exStripOwner, segment._exStripItem
+    if not strip or not item then return end
+    if item.pressed then
+        MODERN.PaintControlSurface(segment, segment._exStripRadius, GC.capsulePressedFill, GC.capsulePressedBorder)
+    elseif segment._exStripHover then
+        MODERN.PaintControlSurface(segment, segment._exStripRadius, GC.capsuleHoverFill, GC.transparent)
+    else
+        EXUI:ClearControlSurface(segment)
+    end
+    local color = StripSegmentColor(item)
+    segment._exStripText:SetTextColor(unpack(color))
+    segment._exStripIcon:SetVertexColor(unpack(color))
+    -- 拼接边规则下末段左缘的描边由前一段提供；末段按下时自己补这一条。
+    segment._exStripSeam:SetShown(item.pressed == true and segment._exJoinedEdge == "last")
+    -- 段间竖线挂在后一段的左缘：按下段左右两条都隐藏。
+    local previous = strip._exStripSegments[segment._exStripIndex - 1]
+    segment._exStripDivider:SetShown(previous ~= nil and not item.pressed and not previous._exStripItem.pressed)
+end
+
+local function ShowStripTooltip(segment)
+    local item = segment._exStripItem
+    if not item or not item.tooltip then return end
+    local strip = segment._exStripOwner
+    if strip and strip._exStripTooltipAnchor == "below" then
+        -- 提示框水平居中贴在这一段正下方，不压住左右两段。
+        GameTooltip:SetOwner(segment, "ANCHOR_NONE")
+        GameTooltip:ClearAllPoints()
+        GameTooltip:SetPoint("TOP", segment, "BOTTOM", 0, -GM.size.capsuleTooltipGap)
+    else
+        GameTooltip:SetOwner(segment, "ANCHOR_BOTTOM")
+    end
+    GameTooltip:AddLine(item.tooltip, 1, 1, 1, true)
+    GameTooltip:Show()
+end
+
+local function CreateStripSegment(strip, index)
+    local segment = CreateFrame("Button", nil, strip)
+    segment:RegisterForClicks("LeftButtonUp")
+    segment._exSurfaceLargeRadius = true -- 首尾段圆角跟胶囊一样，高分屏上超过 32 物理像素
+    segment._exStripIndex = index
+    segment._exStripIcon = EXUI:CreateVisualTexture(segment, EXBORDERFRAME)
+    segment._exStripText = EXUI:CreateVisualFontString(segment, EXFONTFRAME, "GameFontHighlight")
+    segment._exStripText:SetWordWrap(false)
+    local divider = segment:CreateTexture(nil, "ARTWORK")
+    divider:SetColorTexture(unpack(GC.panelBorder))
+    segment._exStripDivider = divider
+    local seam = segment:CreateTexture(nil, "OVERLAY")
+    seam:SetColorTexture(unpack(GC.capsulePressedBorder))
+    seam:SetPoint("TOPLEFT", segment, "TOPLEFT", 0, 0)
+    seam:SetPoint("BOTTOMLEFT", segment, "BOTTOMLEFT", 0, 0)
+    seam:Hide()
+    segment._exStripSeam = seam
+    segment:SetScript("OnEnter", function(self)
+        self._exStripHover = true
+        PaintStripSegment(self)
+        ShowStripTooltip(self)
+    end)
+    segment:SetScript("OnLeave", function(self)
+        self._exStripHover = false
+        PaintStripSegment(self)
+        if GameTooltip:IsOwned(self) then GameTooltip:Hide() end
+    end)
+    segment:SetScript("OnClick", function(self)
+        local owner, item = self._exStripOwner, self._exStripItem
+        local callback = owner and owner._exStripOnClick
+        if callback and item then callback(item.id, self, owner) end
+    end)
+    return segment
+end
+
+-- 按每段内容排宽：段内左右内距 14，首段左、尾段右 18；图标与文字间距、最小段宽都在 GM.size。
+-- 段在胶囊边框里面（上下左右各让 1 物理像素），宽按物理像素取整，竖线落在整像素上。
+local function LayoutButtonStrip(strip)
+    local size = GM.size
+    local pixel = MODERN.surfaceAtlas:GetPixel(strip)
+    local items, segments = strip._exStripItems, strip._exStripSegments
+    local count = #items
+    local innerHeight = size.capsuleHeight - pixel * 2
+    local x = pixel
+    for index, item in ipairs(items) do
+        local segment = segments[index]
+        if not segment then
+            segment = CreateStripSegment(strip, index)
+            segments[index] = segment
+        end
+        segment._exStripOwner, segment._exStripItem = strip, item
+        local iconSize = item.emphasize and size.capsuleAddIconSize or size.capsuleIconSize
+        local text, icon = segment._exStripText, segment._exStripIcon
+        MODERN.Font(text, item.emphasize and size.capsuleAddFont or size.capsuleFont,
+            StripSegmentColor(item), "", "GameFontHighlight")
+        text:SetText(item.text or "")
+        local textWidth = item.text and math.ceil(text:GetUnboundedStringWidth()) or 0
+        local iconWidth = item.icon and iconSize or 0
+        local gap = (iconWidth > 0 and textWidth > 0) and size.capsuleIconTextGap or 0
+        local content = iconWidth + gap + textWidth
+        local padLeft = index == 1 and size.capsuleEdgePadX or size.capsuleSegmentPadX
+        local padRight = index == count and size.capsuleEdgePadX or size.capsuleSegmentPadX
+        local width = math.max(size.capsuleSegmentMinWidth, padLeft + content + padRight)
+        width = math.ceil(width / pixel - 0.001) * pixel
+        segment:ClearAllPoints()
+        segment:SetPoint("TOPLEFT", strip, "TOPLEFT", x, -pixel)
+        segment:SetSize(width, innerHeight)
+        local startX = padLeft + math.floor((width - padLeft - padRight - content) / 2 + .5)
+        icon:ClearAllPoints()
+        icon:SetSize(iconSize, iconSize)
+        icon:SetTexture(item.icon and EXUI:GetIcon(item.icon) or nil)
+        icon:SetShown(item.icon ~= nil)
+        icon:SetPoint("LEFT", segment, "LEFT", startX, 0)
+        text:ClearAllPoints()
+        text:SetPoint("LEFT", segment, "LEFT", startX + iconWidth + gap, 0)
+        text:SetShown(textWidth > 0)
+        local divider = segment._exStripDivider
+        divider:ClearAllPoints()
+        divider:SetPoint("TOPLEFT", segment, "TOPLEFT", 0, -(size.capsuleDividerInset - pixel))
+        divider:SetPoint("BOTTOMLEFT", segment, "BOTTOMLEFT", 0, size.capsuleDividerInset - pixel)
+        divider:SetWidth(pixel)
+        segment._exStripSeam:SetWidth(pixel)
+        -- 首尾段跟着胶囊圆角，中间段直角；只有一段时两头都圆。半径写整数 capsuleRadius（比段高一半略大），
+        -- 由 GetMetrics 截到段高一半，画出来就是整半圆；固定值也让表面缓存只有一套，不随缩放新建。
+        segment._exJoinedEdge = count > 1 and (index == 1 and "first" or (index == count and "last" or nil)) or nil
+        segment._exStripRadius = (index == 1 or index == count) and size.capsuleRadius or 0
+        segment:Show()
+        x = x + width
+    end
+    for index = count + 1, #segments do
+        local segment = segments[index]
+        segment._exStripOwner, segment._exStripItem, segment._exStripHover = nil, nil, nil
+        EXUI:ClearControlSurface(segment)
+        segment:Hide()
+    end
+    strip:SetSize(x + pixel, size.capsuleHeight)
+    EXUI:SetControlSurface(strip, size.capsuleRadius, GC.panel, GC.panelBorder)
+    for index = 1, count do PaintStripSegment(segments[index]) end
+end
+
+local function CopyStripItem(item, index, seen)
+    local where = "CreateButtonStrip: items[" .. index .. "]"
+    if type(item) ~= "table" then error(where .. " must be a table", 3) end
+    if type(item.id) ~= "string" and type(item.id) ~= "number" then error(where .. ".id must be a string or number", 3) end
+    if seen[item.id] then error("CreateButtonStrip: duplicate item id " .. tostring(item.id), 3) end
+    seen[item.id] = true
+    if item.icon ~= nil and not ExwindTools.GUIIcons.ids[item.icon] then error(where .. ".icon must be a registered icon id", 3) end
+    if item.text ~= nil and type(item.text) ~= "string" then error(where .. ".text must be a string", 3) end
+    if item.icon == nil and (item.text == nil or item.text == "") then error(where .. " needs an icon or text", 3) end
+    if item.tone ~= nil and not BUTTON_STRIP_TONES[item.tone] then error(where .. ".tone must be ok or danger", 3) end
+    if item.tooltip ~= nil and type(item.tooltip) ~= "string" then error(where .. ".tooltip must be a string", 3) end
+    if item.emphasize ~= nil and type(item.emphasize) ~= "boolean" then error(where .. ".emphasize must be a boolean", 3) end
+    if item.pressed ~= nil and type(item.pressed) ~= "boolean" then error(where .. ".pressed must be a boolean", 3) end
+    return { id = item.id, icon = item.icon, text = item.text, tone = item.tone, tooltip = item.tooltip,
+        emphasize = item.emphasize == true, pressed = item.pressed == true }
+end
+
+-- 用着的胶囊（弱表）：UI 缩放、窗口尺寸变化后按新的物理像素重排段宽和竖线。
+local buttonStripFrames = setmetatable({}, { __mode = "k" })
+local buttonStripScaleWatcher
+
+local function WatchButtonStripScale(strip)
+    buttonStripFrames[strip] = true
+    if buttonStripScaleWatcher then return end
+    buttonStripScaleWatcher = CreateFrame("Frame")
+    buttonStripScaleWatcher:RegisterEvent("UI_SCALE_CHANGED")
+    buttonStripScaleWatcher:RegisterEvent("DISPLAY_SIZE_CHANGED")
+    buttonStripScaleWatcher:SetScript("OnEvent", function()
+        for owner in pairs(buttonStripFrames) do
+            if owner._exStripItems then LayoutButtonStrip(owner) end
+        end
+    end)
+end
+
+local function BuildButtonStrip(strip)
+    strip._exStripSegments = {}
+    strip._exSurfaceLargeRadius = true -- 胶囊圆角 21：高分屏上超过 32 物理像素，走大半径图集
+    WatchButtonStripScale(strip)
+    -- 改一段的图标、文字、提示或按下状态；宽度跟着内容重排，胶囊总宽随之变化。
+    function strip:SetItem(id, fields)
+        if type(fields) ~= "table" then error("ButtonStrip:SetItem expects a table", 2) end
+        local item, segment
+        for index, current in ipairs(self._exStripItems or {}) do
+            if current.id == id then item, segment = current, self._exStripSegments[index] end
+        end
+        if not item then error("ButtonStrip:SetItem unknown id " .. tostring(id), 2) end
+        for key in pairs(fields) do
+            if not BUTTON_STRIP_FIELDS[key] then error("ButtonStrip:SetItem unknown field " .. tostring(key), 2) end
+        end
+        if fields.icon ~= nil and not ExwindTools.GUIIcons.ids[fields.icon] then
+            error("ButtonStrip:SetItem icon must be a registered icon id", 2)
+        end
+        if fields.text ~= nil and type(fields.text) ~= "string" then error("ButtonStrip:SetItem text must be a string", 2) end
+        if fields.tooltip ~= nil and type(fields.tooltip) ~= "string" then error("ButtonStrip:SetItem tooltip must be a string", 2) end
+        if fields.pressed ~= nil and type(fields.pressed) ~= "boolean" then error("ButtonStrip:SetItem pressed must be a boolean", 2) end
+        if fields.icon ~= nil then item.icon = fields.icon end
+        if fields.text ~= nil then item.text = fields.text end
+        if fields.tooltip ~= nil then item.tooltip = fields.tooltip end
+        if fields.pressed ~= nil then item.pressed = fields.pressed end
+        LayoutButtonStrip(self)
+        if GameTooltip:IsOwned(segment) then ShowStripTooltip(segment) end
+    end
+    -- 某一段的 Frame（给菜单、弹窗当锚点）。
+    function strip:GetItemFrame(id)
+        for index, item in ipairs(self._exStripItems or {}) do
+            if item.id == id then return self._exStripSegments[index] end
+        end
+    end
+    function strip:Release() Factory:ReleaseCompositeHost(self) end
+end
+
+-- options（纯数据 + 回调）:
+--   items = { { id, icon?, text?, tone? = "ok" | "danger", tooltip?, emphasize?, pressed? }, ... }（至少一项）
+--     icon 是 GUIIcons ID；icon 与 text 至少一个。tone = "ok" 图标和文字染绿（capsuleAddText），
+--     "danger" 染红（capsuleDangerText），段底不变色。emphasize = true：字 capsuleAddFont、图标 capsuleAddIconSize。
+--     pressed = true：按下状态（白 0.14 底 + 白 0.55 内描边、白字，两边竖线隐藏）。
+--   onClick(id, segmentFrame, strip)   点某一段；segmentFrame 可当菜单锚点
+--   tooltipAnchor = "below"  可选：悬停提示水平居中放在该段正下方（间距 GM.size.capsuleTooltipGap）；
+--                            不写时照旧 GameTooltip 的 ANCHOR_BOTTOM。
+-- 返回池化宿主（自己按内容定宽，高 GM.size.capsuleHeight）：SetItem(id, { icon?, text?, tooltip?, pressed? })、
+-- GetItemFrame(id)、Release()。悬停有 tooltip 的段显示 GameTooltip。
+function EXUI:CreateButtonStrip(parent, options)
+    if type(options) ~= "table" then error("CreateButtonStrip: options must be a table", 2) end
+    if type(options.items) ~= "table" or #options.items == 0 then error("CreateButtonStrip: options.items must be a non-empty array", 2) end
+    if options.onClick ~= nil and type(options.onClick) ~= "function" then
+        error("CreateButtonStrip: options.onClick must be a function", 2)
+    end
+    if options.tooltipAnchor ~= nil and options.tooltipAnchor ~= "below" then
+        error("CreateButtonStrip: options.tooltipAnchor must be \"below\"", 2)
+    end
+    local items, seen = {}, {}
+    for index, item in ipairs(options.items) do items[index] = CopyStripItem(item, index, seen) end
+    local strip, isNew = Factory:AcquireCompositeHost(BUTTON_STRIP_POOL, parent)
+    if isNew then BuildButtonStrip(strip) end
+    strip._exStripItems = items
+    strip._exStripOnClick = options.onClick
+    strip._exStripTooltipAnchor = options.tooltipAnchor
+    for _, segment in ipairs(strip._exStripSegments) do segment._exStripHover = false end
+    LayoutButtonStrip(strip)
+    -- 自定义字体首帧可能还没载入，量出来的字宽偏小；下一帧同一租约再排一次。
+    C_Timer.After(0, function()
+        if strip._exStripItems == items then LayoutButtonStrip(strip) end
+    end)
+    Factory:AttachPoolRelease(strip, function(self)
+        for _, segment in ipairs(self._exStripSegments) do
+            if GameTooltip:IsOwned(segment) then GameTooltip:Hide() end
+            segment._exStripOwner, segment._exStripItem, segment._exStripHover = nil, nil, nil
+            segment._exJoinedEdge = nil
+            segment._exStripSeam:Hide()
+            EXUI:ClearControlSurface(segment)
+            segment:Hide()
+        end
+        self._exStripItems, self._exStripOnClick, self._exStripTooltipAnchor = nil, nil, nil
+        EXUI:ClearControlSurface(self)
+    end)
+    return strip
 end
 
 -- ---------------------------------------------------------
@@ -5054,6 +5623,10 @@ function EXUI:HideContextMenu()
         end
     end
     if self._contextCloser then self._contextCloser:Hide() end
+    -- onHide 只属于本次显示：先摘下再调用，回调里再开新菜单也不会被重复通知。
+    local onHide = self._contextOnHide
+    self._contextOnHide = nil
+    if onHide then onHide() end
 end
 
 -- 菜单和状态符号共用正式 Unified 资源；Lucide 只接受已登记 ID。
@@ -5308,8 +5881,14 @@ BuildContextPanel = function(items, title, level, reuse)
     return menu
 end
 
+-- options: items（必填）、title、x / y（屏幕坐标，默认鼠标处由调用方给出）、
+--   anchor（可选 Frame：菜单贴在它下方、左边对齐，仍夹在屏幕内；给了 anchor 就不看 x / y）、
+--   onHide()（可选：本次菜单以任何方式关闭时调用一次——点选、点外部、Esc、被下一个菜单替换）。
 function EXUI:ShowContextMenu(options)
     assert(type(options) == "table" and type(options.items) == "table", "context menu needs items")
+    assert(options.onHide == nil or type(options.onHide) == "function", "context menu onHide must be a function")
+    assert(options.anchor == nil or (type(options.anchor) == "table" and type(options.anchor.GetLeft) == "function"),
+        "context menu anchor must be a frame")
     self:HideContextMenu()
     local closer = self._contextCloser
     if not closer then
@@ -5328,7 +5907,14 @@ function EXUI:ShowContextMenu(options)
     end
     local menu = BuildContextPanel(options.items, options.title or "", 9402, self._contextMenu)
     self._contextMenu = menu
-    PlaceClamped(menu, options.x, options.y)
+    local x, y = options.x, options.y
+    local anchor = options.anchor
+    if anchor and anchor:GetLeft() and anchor:GetBottom() then
+        local scale = anchor:GetEffectiveScale() / UIParent:GetEffectiveScale()
+        x, y = anchor:GetLeft() * scale, anchor:GetBottom() * scale - 2
+    end
+    PlaceClamped(menu, x, y)
+    self._contextOnHide = options.onHide
     closer:Show()
     menu:Show()
     return menu
@@ -5362,7 +5948,7 @@ end
 -- 或 { text, style }，style 只能是 "default" 或 "accent"。未声明 avatar 时显示名称首字色块。
 -- badge 为头像右下角的平台角标；style="icon" 使用原尺寸品牌色图标，不画圆底。
 -- 默认仍为白色单色图标 + 平台色圆底。chip 不接受 description / url / tags / badge。
--- 渲染器由 ExwindGrid 以 "EXUI.PersonCards" 注册；实际高度在 layout 中经 ctx:SetContentHeight 上报。
+-- V2 owner 复用 PersonCardsRenderer；实际高度在 layout 中经 ctx:SetContentHeight 上报。
 -- =========================================================
 do
     local Factory = _G.ExwindFactory

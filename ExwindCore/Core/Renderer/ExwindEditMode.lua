@@ -345,6 +345,7 @@ local function MaterializeWorldPreview(module)
         -- 清理仍会受保护地请求 ReleaseWorld，避免遗留半棵世界预览树。
         module.__worldRendererActive = true
         module.RenderWorld(host)
+        host:Show()
         -- TimerBar 的世界编辑覆盖层直接锚定 renderer 提供的声明式四角；不再
         -- 扫描子 Frame、延迟重试或反写语义 Anchor host 的尺寸。
         ClearWorldBounds(module)
@@ -1326,6 +1327,7 @@ end
 
 -- 重新摆放一个命中项的全部部件。命中面用 SetHitRectInsets 外扩：选中时外扩到选框的外环
 -- （可见选框内部整体属于命中面，可缩放与否都一样），太小的元素外扩到至少 MIN_HIT_SIZE。
+-- provider 写了 selectedHitPad 时，选中外扩改用这个值（0 = 不外扩，选框外环让给下层元素）；选框和手柄照旧。
 function WorldInput.Layout(entry)
     local theme = entry.theme
     local rect = entry.liveRect or entry.rect
@@ -1335,7 +1337,7 @@ function WorldInput.Layout(entry)
     local small = widthPx < theme.small or heightPx < theme.small
     entry.selectionPad = small and theme.padSmall or theme.pad
     WorldInput.AnchorBox(entry, entry.hitbox, 0)
-    local selectedPad = entry.selected and entry.selectionPad or 0
+    local selectedPad = entry.selected and (entry.selectedHitPad or entry.selectionPad) or 0
     local growX = math.max(selectedPad, (WorldInput.MIN_HIT_SIZE - widthPx) / 2, 0)
     local growY = math.max(selectedPad, (WorldInput.MIN_HIT_SIZE - heightPx) / 2, 0)
     entry.hitbox:SetHitRectInsets(-growX, -growX, -growY, -growY)
@@ -1344,6 +1346,11 @@ function WorldInput.Layout(entry)
     if entry.selection then
         WorldInput.AnchorBox(entry, entry.outline, 3)
         WorldInput.AnchorBox(entry, entry.selection, entry.selectionPad)
+        if entry.smallElementCornerHandles then
+            for _, strip in pairs(entry.edges) do
+                strip:SetShown(entry.spec.resizable == true and not small)
+            end
+        end
         SetChip(entry.badge, string.format("%d × %d", math.floor(rect.width + 0.5), math.floor(rect.height + 0.5)),
             theme.accent, theme.chipText, theme.badgeSize)
     end
@@ -1373,6 +1380,7 @@ local function SetWorldElementSelection(session)
     local visible = SessionWorldVisualsEnabled(session) and canBegin or false
     session.worldVisible = visible
     local ownerID = selected and selected.ownerID
+    local anchor
     for rootID, entity in pairs(session.entities) do
         for elementID, entry in pairs(entity.worldElements or {}) do
             local active = selected ~= nil and selected.rootID == rootID and selected.elementID == elementID
@@ -1388,11 +1396,21 @@ local function SetWorldElementSelection(session)
             end
             -- 会话中所有可选元素常显淡色轮廓；选中 / 资料夹描边的元素由各自更醒目的框代替。
             entry.faint:SetShown(shown and visible and not showSelection and not showOutline)
-            if showSelection then WorldInput.HideHover(entry) end
+            if showSelection then
+                WorldInput.HideHover(entry)
+                anchor = entry.selection
+            end
         end
         for _, widget in ipairs(entity.worldOverlays or {}) do
             widget.Apply(ownerID, visible)
+            if not anchor and visible and ownerID ~= nil and widget.spec.kind == "frame" and widget.spec.owner == ownerID then
+                anchor = widget.frame
+            end
         end
+    end
+    -- 选中视觉同步完后回报当前可见的选中框（元素选框或当前群组外框，没有则 nil），provider 可以把自己的控件锚在上面。
+    if type(session.provider.OnWorldSelectionAnchor) == "function" then
+        session.provider.OnWorldSelectionAnchor(anchor)
     end
 end
 
@@ -1880,6 +1898,7 @@ end
 -- 按下记录手势起点，拖过阈值（OnDragStart）才先停播再开始缩放。
 function WorldInput.BindHandles(session, rootID, entity, entry)
     local spec, theme, selection = entry.spec, entry.theme, entry.selection
+    entry.smallElementCornerHandles = session.provider.smallElementCornerHandles == true
     local LEVEL = WorldInput.LEVEL
     local resizable = spec.resizable == true
     local thickness = theme.edge
@@ -1931,6 +1950,7 @@ function WorldInput.BindHandles(session, rootID, entity, entry)
         end
         Bind(strip, direction, LEVEL.edge)
     end
+    WorldInput.Layout(entry)
 end
 
 -- 创建一个命中项的选框套件（资料夹描边、选框、手柄、尺寸徽标）。已有则什么也不做。
@@ -2003,6 +2023,8 @@ local function ClearEntry(entry)
     if state.press and state.press.entry == entry then state.press = nil end
     entry.spec, entry.rect, entry.host = nil, nil, nil
     entry.anchorFrame, entry.previewFrame, entry.frameRect, entry.liveRect = nil, nil, nil, nil
+    entry.smallElementCornerHandles = nil
+    entry.selectedHitPad = nil
     entry.selected = false
 end
 
@@ -2083,7 +2105,7 @@ local function CreateOverlayWidget(session, rootID, entity, bundle, spec, theme)
     local parts = pool and table.remove(pool) or BuildOverlayParts(root, spec)
     parts.key = key
     for _, tracked in ipairs(parts.levels) do WorldInput.SetLevel(tracked.frame, tracked.level) end
-    local widget = { spec = spec }
+    local widget = { spec = spec, frame = parts.visual }
     local host = entity.host
     local thickness = spec.edgeHit or 12
 
@@ -2427,6 +2449,7 @@ local function BindWorldElementEntry(session, rootID, entity, entry, item, reuse
     entry.rect, entry.anchorFrame = item.rect, item.anchorFrame
     entry.previewFrame, entry.frameRect = item.previewFrame, item.frameRect
     entry.liveRect = nil
+    entry.selectedHitPad = session.provider.selectedHitPad
     if not reused then
         WorldInput.HideVisuals(entry)
         entry.selected = false
@@ -3166,6 +3189,13 @@ function EXUI:RegisterEditSessionProvider(provider)
         error("RegisterEditSessionProvider: GetObjects must be function", 2)
     end
     if provider.contract == "presentation-transaction" then
+        if provider.smallElementCornerHandles ~= nil and type(provider.smallElementCornerHandles) ~= "boolean" then
+            error("RegisterEditSessionProvider: smallElementCornerHandles must be boolean", 2)
+        end
+        -- 可选：选中元素命中面的外扩量（屏幕固定单位，>= 0）；不写时外扩到选框外环（pad 5，小元素 9）。
+        if provider.selectedHitPad ~= nil and (type(provider.selectedHitPad) ~= "number" or provider.selectedHitPad < 0) then
+            error("RegisterEditSessionProvider: selectedHitPad must be a number >= 0", 2)
+        end
         if type(provider.Catalog) ~= "function" or type(provider.RootOf) ~= "function" or type(provider.Project) ~= "function"
             or type(provider.Commit) ~= "function" or type(provider.SetPresentation) ~= "function" then
             error("RegisterEditSessionProvider: presentation-transaction requires Catalog, RootOf, Project, Commit, SetPresentation", 2)
@@ -3183,7 +3213,7 @@ function EXUI:RegisterEditSessionProvider(provider)
         -- 画面直编的可选回调（见“画面直编”一节）：声明了就必须是函数，否则注册时就报错，不会拖到鼠标按下才炸。
         for _, callbackName in ipairs({ "GetWorldPressMode", "PreviewWorldElement", "PreviewWorldElementLive",
             "ListWorldOverlays", "PreviewWorldOverlay", "OnMarqueeSelect", "IsWorldInputBlocked",
-            "BeforeWorldInput" }) do
+            "BeforeWorldInput", "OnWorldSelectionAnchor" }) do
             if provider[callbackName] ~= nil and type(provider[callbackName]) ~= "function" then
                 error("RegisterEditSessionProvider: " .. callbackName .. " must be function", 2)
             end
@@ -3230,6 +3260,9 @@ presentationCombatGate:SetScript("OnEvent", function(_, event)
                         WorldInput.HideVisuals(entry)
                     end
                     for _, widget in ipairs(entity.worldOverlays or {}) do widget.Apply(nil, false) end
+                end
+                if type(session.provider.OnWorldSelectionAnchor) == "function" then
+                    session.provider.OnWorldSelectionAnchor(nil)
                 end
             else
                 SetWorldElementSelection(session)
@@ -3966,6 +3999,7 @@ end
 function EXUI:OpenModuleSettings(addon, settingsPage)
     local router = state.routers[addon]
     if not router then error("no settings router registered for " .. tostring(addon), 2) end
+    self:ToggleEditMode(false)
     router(settingsPage)
 end
 

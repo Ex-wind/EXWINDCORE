@@ -32,9 +32,8 @@ local L = ExwindTools.L
 --=======================================================================
 ExwindTools.name = addonName
 -- [Core] 版本信息 (从 ExwindTools_Metadata.lua 读取)
-local meta = _G.ExwindTools_MetaData or { version = "DEV-Build", gridEngineVersion = "DEV" }
+local meta = _G.ExwindTools_MetaData or { version = "DEV-Build" }
 ExwindTools.VERSION = meta.version
-ExwindTools.GridEngineVersion = meta.gridEngineVersion
 
 --=======================================================================
 --========================== 全局字体准则 ===============================
@@ -428,7 +427,6 @@ _G.EXDebug = EXDebug
 --========================== 模块状态报告 ===============================
 --=======================================================================
 ExwindTools.ModuleStatus = {}
-ExwindTools.RegisteredLayouts = {}
 -- 模块默认值声明是源码唯一真源：模块作者可直接粘贴 Grid 导出的 EX_DEFAULTS。
 -- 它只在首次取得 ModuleDB 时编译为运行时扁平结构；运行时不存在第二份映射或转发。
 ExwindTools.ModuleDefaultDeclarations = {}
@@ -469,7 +467,6 @@ local function CheckLibs()
                 return LibStub and LibStub:GetLibrary("LibSharedMedia-3.0", true) ~= nil
             end
         },
-        { name = "LibAsync", check = function() return LibStub and LibStub:GetLibrary("LibAsync", true) ~= nil end },
         {
             name = "LibCustomGlow-1.0",
             check = function()
@@ -855,12 +852,6 @@ function ExwindTools:GetModuleDB(moduleKey, defaults)
         MergeDefaults(storage.ModuleDB[moduleKey], defaults)
     end
     return storage.ModuleDB[moduleKey]
-end
-
-function ExwindTools:RegisterModuleLayout(moduleKey, layoutData)
-    if type(moduleKey) == "string" and type(layoutData) == "table" then
-        self.RegisteredLayouts[moduleKey] = layoutData
-    end
 end
 
 local function OwnerBelongsToModule(owner, moduleKey)

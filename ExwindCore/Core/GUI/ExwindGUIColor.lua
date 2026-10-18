@@ -102,9 +102,13 @@ local C = {
     -- 狀態色：成功（綠）。資訊用既有的藍，錯誤用既有的紅
     okFg       = "4cc38a",  -- 成功文字 / 圖示，壓在卡片上對比 7.46
     okBorder   = "235c43",  -- 成功提示外框
-    okSolid    = "218358",  -- 成功實心（白字對比 4.72），預留，本批未使用
+    okSolid    = "218358",  -- 成功實心（白字對比 4.72）；EXAura 過濾「只看」用（GC.filterInclude）
     infoBorder = "24476b",  -- 資訊提示外框
     errBorder  = "6b2f33", -- 錯誤提示外框；與 infoBorder / okBorder 同檔亮度
+    -- 過濾卡片淺字 / 只看懸停（EXAura 編輯器新版）
+    filterIncText  = "bfeed5", -- 只看：卡片名稱淺綠字
+    filterExcText  = "f4c7c7", -- 排除：卡片名稱淺紅字
+    filterIncHover = "26935f", -- 只看：懸停
 
 }
 
@@ -330,10 +334,6 @@ ExwindTools.GUIColors = {
     tabIndicator     = H(SOLID), -- 主色深藍（原 H(C.aFg)）      -- 主色指示條，高度見 GM.size.tabIndicatorHeight -- [新]
     tabDivider       = H(C.bSubtle), -- [新]
 
-    -- 三态筛选 Chip（CreateTriStateChip）的语义主色；真源在此，控件不再写死 RGBA。
-    triInclude       = { 0.30, 0.78, 0.48, 1 }, -- 只看（include）
-    triExclude       = { 0.933, 0.443, 0.502, 1 }, -- 排除（exclude）
-
     -- 選項組（G1）
     optionRow             = H(C.head), -- [新]
     optionRowBorder       = H(C.bSubtle), -- [新]
@@ -384,6 +384,33 @@ ExwindTools.GUIColors = {
     contextMenuDangerHover = DangerA(0.10), -- [新]
     contextMenuDisabled  = H(C.dis), -- [新]
     contextMenuCheck     = WhiteA(1), -- [新]
+
+    -- EXAura 編輯器新版（只新增，舊色不動）
+    filterIncludeText    = H(C.filterIncText), -- 過濾卡片：只看名稱
+    filterExcludeText    = H(C.filterExcText), -- 過濾卡片：排除名稱
+    filterInclude        = H(C.okSolid), -- 過濾「只看」主綠：卡片邊、淡底、迷你分段選中段、面板整行
+    filterIncludeHover   = H(C.filterIncHover), -- 過濾卡片：只看懸停
+    settingsBarFill      = BlackA(0.30), -- 設置條淡底
+    settingsBarDivider   = WhiteA(0.18), -- 設置條行線
+    floatControlFill     = H(C.ctrl, 0.62), -- 浮層控件底
+    floatControlBorder   = WhiteA(0.22), -- 浮層控件邊
+    capsuleHoverFill     = WhiteA(0.07), -- 膠囊按鈕組：懸停底
+    capsulePressedFill   = WhiteA(0.14), -- 膠囊按鈕組：按下底
+    capsulePressedBorder = WhiteA(0.55), -- 膠囊按鈕組：按下內描邊
+    capsuleAddText       = H(C.okFg), -- 膠囊按鈕組：「新增」段圖示與文字
+    capsuleDangerText    = H(C.dangerB), -- 膠囊按鈕組：「退出」段圖示與文字
+    -- 分段控件「黑色軌道」外觀（CreateSegmentedControl options.track = "dark"）
+    segmentDarkTrack     = BlackA(0.28), -- 軌道底，不畫邊
+    segmentDarkHover     = WhiteA(0.08), -- 未選中段懸停底
+    segmentDarkPressed   = WhiteA(0.14), -- 未選中段按下底
+    segmentDarkSelected  = WhiteA(0.22), -- 選中塊（該段沒寫 selectedFill 時）
+    -- 圖示按鈕「黑色軌道」外觀（CreateIconButton appearance = "dark"，疊在彩色底上用）
+    iconDarkFill         = BlackA(0.20), -- 平常底，不畫邊
+    iconDarkIcon         = WhiteA(0.55), -- 平常圖示
+    iconDarkHoverBorder  = WhiteA(0.35), -- 懸停、按下的邊
+    iconDarkChecked      = WhiteA(0.24), -- 開啟（checked）的底
+    iconDarkDisabledFill = BlackA(0.07), -- 停用底（平常底的 35%）
+    iconDarkDisabledIcon = WhiteA(0.19), -- 停用圖示（平常圖示的 35%）
 
     -- ---------- FontString 內嵌色 ----------
     markup = {

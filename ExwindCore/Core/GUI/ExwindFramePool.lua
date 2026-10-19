@@ -27,6 +27,8 @@ local function StandardReset(pool, frame)
     frame:SetParent(UIParent)
     frame:SetAlpha(1)
     frame:SetScale(1)
+    -- 浮层外观标记（EXUI:SetControlOverlayAppearance）只属于本次租约。
+    frame._exOverlay = nil
 
     -- 防止动作残留
     frame:SetScript("OnUpdate", nil)
@@ -159,6 +161,10 @@ local function StandardReset(pool, frame)
     frame._exModernPressed = nil
     -- 三态勾选框（CreateTriStateCheckbox）的“部分”标记随租约结束，下一次借用恢复普通勾选框。
     frame._exTriState = nil
+    -- 颜色按钮的“只画色块”呈现（CreateColorButton options.swatchOnly）同样随租约结束。
+    frame._exColorSwatchOnly = nil
+    -- 输入框占位字用占位灰（CreateEditBox options.placeholderDim）同样随租约结束。
+    frame._exPlaceholderDim = nil
     if frame._exSidebarLabel then
         frame._exSidebarLabel:SetText("")
         frame._exSidebarLabel:ClearAllPoints()

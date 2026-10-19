@@ -555,10 +555,8 @@ end
 -- Provider 图标列表里，只能从下方固定的齿轮按钮进入。用来承载不属于任何
 -- 单一插件的全局开关，例如统一小地图按钮的隐藏开关。
 --
--- 内容和其它设置页一样，统一走 ExwindGrid + EXUI 标准控件渲染，不手写
--- Frame/CheckButton；不属于任何 moduleKey，因此 config 用一个 __index/
--- __newindex 代理表把 Grid 的标准读写路径实时转发到 Is/SetMinimapButtonHidden，
--- 而不是另建一份镜像 DB。
+-- 页面由 V2 声明和标准控件持有。不属于任何 moduleKey，owner 通过实时
+-- 配置代理读写正式的小地图按钮和面板缩放设置，不建立镜像 DB。
 local SettingsProvider = { id = "settings", accent = "cyan", hasTopTabs = false, layoutMode = "tabs_full" }
 
 local SettingsConfigProxy = setmetatable({}, {
@@ -580,21 +578,41 @@ local SettingsConfigProxy = setmetatable({}, {
 })
 
 local PANEL_SCALE_OPTIONS = {
-    { "60%", 60 }, { "65%", 65 }, { "70%", 70 }, { "75%", 75 }, { "80%", 80 },
-    { "85%", 85 }, { "90%", 90 }, { "95%", 95 }, { "100%", 100 },
-    { "105%", 105 }, { "110%", 110 },
+    { label = "60%", value = 60 }, { label = "65%", value = 65 },
+    { label = "70%", value = 70 }, { label = "75%", value = 75 },
+    { label = "80%", value = 80 }, { label = "85%", value = 85 },
+    { label = "90%", value = 90 }, { label = "95%", value = 95 },
+    { label = "100%", value = 100 }, { label = "105%", value = 105 },
+    { label = "110%", value = 110 },
 }
 
--- 200 列密度和 HomePage.lua 等其它标准设置页保持一致，让 y 坐标差对应
--- 合理的像素间距；默认 50 列会让每格过宽，内容被拉得离标题很远。
-local SETTINGS_GRID_COLS = 200
+local SETTINGS_PAGE_ID = "ExwindCore.UnifiedPanelSettings"
+EXUI:RegisterSettingsPageV2(SETTINGS_PAGE_ID, {
+    version = 2,
+    cards = {
+        { id = "settings", kind = "card", title = L["通用设置"], children = {
+            { id = "minimapHidden", kind = "control", ref = "minimapHidden", controlType = "switch" },
+            { id = "panelScale", kind = "control", ref = "panelScale", controlType = "select" },
+        } },
+    },
+})
 
-local function BuildSettingsLayout()
-    return {
-        { key = "header_settings", type = "header", x = 1, y = 3, w = 190, h = 4, label = L["通用设置"], labelSize = 20 },
-        { key = "minimapHidden", type = "checkbox", x = 3, y = 11, w = 60, h = 4, label = L["隐藏小地图按钮"] },
-        { key = "panelScale", type = "dropdown", x = 3, y = 19, w = 30, h = 4, label = L["面板缩放"], items = PANEL_SCALE_OPTIONS },
-    }
+local function CreateSettingsOwner()
+    local owner = { controls = {} }
+    local function Control(key, spec)
+        local binding = {
+            Read = function() return SettingsConfigProxy[key] end,
+            Write = function(_, value) SettingsConfigProxy[key] = value end,
+        }
+        return EXUI:CreateSettingsV2Control(spec, function() return binding end)
+    end
+    owner.controls.minimapHidden = Control("minimapHidden", {
+        controlType = "switch", label = L["隐藏小地图按钮"],
+    })
+    owner.controls.panelScale = Control("panelScale", {
+        controlType = "select", label = L["面板缩放"], options = PANEL_SCALE_OPTIONS,
+    })
+    return owner
 end
 
 function SettingsProvider:Mount(hosts)
@@ -613,16 +631,20 @@ function SettingsProvider:Mount(hosts)
 end
 
 function SettingsProvider:Render()
-    local Grid = _G.ExwindGrid
-    if not (Grid and self.ScrollFrame and self.ScrollChild) then return end
+    if not (self.ScrollFrame and self.ScrollChild) then return end
     local width = self.ScrollFrame:GetWidth()
     if width < 100 then width = 800 end
     self.ScrollChild:SetWidth(width - 16)
-    self.ScrollChild:SetHeight(1)
-    if Grid.SetContainerCols then
-        Grid:SetContainerCols(self.ScrollChild, SETTINGS_GRID_COLS)
+    if self.Session then
+        self.Session:Refresh()
+    else
+        self.Owner = CreateSettingsOwner()
+        self.Owner.onHeightChanged = function(height)
+            self.ScrollChild:SetHeight(height)
+            self.ScrollFrame:UpdateScrollChildRect()
+        end
+        self.Session = EXUI:MountSettingsPageV2(self.ScrollChild, SETTINGS_PAGE_ID, self.Owner)
     end
-    Grid:Render(self.ScrollChild, BuildSettingsLayout(), SettingsConfigProxy, nil)
 end
 
 function SettingsProvider:ApplyRoute()
@@ -637,6 +659,10 @@ function SettingsProvider:Relayout()
 end
 
 function SettingsProvider:Hide()
+    if self.Session then
+        self.Session:Release()
+        self.Session, self.Owner = nil, nil
+    end
     if self.Root then self.Root:Hide() end
 end
 

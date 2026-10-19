@@ -154,29 +154,28 @@ local function SyncDropdownMenuLayer(dropdown, parent)
         end
     end
 
-    -- Blizzard_Menu 生成的真正菜单不是 DropdownButton 的子 Frame，而是 menu:ToProxy()
-    -- 返回的独立窗口。它在对象池中借出后有时仍会保留较低的 frame level，造成
-    -- 菜单只在组合弹窗的下缘露出。菜单创建完成后直接提升该 Proxy，不能只提升按钮。
+    -- Blizzard_Menu 生成的列表是独立窗口（MenuTemplateBase），不是 DropdownButton 的子 Frame。
+    -- 这里收到的 menu 就是这个窗口本身（Menu.GetManager():OpenMenu 返回的 proxy），它没有 ToProxy。
+    -- 暴雪只把 TOOLTIP 层按钮的列表放到 TOOLTIP，其余一律放 FULLSCREEN_DIALOG、level = 按钮 level + 501。
+    -- 按钮在 FULLSCREEN_DIALOG 浮窗里时，列表和浮窗同一 strata，只比 frame level；浮窗置顶后 level
+    -- 逼近上限 10000，列表 level 被截断后会被浮窗盖住。这种情况把列表放到相邻更高的 TOOLTIP，
+    -- 和暴雪对 TOOLTIP 层按钮的做法一致；DIALOG 及以下的下拉保持暴雪默认，不改。
+    -- 换到 TOOLTIP 后不再需要比按钮高，level 压到 1000 以内，给列表内容（+20）和跟随的搜索框（+50）
+    -- 留出余量，不再碰上限。在触发 OnMenuOpen 之前调整，让搜索框读到的已是新的 strata 与 level。
     if dropdown.OnMenuOpened and not dropdown._exuiDropdownMenuOpenedHook then
         dropdown._exuiDropdownMenuOpenedHook = true
         dropdown._exuiBaseOnMenuOpened = dropdown.OnMenuOpened
         dropdown.OnMenuOpened = function(self, menu)
+            local owner = self._exuiDropdownLayerParent or self:GetParent()
+            if menu and owner and owner:GetFrameStrata() == "FULLSCREEN_DIALOG" then
+                local level = math.min(menu:GetFrameLevel(), 1000)
+                menu:SetFrameStrata("TOOLTIP")
+                menu:SetFrameLevel(level)
+            end
             self._exuiBaseOnMenuOpened(self, menu)
 
-            local owner = self._exuiDropdownLayerParent or self:GetParent()
+            -- 滚动条样式沿用原写法：游戏里 menu 没有 ToProxy，这里不套用；带搜索的列表由搜索框套用。
             local proxy = menu and menu.ToProxy and menu:ToProxy()
-            if owner and proxy and owner.GetFrameStrata then
-                local ownerStrata = owner:GetFrameStrata()
-                -- DIALOG 弹窗内的列表必须位于 FULLSCREEN_DIALOG；这不是“调高一点”，
-                -- 而是使用暴雪定义的相邻更高 strata，保证不会被弹窗遮住。
-                local menuStrata = ownerStrata == "TOOLTIP" and "TOOLTIP" or "FULLSCREEN_DIALOG"
-                proxy:SetFrameStrata(menuStrata)
-                if proxy.SetFrameLevel and owner.GetFrameLevel then
-                    local level = math.max(proxy:GetFrameLevel() or 0, (owner:GetFrameLevel() or 0) + 1000)
-                    proxy:SetFrameLevel(level)
-                end
-                if proxy.SetToplevel then proxy:SetToplevel(true) end
-            end
             if EXUI.StyleDropdownMenuProxy then EXUI:StyleDropdownMenuProxy(proxy) end
             if EXUI.RefreshControlAppearance then EXUI:RefreshControlAppearance(self) end
         end
@@ -472,6 +471,10 @@ MODERN.typography = {
     sliderInput = { size = GM.font.sliderInput, color = MC.text, template = "GameFontHighlightSmall" },
     urlValue = { size = GM.font.small, color = MC.text, template = "GameFontHighlightSmall" }, -- 只读网址框
     urlCompact = { size = GM.font.hint, color = MC.text, template = "GameFontHighlightSmall" }, -- 窄卡里的只读网址框
+    -- 设置行规格（GM.settings）：标签 Body、说明 Caption、节标题 BodyStrong。
+    settingsLabel = { size = GM.settings.labelFont, color = MC.text, template = "GameFontHighlight" },
+    settingsDescription = { size = GM.settings.descriptionFont, color = MC.muted, template = "GameFontHighlightSmall" },
+    settingsSection = { size = GM.settings.sectionFont, color = MC.text, template = "GameFontHighlight" },
 }
 
 -- 滑条数值框的尺寸常量。它是 ApplyModernInput 的一种角色（_exSliderNumberInput），
@@ -619,6 +622,40 @@ MODERN.surfaceAtlas = {
     maxRadius = 32,
 }
 
+-- 大半径圆角图集（33～64 物理像素），只给打了 _exSurfaceLargeRadius 标记的 Frame 用（胶囊按钮组）：
+-- 高分屏上半径 21 的胶囊超过 32 物理像素，用它画整半圆。排法同上（格 66、15 列、条带 0/1/2），
+-- 右下角留纯白，借用主图集实色坐标时也取到白。没有标记的 Frame 仍截到 32，画法不变。
+MODERN.surfaceAtlasLarge = {
+    file = MODERN_MEDIA .. "SurfaceBorderAtlasLarge.tga",
+    width = 1024,
+    height = 512,
+    cell = 66,
+    columns = 15,
+    minRadius = 33,
+    maxRadius = 64,
+}
+
+function MODERN.surfaceAtlasLarge:SetCornerTexCoord(texture, radiusPixels, band, row, col)
+    local index = band * (self.maxRadius - self.minRadius + 1) + radiusPixels - self.minRadius
+    local x = (index % self.columns) * self.cell + 1
+    local y = math.floor(index / self.columns) * self.cell + 1
+    local left, right = x / self.width, (x + radiusPixels) / self.width
+    local top, bottom = y / self.height, (y + radiusPixels) / self.height
+    if col == 3 then left, right = right, left end
+    if row == 3 then top, bottom = bottom, top end
+    texture:SetTexCoord(left, right, top, bottom)
+end
+
+-- 角块按半径选图集：贴图文件只在真的换图集时重设（没标记的 Frame 永远不换）。
+local function SetSurfaceCornerTexCoord(texture, radiusPixels, band, row, col)
+    local atlas = radiusPixels > MODERN.surfaceAtlas.maxRadius and MODERN.surfaceAtlasLarge or MODERN.surfaceAtlas
+    if (texture._exSurfaceAtlasFile or MODERN.surfaceAtlas.file) ~= atlas.file then
+        texture:SetTexture(atlas.file, "CLAMP", "CLAMP", "NEAREST")
+        texture._exSurfaceAtlasFile = atlas.file
+    end
+    atlas:SetCornerTexCoord(texture, radiusPixels, band, row, col)
+end
+
 function MODERN.surfaceAtlas:GetPixel(frame)
     local effectiveScale = frame and frame.GetEffectiveScale and frame:GetEffectiveScale() or 1
     effectiveScale = type(effectiveScale) == "number" and effectiveScale > 0 and effectiveScale or 1
@@ -635,7 +672,8 @@ function MODERN.surfaceAtlas:GetMetrics(frame, radius, borderPixels)
     local pixel = self:GetPixel(frame)
     local widthPixels = math.max(1, math.floor(width / pixel + .5))
     local heightPixels = math.max(1, math.floor(height / pixel + .5))
-    local radiusPixels = math.max(0, math.min(self.maxRadius,
+    local maxRadius = frame._exSurfaceLargeRadius == true and MODERN.surfaceAtlasLarge.maxRadius or self.maxRadius
+    local radiusPixels = math.max(0, math.min(maxRadius,
         math.floor((tonumber(radius) or 0) / pixel + .5),
         math.floor(widthPixels / 2), math.floor(heightPixels / 2)))
     local strokePixels = math.max(1, math.min(2, math.floor((tonumber(borderPixels) or 1) + .5)))
@@ -797,10 +835,10 @@ local function GetModernSurface(frame, radius)
                 local pieceWidth = xs[piece.col + 1] - xs[piece.col]
                 local pieceHeight = ys[piece.row + 1] - ys[piece.row]
                 if piece.kind == "fillCorner" then
-                    MODERN.surfaceAtlas:SetCornerTexCoord(piece.texture,
+                    SetSurfaceCornerTexCoord(piece.texture,
                         metrics.radiusPixels, 0, piece.row, piece.col)
                 elseif piece.kind == "borderCorner" then
-                    MODERN.surfaceAtlas:SetCornerTexCoord(piece.texture,
+                    SetSurfaceCornerTexCoord(piece.texture,
                         metrics.radiusPixels, metrics.strokePixels, piece.row, piece.col)
                 else
                     MODERN.surfaceAtlas:SetSolidTexCoord(piece.texture)
@@ -877,7 +915,7 @@ end
 function EXUI:SetControlSurface(frame, radius, fill, border)
     if not frame then return end
     radius = (radius == 3 or radius == 4 or radius == 5 or radius == 6
-        or radius == 8 or radius == 10) and radius or 4
+        or radius == 8 or radius == 10 or radius == 21) and radius or 4 -- 21：胶囊按钮组（高 42）
     MODERN.PaintControlSurface(frame, radius, fill, border)
 end
 
@@ -889,6 +927,25 @@ function EXUI:ClearControlSurface(frame)
         for _, piece in ipairs(skin.pieces) do piece.texture:Hide() end
     end
 end
+
+-- 浮层外观：控件浮在游戏画面上时（EXAura 跟随光环设置条）用半透明深底 + 白 0.22 边，文字加 OUTLINE。
+-- 标记 _exOverlay 由 EXUI:SetControlOverlayAppearance 设置、对象池 StandardReset 清掉；
+-- 输入框、数字框、下拉、颜色按钮、图标按钮、分段轨道绘制时读到标记才换色，没有标记时画法不变。
+local function IsOverlay(frame)
+    return frame ~= nil and frame._exOverlay == true
+end
+
+-- 文字描边跟随浮层标记；只有标记开着、或这段文字曾被描过边时才动字体，默认控件一律不碰。
+local function SyncOverlayFont(owner, region)
+    if not region or not region.GetFont then return end
+    local want = owner ~= nil and owner._exOverlay == true
+    if not want and not region._exOverlayOutline then return end
+    local path, size = region:GetFont()
+    if not path then return end
+    region:SetFont(path, size, want and "OUTLINE" or "")
+    region._exOverlayOutline = want or nil
+end
+MODERN.IsOverlay, MODERN.SyncOverlayFont = IsOverlay, SyncOverlayFont
 
 function EXUI:ApplyModernPanel(frame, elevated)
     self:SetControlSurface(frame, GM.radius.card, elevated and MC.raised or MC.panel, MC.border)
@@ -971,6 +1028,30 @@ local function EnsureTextButtonFontString(frame)
     return label
 end
 
+-- 文字按钮的宽度下限 = 文字宽 + 左右内边距；创建和每次换文字都量一次，只撑宽不压窄。
+local function FitButtonWidthToText(frame)
+    if frame._exButtonPresentation == "sidebar" then return end
+    local label = frame.GetFontString and frame:GetFontString()
+    if not label then return end
+    local padding = frame._exButtonCompact and GM.space.compactButtonPaddingX or BUTTON_STYLE.paddingX
+    local needed = math.ceil(label:GetUnboundedStringWidth() or 0) + padding * 2
+    if needed > frame:GetWidth() then frame:SetWidth(needed) end
+end
+
+-- 普通文字按钮在不被压窄时需要的宽度（与 CreateButton 同字体、同内边距），供布局预先留位。
+local buttonTextMeasure
+function EXUI:MeasureButtonWidth(text)
+    if not buttonTextMeasure then
+        local host = CreateFrame("Frame", nil, UIParent)
+        host:Hide()
+        buttonTextMeasure = EXUI:CreateVisualFontString(host, EXFONTFRAME)
+        buttonTextMeasure:SetFontObject(MODERN.buttonFont)
+    end
+    buttonTextMeasure:SetText(text or "")
+    return math.max(BUTTON_STYLE.minWidth,
+        math.ceil(buttonTextMeasure:GetUnboundedStringWidth() or 0) + BUTTON_STYLE.paddingX * 2)
+end
+
 local function LayoutSidebarNavigationButton(frame)
     local level = tonumber(frame._exSidebarLevel) or 0
     local label = EnsureTextButtonFontString(frame)
@@ -1005,7 +1086,7 @@ local function LayoutSidebarNavigationButton(frame)
     label:SetPoint("RIGHT", frame, "RIGHT", -10, 0)
     label:SetJustifyH("LEFT")
     label:SetJustifyV("MIDDLE")
-    label:SetWordWrap(false)
+    label:SetWordWrap(true)
     label:SetFontObject(MODERN.menuFonts.control)
     label:SetScale(1)
     frame.label = label
@@ -1076,11 +1157,13 @@ local function PaintModernButton(frame)
     local top, bottom, edge, text, highlight
 
     if isColorButton then
-        top, edge, text = MC.input, MC.inputBorder, MC.text
+        -- 浮层外观：底换浮层底，平常的边换浮层边；悬停、按下的边照旧。
+        local base = IsOverlay(frame) and GC.floatControlFill or MC.input
+        top, edge, text = base, IsOverlay(frame) and GC.floatControlBorder or MC.inputBorder, MC.text
         if frame._exModernPressed and enabled then
-            top, edge = MC.input, MC.blue
+            top, edge = base, MC.blue
         elseif frame._exModernHover and enabled then
-            top, edge, text = MC.input, MC.inputHoverBorder, MC.text
+            top, edge, text = base, MC.inputHoverBorder, MC.text
         end
     else
         local states = GS[variant] or GS.button
@@ -1186,11 +1269,14 @@ local function PaintModernInput(surface, editBox)
     local focus = enabled and editBox and editBox.HasFocus and editBox:HasFocus()
     local hover = enabled and editBox and editBox._exModernHover
     local focusBorder = surface and surface._exModernInputFocusBorder or MC.inputFocusBorder
-    local idleFill = surface and surface._exModernInputIdleFill or MC.input
+    -- 浮层外观（输入框、数字框）：平常底与边换浮层色，悬停、聚焦的边照旧。
+    local overlay = IsOverlay(surface)
+    local idleFill = surface and surface._exModernInputIdleFill or (overlay and GC.floatControlFill or MC.input)
     local activeFill = surface and surface._exModernInputActiveFill or idleFill
     local hoverBorder = surface and surface._exModernInputHoverBorder or MC.inputHoverBorder
     local fill = enabled and ((focus or hover) and activeFill or idleFill) or MC.inputDisabled
-    local idleBorder = surface and surface._exModernInputIdleBorder or MC.inputBorder
+    local idleBorder = surface and surface._exModernInputIdleBorder
+        or (overlay and GC.floatControlBorder or MC.inputBorder)
     local edge = enabled and (focus and focusBorder or (hover and hoverBorder or idleBorder))
         or MC.inputDisabledBorder
     EXUI:SetControlSurface(surface, GM.radius.control, fill, edge)
@@ -1203,6 +1289,7 @@ local function PaintModernInput(surface, editBox)
     if editBox and editBox.SetTextColor then
         editBox:SetTextColor(unpack(enabled and MC.text or MC.disabledText))
     end
+    if surface then SyncOverlayFont(surface, editBox) end
 end
 
 local function ApplyModernInput(frame)
@@ -1265,14 +1352,15 @@ local function ApplyModernInput(frame)
             -- 字号与框宽是一组（2026-10-05 由 11/40 提到 13/48），只改一个会截断数值。
             editBox:SetTextInsets(SLIDER_NUMBER_INPUT_INSET, SLIDER_NUMBER_INPUT_INSET, 0, 0)
         else
-            editBox:SetTextInsets(9, 9, editBox == frame and 0 or 7, editBox == frame and 0 or 7)
+            editBox:SetTextInsets(GM.space.inputTextPadX, GM.space.inputTextPadX, editBox == frame and 0 or 7, editBox == frame and 0 or 7)
         end
     end
     MODERN.ApplyTextRole(editBox, editBox._exSearchAppearance and "control"
         or editBox._exInputTextRole
         or (editBox._exSliderNumberInput and "sliderInput" or "fieldValue"))
     MODERN.ApplyTextRole(frame.placeholder, editBox._exSearchAppearance and "control"
-        or editBox._exInputTextRole or (editBox._exSliderNumberInput and "sliderInput" or "fieldValue"))
+        or editBox._exInputTextRole or (editBox._exSliderNumberInput and "sliderInput" or "fieldValue"),
+        frame._exPlaceholderDim and GC.textPlaceholder or nil)
     PaintModernInput(frame, editBox)
 end
 
@@ -1280,10 +1368,17 @@ local function PaintModernDropdown(frame)
     local enabled = frame:IsEnabled()
     local menuOpen = enabled and frame.IsMenuOpen and frame:IsMenuOpen()
     local active = enabled and (frame._exModernHover or menuOpen)
-    EXUI:SetControlSurface(frame, GM.radius.control, enabled and MC.input or MC.inputDisabled,
-        enabled and (menuOpen and MC.inputFocusBorder or (active and MC.inputHoverBorder or MC.inputBorder))
+    -- 浮层外观：底换浮层底，平常的边换浮层边；悬停、展开的边照旧。
+    local overlay = IsOverlay(frame)
+    EXUI:SetControlSurface(frame, GM.radius.control,
+        enabled and (overlay and GC.floatControlFill or MC.input) or MC.inputDisabled,
+        enabled and (menuOpen and MC.inputFocusBorder or (active and MC.inputHoverBorder
+            or (overlay and GC.floatControlBorder or MC.inputBorder)))
             or MC.inputDisabledBorder)
-    if frame.Text then frame.Text:SetTextColor(unpack(enabled and MC.text or MC.disabledText)) end
+    if frame.Text then
+        frame.Text:SetTextColor(unpack(enabled and MC.text or MC.disabledText))
+        SyncOverlayFont(frame, frame.Text)
+    end
     if frame._exModernChevron then
         local target = menuOpen and -math.pi or 0
         if frame._exModernChevronTarget == nil then
@@ -1315,6 +1410,11 @@ local function ApplyModernDropdown(frame)
     -- 触发框当前值与 Blizzard_Menu 选项共用同一个 15px FontObject，
     -- 避免两条渲染路径各自取默认字体后产生大小/字面观感差异。
     frame.Text:SetFontObject(MODERN.menuFonts.control)
+    -- Selected values occupy one line; the native FontString elides overflow
+    -- within its left/right anchors instead of wrapping into the fixed-height control.
+    frame.Text:SetWordWrap(false)
+    frame.Text:SetNonSpaceWrap(false)
+    frame.Text:SetMaxLines(1)
     if frame.Text.SetShadowOffset then frame.Text:SetShadowOffset(0, 0) end
     if not frame._exModernDropdownHooks then
         frame._exModernDropdownHooks = true
@@ -1893,7 +1993,7 @@ local function ApplyModernSlider(frame)
         interactive:ClearAllPoints()
         interactive:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", 0, 0)
         if frame.numberInput and frame._exNumberInputPosition ~= "title" then
-            interactive:SetPoint("RIGHT", frame.numberInput, "LEFT", -8, 0)
+            interactive:SetPoint("RIGHT", frame.numberInput, "LEFT", -GM.space.sliderInputGap, 0)
         else
             interactive:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", 0, 0)
         end
@@ -2135,6 +2235,9 @@ function EXUI:CreateScrollFrame(parent, name, options)
     self:ApplyModernScrollFrame(scrollFrame)
     function scrollFrame:GetHorizontalScrollInset()
         return self.HorizontalScrollBar and (MODERN_SCROLL_BAR_WIDTH + MODERN_SCROLL_BAR_OFFSET_X) or 0
+    end
+    function scrollFrame:GetVerticalScrollInset()
+        return self.ScrollBar and (MODERN_SCROLL_BAR_WIDTH + MODERN_SCROLL_BAR_OFFSET_X) or 0
     end
     if options.horizontal == true then
         local bar = CreateFrame("EventFrame", nil, scrollFrame, "MinimalScrollBar")
@@ -3538,7 +3641,7 @@ local function SetDropdownSearchEnabled(dropdown, searchConfig)
 end
 
 -- =========================================================
--- [Core] 统一标签样式更新 (ExwindGrid 编辑器专用)
+-- [Core] 统一标签样式更新（组合控件复用）
 -- =========================================================
 function EXUI:UpdateLabelStyle(widget, size, pos)
     if not widget then return end
@@ -3588,9 +3691,34 @@ function EXUI:UpdateLabelStyle(widget, size, pos)
     end
 end
 
+-- 下拉按选项定宽：用触发框自己的文字（同字体）量出所有选项（含子菜单）里最宽的文字，
+-- 再加上文字左右锚点留出的内距与 ▾ 区。
+local function FitDropdownWidthToOptions(dropdown, items)
+    local text, widest = dropdown.Text, 0
+    local function Visit(list)
+        for _, item in ipairs(list or {}) do
+            if type(item) == "table" and item.isMenu then
+                Visit(item.menu)
+            else
+                text:SetText(tostring(type(item) == "table" and item[1] or item))
+                widest = math.max(widest, text:GetUnboundedStringWidth())
+            end
+        end
+    end
+    Visit(items)
+    local insets = 0
+    for index = 1, text:GetNumPoints() do
+        local point, _, _, offsetX = text:GetPoint(index)
+        if point == "LEFT" then insets = insets + offsetX elseif point == "RIGHT" then insets = insets - offsetX end
+    end
+    dropdown:SetWidth(math.ceil(widest) + 1 + insets)
+end
+
 -- =========================================================
 -- 0. 通用单选下拉菜单 (Generic Dropdown) - [v4.3.1] 支持池化
 -- items 格式: { "选项1", "选项2" } 或 { {"显示文字", "实际值"}, ... }
+-- searchConfig（可选表）: search / previewPath 之外，widthFromOptions = true 时控件宽度改为
+--   “当前语言里最长选项文字宽 + 文字内距 + ▾”（width 参数不再使用）；不传时宽度照旧取 width。
 -- =========================================================
 function EXUI:CreateDropdown(parent, width, label, items, currentValue, onSelect, searchConfig)
     local EXFactory = _G.ExwindFactory
@@ -3627,6 +3755,9 @@ function EXUI:CreateDropdown(parent, width, label, items, currentValue, onSelect
         dropdown:EnableMouse(true)
     end
     self:ApplyControlAppearance(dropdown)
+    if type(searchConfig) == "table" and searchConfig.widthFromOptions == true then
+        FitDropdownWidthToOptions(dropdown, items)
+    end
     dropdown.labelText:SetText(label or "")
 
     -- [v4.3.2 Fix] 将状态挂载到 Self，避免 SetupMenu 闭包捕获导致内存泄漏
@@ -3666,7 +3797,7 @@ function EXUI:CreateDropdown(parent, width, label, items, currentValue, onSelect
             if parentScale > 0 and ownerScale > 0 then proxy:SetScale(ownerScale / parentScale) end
             EXUI:StyleDropdownMenuProxy(proxy)
         end)
-        rootDescription:SetScrollMode(400)
+        rootDescription:SetScrollMode(GM.size.menuMaxHeight)
         if self._externalSearchEnabled then AddSearchSpacer(rootDescription) end
 
         local function BuildMenu(rootDesc, list)
@@ -3717,6 +3848,18 @@ end
 
 -- 外部改值后回显：只更新当前值与显示文字，不触发 onSelect。
 function EXUI:SetDropdownValue(dropdown, value)
+    if dropdown._gridType == "GridLSMDropdown" then
+        local mediaType = dropdown._mediaType
+        local selected = value or LSM:GetDefault(mediaType)
+        if mediaType == "sound" then
+            selected = type(value) == "string" and value or LSM:GetDefault(mediaType)
+        elseif mediaType ~= "font" and selected and not LSM:HashTable(mediaType)[selected] then
+            selected = LSM:HashTable(mediaType)["Solid"] and "Solid" or LSM:GetDefault(mediaType)
+        end
+        dropdown._selectedValue = selected
+        SetDropdownDisplayText(dropdown, mediaType == "font" and selected == "默认" and L["默认"] or selected or "None")
+        return
+    end
     dropdown._currentValue = value
     SetDropdownDisplayText(dropdown, (dropdown._exResolveEntry(value)))
 end
@@ -3776,7 +3919,7 @@ function EXUI:CreateLSMDropdown(parent, mediaType, width, label, currentValue, o
         end)
         if not self._mediaType then return end -- [Fix] 防止复用时 nil 报错
         if self._externalSearchEnabled then AddSearchSpacer(rootDescription) else ModernMenuTitle(rootDescription:CreateTitle(L["选择"] .. (self._mediaType == "font" and L["字体"] or self._mediaType))) end
-        if rootDescription.SetScrollMode then rootDescription:SetScrollMode(400) end
+        if rootDescription.SetScrollMode then rootDescription:SetScrollMode(GM.size.menuMaxHeight) end
 
         local list = LSM:HashTable(self._mediaType)
         local sortedKeys = LSM:List(self._mediaType)
@@ -3854,7 +3997,7 @@ function EXUI:CreateLSMTextureDropdown(parent, mediaType, width, label, currentV
             EXUI:StyleDropdownMenuProxy(proxy)
         end)
         if self._externalSearchEnabled then AddSearchSpacer(rootDescription) else ModernMenuTitle(rootDescription:CreateTitle(L["选择材质"])) end
-        if rootDescription.SetScrollMode then rootDescription:SetScrollMode(400) end
+        if rootDescription.SetScrollMode then rootDescription:SetScrollMode(GM.size.menuMaxHeight) end
 
         local list = LSM:HashTable(self._mediaType)
         local sortedKeys = LSM:List(self._mediaType)
@@ -3867,7 +4010,7 @@ function EXUI:CreateLSMTextureDropdown(parent, mediaType, width, label, currentV
                 local shortKey = #key > 24 and (string.sub(key, 1, 23) .. "..") or key
 
                 local displayText = shortKey
-                if path then
+                if path and path ~= "" then
                     if self._mediaType == "statusbar" then
                         displayText = string.format("|T%s:14:100:0:0:64:64:5:59:5:59|t %s", path, shortKey)
                     elseif self._mediaType == "background" then
@@ -3934,6 +4077,7 @@ function EXUI:CreateLSMSoundDropdown(parent, width, label, currentValue, onSelec
 
     -- [池化关键] 将状态挂到 self，避免每次 Render 生成新闭包链
     dropdown._selectedValue = type(currentValue) == "string" and currentValue or LSM:GetDefault("sound")
+    dropdown._mediaType = "sound"
     dropdown._onSelect = onSelect
     dropdown.labelText:SetText(label or "")
     SetDropdownSearchEnabled(dropdown, searchConfig)
@@ -3949,7 +4093,7 @@ function EXUI:CreateLSMSoundDropdown(parent, width, label, currentValue, onSelec
             EXUI:StyleDropdownMenuProxy(proxy)
         end)
         if self._externalSearchEnabled then AddSearchSpacer(rootDescription) else ModernMenuTitle(rootDescription:CreateTitle(L["选择音效"])) end
-        if rootDescription.SetScrollMode then rootDescription:SetScrollMode(400) end
+        if rootDescription.SetScrollMode then rootDescription:SetScrollMode(GM.size.menuMaxHeight) end
 
         local list = LSM:HashTable("sound")
         local keys = LSM:List("sound")
@@ -4091,7 +4235,6 @@ function EXUI:CreateMultiSelectDropdown(parent, width, label, options, selection
             end
         end
         SetDropdownDisplayText(self, display)
-        if self._onUpdate then self._onUpdate(self._selections) end
     end
 
     dropdown:RefreshSelectionDisplay()
@@ -4104,7 +4247,7 @@ function EXUI:CreateMultiSelectDropdown(parent, width, label, options, selection
             if parentScale > 0 and ownerScale > 0 then proxy:SetScale(ownerScale / parentScale) end
             EXUI:StyleDropdownMenuProxy(proxy)
         end)
-        rootDescription:SetScrollMode(400)
+        rootDescription:SetScrollMode(GM.size.menuMaxHeight)
         if self._externalSearchEnabled then AddSearchSpacer(rootDescription) else ModernMenuTitle(rootDescription:CreateTitle(label)) end
 
         if not self._options then return end
@@ -4121,6 +4264,7 @@ function EXUI:CreateMultiSelectDropdown(parent, width, label, options, selection
                     function()
                         self._selections[optionValue] = not self._selections[optionValue]
                         self:RefreshSelectionDisplay()
+                        if self._onUpdate then self._onUpdate(self._selections) end
                         return MenuResponse.Refresh
                     end
                 )
@@ -4138,6 +4282,7 @@ function EXUI:CreateMultiSelectDropdown(parent, width, label, options, selection
                 self._selections[GetOptionValue(option)] = nil
             end
             self:RefreshSelectionDisplay()
+            if self._onUpdate then self._onUpdate(self._selections) end
             return MenuResponse.Refresh
         end))
         footer:AddInitializer(function(frame)
@@ -4244,17 +4389,22 @@ function EXUI:CreateButton(parent, width, height, text, onClick, options)
         if btn._exButtonPresentation == "sidebar" then
             LayoutSidebarNavigationButton(btn)
         elseif btn._exButtonCompact then
-            label:SetPoint("CENTER", btn, "CENTER")
+            -- 紧凑按钮的文字也限制在按钮内，按钮按文字撑宽，文字不溢出按钮。
+            label:SetPoint("LEFT", btn, "LEFT", GM.space.compactButtonPaddingX, 0)
+            label:SetPoint("RIGHT", btn, "RIGHT", -GM.space.compactButtonPaddingX, 0)
         else
             label:SetPoint("TOPLEFT", btn, "TOPLEFT", BUTTON_STYLE.paddingX, -BUTTON_STYLE.paddingY)
             label:SetPoint("BOTTOMRIGHT", btn, "BOTTOMRIGHT", -BUTTON_STYLE.paddingX, BUTTON_STYLE.paddingY)
         end
-        if not btn._exButtonCompact and btn._exButtonPresentation ~= "sidebar" then
-            btn:SetWidth(math.max(btn:GetWidth(), math.ceil(label:GetUnboundedStringWidth() or 0)
-                + BUTTON_STYLE.paddingX * 2))
-        end
+        FitButtonWidthToText(btn)
         label:SetJustifyH(btn._exButtonPresentation == "sidebar" and "LEFT" or "CENTER")
         label:SetJustifyV("MIDDLE")
+    end
+
+    -- 换文字时重新量宽：新文字放不下就撑宽，不留给省略号。
+    if not btn._exButtonTextHooked then
+        btn._exButtonTextHooked = true
+        hooksecurefunc(btn, "SetText", FitButtonWidthToText)
     end
 
     if onClick then
@@ -4305,6 +4455,16 @@ function EXUI:SetSidebarNavigationButtonLevel(button, level)
     button:SetHeight(button._exSidebarLevel > 0 and 24 or 28)
     LayoutSidebarNavigationButton(button)
     PaintModernButton(button)
+end
+
+-- 导航项文字放不下时换行：按钮已锚定宽度后调用，按换行后的文字高度增高，返回最终高度。
+function EXUI:FitSidebarNavigationButtonHeight(button)
+    if not button or button._exButtonPresentation ~= "sidebar" then return 0 end
+    local height = (tonumber(button._exSidebarLevel) or 0) > 0 and 24 or 28
+    height = math.max(height, math.ceil(button.label:GetStringHeight()) + 8)
+    button:SetHeight(height)
+    LayoutSidebarNavigationButton(button)
+    return height
 end
 
 function EXUI:SetSidebarNavigationButtonState(button, selected, enabled)
@@ -5097,8 +5257,16 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
         btn._exRoundedSwatch = CreateFrame("Frame", nil, btn)
         btn._exRoundedSwatch:EnableMouse(false)
     end
+    -- options.swatchOnly：只画居中色块、不显示文字（设置条上的颜色格）；每次借用都重新定位与复位。
+    local swatchOnly = type(options) == "table" and options.swatchOnly == true
+    btn._exColorSwatchOnly = swatchOnly or nil
     btn._exRoundedSwatch:SetSize(GM.size.colorSwatchSize, GM.size.colorSwatchSize)
-    btn._exRoundedSwatch:SetPoint("LEFT", btn, "LEFT", GM.space.colorSwatchPaddingX, 0)
+    btn._exRoundedSwatch:ClearAllPoints()
+    if swatchOnly then
+        btn._exRoundedSwatch:SetPoint("CENTER", btn, "CENTER", 0, 0)
+    else
+        btn._exRoundedSwatch:SetPoint("LEFT", btn, "LEFT", GM.space.colorSwatchPaddingX, 0)
+    end
     local function PaintSwatch()
         local r, g, b, a = swatch:GetVertexColor()
         -- 16px 的小色块用 control(4) 半径时，圆角和 1px 描边不同源，边缘会发毛；
@@ -5124,7 +5292,7 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
     text:SetPoint("LEFT", swatch, "RIGHT", GM.space.colorSwatchGap, 0)
     text:SetPoint("RIGHT", btn, "RIGHT", -GM.space.colorButtonTextPaddingRight, 0)
     text:SetJustifyH("LEFT")
-    text:SetText(label or "")
+    text:SetText(swatchOnly and "" or (label or ""))
 
     -- [关键] 属性挂载，以便池化复用时更新
     if btn.CancelColorTransaction then btn:CancelColorTransaction() end
@@ -5359,6 +5527,7 @@ end
 -- =========================================================
 -- 13. 输入框与多行文本框 (EditBox)
 -- Options: .bgColor, .borderColor, .textColor
+-- 单行：.placeholder = 空值时的占位字；.placeholderDim = true 时占位字用占位灰（不写时用正文色，与原来一样）。
 -- =========================================================
 -- Search styling never installs filtering or menu lifecycle callbacks.
 function EXUI:ApplySearchBoxAppearance(edit)
@@ -5367,7 +5536,16 @@ function EXUI:ApplySearchBoxAppearance(edit)
     MODERN.ApplyTextRole(edit, "control", GC.text)
     edit:SetTextInsets(28, edit.ClearButton and 24 or 9, 0, 0)
     if edit.SetCursorColor then edit:SetCursorColor(unpack(GC.inputFocusBorder)) end
-    if edit.placeholder then edit.placeholder:SetText(""); edit.placeholder:Hide() end
+    if edit.placeholder then
+        if edit._exSearchShowPlaceholder then
+            -- CreateSearchBox 写了 showPlaceholder：占位字保留，与文字同一左缘（让出放大镜）。
+            edit.placeholder:ClearAllPoints()
+            edit.placeholder:SetPoint("LEFT", 28, 0)
+            edit.placeholder:SetShown(edit:GetText() == "")
+        else
+            edit.placeholder:SetText(""); edit.placeholder:Hide()
+        end
+    end
     if edit.Instructions then edit.Instructions:SetText(""); edit.Instructions:Hide() end
     if not edit._exSearchIcon then
         edit._exSearchIcon = self:CreateVisualTexture(edit, EXBORDERFRAME)
@@ -5379,9 +5557,15 @@ function EXUI:ApplySearchBoxAppearance(edit)
     edit._exSearchIcon:Show()
 end
 
+-- options 同 CreateEditBox；另有 showPlaceholder = true：显示 options.placeholder（占位灰），
+-- 不写时搜索框照旧清空并隐藏占位字。
 function EXUI:CreateSearchBox(parent, initialText, width, height, options)
     local edit = self:CreateEditBox(parent, initialText, width or 180,
         height or GM.size.inputHeight, nil, options)
+    if options and options.showPlaceholder == true then
+        edit._exSearchShowPlaceholder = true
+        edit._exPlaceholderDim = true
+    end
     self:ApplySearchBoxAppearance(edit)
     return edit
 end
@@ -5499,6 +5683,9 @@ function EXUI:CreateEditBox(parent, text, w, h, labelText, options)
         container.editBox = container
         if container.Enable then container:Enable() end
         container._exSearchAppearance = nil
+        container._exSearchShowPlaceholder = nil
+        -- options.placeholderDim = true：占位字用占位灰（GC.textPlaceholder）；不写时照旧用正文色。每次借出重设。
+        container._exPlaceholderDim = options.placeholderDim == true or nil
         self:ApplyControlAppearance(container)
 
         -- 基础配置
@@ -5523,8 +5710,14 @@ function EXUI:CreateEditBox(parent, text, w, h, labelText, options)
             container:EnableMouse(true)
         end
         container:SetAutoFocus(false)
+        -- 游戏的 SetText 会把光标放到末尾，长文字只露出后半截；没在编辑时一律从开头显示。
+        if not container._exCursorHomeHooked then
+            container._exCursorHomeHooked = true
+            hooksecurefunc(container, "SetText", function(self)
+                if not self:HasFocus() then self:SetCursorPosition(0) end
+            end)
+        end
         container:SetText(text or "")
-        container:SetCursorPosition(0)
 
         -- 标签设置
         if labelText then
@@ -5548,9 +5741,12 @@ function EXUI:CreateEditBox(parent, text, w, h, labelText, options)
         -- 占位符
         if not container.placeholder then
             container.placeholder = EXUI:CreateVisualFontString(container, EXFONTFRAME)
-            container.placeholder:SetPoint("LEFT", 3, 0)
         end
-        MODERN.ApplyTextRole(container.placeholder, "fieldValue")
+        -- 每次借出重设位置：上一租约若是显示占位字的搜索框，占位字被挪到了放大镜右边。
+        container.placeholder:ClearAllPoints()
+        container.placeholder:SetPoint("LEFT", GM.space.inputTextPadX, 0)
+        MODERN.ApplyTextRole(container.placeholder, "fieldValue",
+            container._exPlaceholderDim and GC.textPlaceholder or nil)
         container.placeholder:SetText(options.placeholder or "")
 
         local function UpdatePlaceholder()
@@ -5699,6 +5895,8 @@ end
 --   source = "step"（箭头）/ "input"（输入后回车或失焦）。数值越界自动夹到 [min,max]；无法解析的文字回退到上一个有效值。
 --   allowEmpty=false；validation="clamp"（默认）或"reject"（原始范围/整数检查）；
 --   onRejected(reason,source)在恢复后调用。SetMixed(mixed,text)仅呈现，不改底值。
+--   stepper = "right"（默认，右侧上下箭头）/ "sides"（左减右加）/ "none"（不要步进：整格显示数值、只能键入，
+--   窄宽下也看得见数值；浮层外观照常）。不写时外观行为不变。
 -- 返回同一个输入框，并附加：GetNumber() / SetNumber(value) 不触发回调 / SetNumberRange(min,max,step,integer)。
 -- =========================================================
 local NUMBER_STEPPER_WIDTH = GM.size.numberStepperWidth
@@ -5780,9 +5978,11 @@ local function PaintNumberStepper(edit)
             button.symbol:SetTextColor(unpack(enabled and (button._exHover and MC.white or MC.muted) or MC.disabledText))
         end
     end
-    stepper.divider:SetColorTexture(unpack(MC.inputBorder))
-    stepper.middle:SetColorTexture(unpack(MC.inputBorder))
-    if stepper.dividerRight then stepper.dividerRight:SetColorTexture(unpack(MC.inputBorder)) end
+    -- 浮层外观的数字框：步进分隔线与框边同色。
+    local line = IsOverlay(edit) and GC.floatControlBorder or MC.inputBorder
+    stepper.divider:SetColorTexture(unpack(line))
+    stepper.middle:SetColorTexture(unpack(line))
+    if stepper.dividerRight then stepper.dividerRight:SetColorTexture(unpack(line)) end
 end
 
 local function EnsureNumberStepper(edit)
@@ -5885,61 +6085,66 @@ function EXUI:CreateNumberInput(parent, width, options)
         NumberInputCommit(self, self:GetText())
     end)
     edit:SetJustifyH("CENTER")
-    local stepper = EnsureNumberStepper(edit)
-    if options.stepper ~= nil and options.stepper ~= "right" and options.stepper ~= "sides" then
-        error("CreateNumberInput: stepper must be right or sides", 2)
+    if options.stepper ~= nil and options.stepper ~= "right" and options.stepper ~= "sides" and options.stepper ~= "none" then
+        error("CreateNumberInput: stepper must be right, sides or none", 2)
     end
-    local sides = options.stepper == "sides"
-    stepper:ClearAllPoints()
-    stepper.divider:ClearAllPoints()
-    stepper.divider:SetShown(true)
-    stepper.middle:SetShown(not sides)
-    stepper.dividerRight:ClearAllPoints()
-    stepper.dividerRight:SetShown(sides)
-    if sides then
-        stepper:SetAllPoints(edit)
-        edit:SetTextInsets(NUMBER_STEPPER_WIDTH + 4, NUMBER_STEPPER_WIDTH + 4, 0, 0)
-        -- 左右两条竖线分别贴在减号按钮右侧与加号按钮左侧。
-        stepper.divider:SetPoint("TOPLEFT", stepper, "TOPLEFT", NUMBER_STEPPER_WIDTH, -1)
-        stepper.divider:SetPoint("BOTTOMLEFT", stepper, "BOTTOMLEFT", NUMBER_STEPPER_WIDTH, 1)
-        stepper.dividerRight:SetPoint("TOPRIGHT", stepper, "TOPRIGHT", -NUMBER_STEPPER_WIDTH, -1)
-        stepper.dividerRight:SetPoint("BOTTOMRIGHT", stepper, "BOTTOMRIGHT", -NUMBER_STEPPER_WIDTH, 1)
+    if options.stepper == "none" then
+        -- 不要步进：步进条在 CreateEditBox 借出时已隐藏，这里不建也不显示；左右内距对称。
+        edit:SetTextInsets(4, 4, 0, 0)
     else
-        stepper.divider:SetPoint("TOPLEFT")
-        stepper.divider:SetPoint("BOTTOMLEFT")
-        stepper:SetWidth(NUMBER_STEPPER_WIDTH)
-        stepper:SetPoint("TOPRIGHT", edit, "TOPRIGHT", -1, -1)
-        stepper:SetPoint("BOTTOMRIGHT", edit, "BOTTOMRIGHT", -1, 1)
-        edit:SetTextInsets(4, NUMBER_STEPPER_WIDTH + 2, 0, 0)
-    end
-    for _, spec in ipairs({ {key="down", side="LEFT", text="−"}, {key="up", side="RIGHT", text="+"} }) do
-        local button = stepper[spec.key]
-        button:ClearAllPoints()
-        button.glyph:SetShown(not sides)
-        if not button.symbol then
-            button.symbol = self:CreateVisualFontString(button, EXFONTFRAME)
-            MODERN.ApplyTextRole(button.symbol, "fieldValue")
-            button.symbol:SetPoint("CENTER")
-        end
-        button.symbol:SetText(spec.text)
-        button.symbol:SetShown(sides)
+        local stepper = EnsureNumberStepper(edit)
+        local sides = options.stepper == "sides"
+        stepper:ClearAllPoints()
+        stepper.divider:ClearAllPoints()
+        stepper.divider:SetShown(true)
+        stepper.middle:SetShown(not sides)
+        stepper.dividerRight:ClearAllPoints()
+        stepper.dividerRight:SetShown(sides)
         if sides then
-            button:SetWidth(NUMBER_STEPPER_WIDTH)
-            button:SetPoint("TOP" .. spec.side, stepper, "TOP" .. spec.side, 0, -1)
-            button:SetPoint("BOTTOM" .. spec.side, stepper, "BOTTOM" .. spec.side, 0, 1)
+            stepper:SetAllPoints(edit)
+            edit:SetTextInsets(NUMBER_STEPPER_WIDTH + 4, NUMBER_STEPPER_WIDTH + 4, 0, 0)
+            -- 左右两条竖线分别贴在减号按钮右侧与加号按钮左侧。
+            stepper.divider:SetPoint("TOPLEFT", stepper, "TOPLEFT", NUMBER_STEPPER_WIDTH, -1)
+            stepper.divider:SetPoint("BOTTOMLEFT", stepper, "BOTTOMLEFT", NUMBER_STEPPER_WIDTH, 1)
+            stepper.dividerRight:SetPoint("TOPRIGHT", stepper, "TOPRIGHT", -NUMBER_STEPPER_WIDTH, -1)
+            stepper.dividerRight:SetPoint("BOTTOMRIGHT", stepper, "BOTTOMRIGHT", -NUMBER_STEPPER_WIDTH, 1)
         else
-            button:SetPoint("LEFT", stepper, "LEFT", 1, 0)
-            button:SetPoint("RIGHT")
-            if spec.key == "up" then
-                button:SetPoint("TOP"); button:SetPoint("BOTTOM", stepper, "CENTER", 0, 0)
+            stepper.divider:SetPoint("TOPLEFT")
+            stepper.divider:SetPoint("BOTTOMLEFT")
+            stepper:SetWidth(NUMBER_STEPPER_WIDTH)
+            stepper:SetPoint("TOPRIGHT", edit, "TOPRIGHT", -1, -1)
+            stepper:SetPoint("BOTTOMRIGHT", edit, "BOTTOMRIGHT", -1, 1)
+            edit:SetTextInsets(4, NUMBER_STEPPER_WIDTH + 2, 0, 0)
+        end
+        for _, spec in ipairs({ {key="down", side="LEFT", text="−"}, {key="up", side="RIGHT", text="+"} }) do
+            local button = stepper[spec.key]
+            button:ClearAllPoints()
+            button.glyph:SetShown(not sides)
+            if not button.symbol then
+                button.symbol = self:CreateVisualFontString(button, EXFONTFRAME)
+                MODERN.ApplyTextRole(button.symbol, "fieldValue")
+                button.symbol:SetPoint("CENTER")
+            end
+            button.symbol:SetText(spec.text)
+            button.symbol:SetShown(sides)
+            if sides then
+                button:SetWidth(NUMBER_STEPPER_WIDTH)
+                button:SetPoint("TOP" .. spec.side, stepper, "TOP" .. spec.side, 0, -1)
+                button:SetPoint("BOTTOM" .. spec.side, stepper, "BOTTOM" .. spec.side, 0, 1)
             else
-                button:SetPoint("BOTTOM"); button:SetPoint("TOP", stepper, "CENTER", 0, 0)
+                button:SetPoint("LEFT", stepper, "LEFT", 1, 0)
+                button:SetPoint("RIGHT")
+                if spec.key == "up" then
+                    button:SetPoint("TOP"); button:SetPoint("BOTTOM", stepper, "CENTER", 0, 0)
+                else
+                    button:SetPoint("BOTTOM"); button:SetPoint("TOP", stepper, "CENTER", 0, 0)
+                end
             end
         end
+        stepper:SetFrameLevel(edit:GetFrameLevel() + 3)
+        stepper:Show()
+        PaintNumberStepper(edit)
     end
-    stepper:SetFrameLevel(edit:GetFrameLevel() + 3)
-    stepper:Show()
-    PaintNumberStepper(edit)
     function edit:GetNumber() return self._exNumberInput and self._exNumberInput.value or nil end
     function edit:SetMixed(mixed, text)
         local current = self._exNumberInput
@@ -5987,11 +6192,46 @@ end
 
 -- =========================================================
 -- 15. 分段控制器 (Segmented Control / Tabs)
--- items: { {label, value}, ... }
+-- items: { {label, value}, ... } 或 { {label, value, icon}, ... }（第三位是 GUIIcons 图标 ID）
 -- options（可选）: height = 轨道整体高度，默认 GM.size.segmentedItemHeight（34）；
 --   放进 30 高的行时传 GM.size.controlHeight，内部选中块 = 轨道高度 - 6。最小 24（ChoiceGroup 的分段下限）。
+--   iconOnly = true：每项只显示居中图标（每项都必须给 icon），label 只作悬停提示。
+--   allowEmpty = true：当前值为 nil（或不在选项里）时不高亮任何一项；再点已选项不会取消。不传时照旧选第一项。
+--   track = "dark"：黑色轨道外观（迷你分段）：黑 0.28 底不画边、四周内距 2、13 号字；
+--     未选中段灰字，悬停亮字 + 白 0.08 底，按下白 0.14 底；选中块默认白 0.22（段写了 selectedFill 用它）、白字。
+--     不传时外观不变。
+-- 每项（可选具名字段）：selectedFill / selectedText = 这一段选中时的填充色 / 文字色（色表颜色）；
+--   disabled = true 时这一段置灰不可点。不写时与原来一样。
 -- =========================================================
 local SEGMENTED_MIN_HEIGHT = 24
+
+-- =========================================================
+-- 浮层外观开关（EXAura 跟随光环设置条用；Core 自己不调用）。
+-- on = true：下拉、输入框 / 数字框、颜色按钮、图标按钮（CreateIconButton 的 field 外观）、
+--   分段轨道（CreateSegmentedControl）改画浮层底（floatControlFill）与平常边（floatControlBorder），
+--   文字加 OUTLINE；悬停、聚焦、选中、禁用的画法照旧。false：恢复默认外观。
+-- 只改外观，不改尺寸与行为；其它控件（开关、普通按钮等）调用后不变。
+-- 标记随对象池归还清掉，下次借出一定是默认外观。
+-- =========================================================
+function EXUI:SetControlOverlayAppearance(control, on)
+    if type(control) ~= "table" then error("SetControlOverlayAppearance: control required", 2) end
+    if on ~= nil and type(on) ~= "boolean" then error("SetControlOverlayAppearance: on must be a boolean", 2) end
+    control._exOverlay = on == true or nil
+    -- 组合控件（图标按钮、分段）在自己的文件里登记重画函数。
+    if control._exOverlayRefresh then
+        control._exOverlayRefresh(control)
+        return
+    end
+    local kind = control._gridType
+    if kind == "GridDropdown" or kind == "GridLSMDropdown" or kind == "GridMultiselect" then
+        PaintModernDropdown(control)
+    elseif kind == "GridInput" then
+        PaintModernInput(control, control.editBox or control)
+        PaintNumberStepper(control)
+    elseif kind == "GridColorButton" then
+        PaintModernButton(control)
+    end
+end
 
 function EXUI:CreateSegmentedControl(parent, width, items, currentValue, onChange, options)
     -- [WEB-REQ 38/40] 分段控件唯一走 ExwindChoiceGroup（toc 保证已加载），不再保留 type()=="function" 兼容守卫。
@@ -6006,15 +6246,37 @@ function EXUI:CreateSegmentedControl(parent, width, items, currentValue, onChang
             end
             height = options.height
         end
+        if options.iconOnly ~= nil and type(options.iconOnly) ~= "boolean" then
+            error("CreateSegmentedControl: options.iconOnly must be a boolean", 2)
+        end
+        if options.allowEmpty ~= nil and type(options.allowEmpty) ~= "boolean" then
+            error("CreateSegmentedControl: options.allowEmpty must be a boolean", 2)
+        end
+        if options.track ~= nil and options.track ~= "dark" then
+            error("CreateSegmentedControl: options.track must be \"dark\"", 2)
+        end
     end
+    local iconOnly = options ~= nil and options.iconOnly == true
     local choiceItems = {}
     for _, item in ipairs(items or {}) do
-        choiceItems[#choiceItems + 1] = { id = item[2], label = item[1] }
+        local icon = item[3]
+        if icon ~= nil and not ExwindTools.GUIIcons.ids[icon] then
+            error("CreateSegmentedControl: item icon must be a registered icon id", 2)
+        end
+        if iconOnly and icon == nil then error("CreateSegmentedControl: iconOnly requires an icon on every item", 2) end
+        if (item.selectedFill ~= nil and type(item.selectedFill) ~= "table")
+            or (item.selectedText ~= nil and type(item.selectedText) ~= "table") then
+            error("CreateSegmentedControl: item selectedFill/selectedText must be color tables", 2)
+        end
+        choiceItems[#choiceItems + 1] = { id = item[2], label = item[1], icon = icon, iconOnly = iconOnly or nil,
+            selectedFill = item.selectedFill, selectedText = item.selectedText, disabled = item.disabled == true }
     end
     local container = self:_CreateSegmentedChoice(parent, {
         width = width,
         items = choiceItems,
         value = currentValue,
+        allowEmpty = options ~= nil and options.allowEmpty == true,
+        track = options ~= nil and options.track or nil,
         appearance = "segmented",
         wrap = false,
         itemHeight = height,
@@ -6082,8 +6344,8 @@ function MODERN.standardModulePage.ResolveLayout(layout, context)
     if type(resolved) ~= "table" then
         error("StandardModulePage layout must resolve to a table", 3)
     end
-    if resolved.version ~= 1 or type(resolved.sections) ~= "table" or resolved.cards ~= nil then
-        error("StandardModulePage accepts only version=1 sections declarations; special cards use their owning page", 3)
+    if resolved.version ~= 2 or type(resolved.cards) ~= "table" then
+        error("StandardModulePage requires version=2 cards declaration", 3)
     end
     return resolved
 end
@@ -6095,15 +6357,16 @@ end
 ---   moduleKey string (required)
 ---   page table (required; state holder only, no Page methods are replaced)
 ---   layout table|function(context) -> table (required)
+---   title string|function(context)->string (optional; page heading owned by Core)
 ---   binding StandardConfigBinding (optional only when already registered)
 ---   preview { render=function, release=function, refresh=function?, height=number? }
 ---   previewDock { dockPolicy="internal-top"|"external-left", ... }
 ---     external-left requires anchorResolver(contentFrame, context) -> Frame,
 ---     width=number, offsetX=number and offsetY=number.  EXUI owns the Dock;
 ---     modules cannot create/re-anchor a private external PreviewDock.
----   getColumns function|number (optional, defaults to 200 logical columns)
+---   ownerFactory function(context)->owner (optional for path-only declarations)
 ---   sliderContract table|function(context)->table (required; Core owns StandardSliderNotify)
----   afterGridLayout function(context) (optional; layout-only, never binders/preview handlers)
+---   afterLayout function(context) (optional; layout-only, never binders/preview handlers)
 function EXUI:CreateStandardModulePage(options)
     if type(options) ~= "table" then error("CreateStandardModulePage requires options table", 2) end
     local moduleKey = self:RequireModuleKey(options.moduleKey, "CreateStandardModulePage")
@@ -6114,6 +6377,9 @@ function EXUI:CreateStandardModulePage(options)
     end
     if type(options.layout) ~= "table" and type(options.layout) ~= "function" then
         error("CreateStandardModulePage requires layout table/function", 2)
+    end
+    if options.title ~= nil and type(options.title) ~= "string" and type(options.title) ~= "function" then
+        error("CreateStandardModulePage title must be string/function", 2)
     end
 
     local binding = options.binding
@@ -6155,17 +6421,17 @@ function EXUI:CreateStandardModulePage(options)
         end
     end
 
-    local getColumns = options.getColumns or 200
-    if type(getColumns) ~= "number" and type(getColumns) ~= "function" then
-        error("CreateStandardModulePage getColumns must be number/function", 2)
+    local ownerFactory = options.ownerFactory
+    if ownerFactory ~= nil and type(ownerFactory) ~= "function" then
+        error("CreateStandardModulePage ownerFactory must be function", 2)
     end
     local sliderContract = options.sliderContract
     if type(sliderContract) ~= "table" and type(sliderContract) ~= "function" then
         error("CreateStandardModulePage requires sliderContract table/function", 2)
     end
-    local afterGridLayout = options.afterGridLayout
-    if afterGridLayout ~= nil and type(afterGridLayout) ~= "function" then
-        error("CreateStandardModulePage afterGridLayout must be function", 2)
+    local afterLayout = options.afterLayout
+    if afterLayout ~= nil and type(afterLayout) ~= "function" then
+        error("CreateStandardModulePage afterLayout must be function", 2)
     end
     local applyScrollSkin = options.applyScrollSkin
     if applyScrollSkin ~= nil and type(applyScrollSkin) ~= "function" then
@@ -6177,6 +6443,7 @@ function EXUI:CreateStandardModulePage(options)
         page = page,
         binding = binding,
         layout = options.layout,
+        title = options.title,
         preview = preview,
         previewRender = previewRender,
         previewRelease = previewRelease,
@@ -6188,12 +6455,12 @@ function EXUI:CreateStandardModulePage(options)
         externalDockWidth = externalDockWidth,
         externalDockOffsetX = externalDockOffsetX,
         externalDockOffsetY = externalDockOffsetY,
-        getColumns = getColumns,
+        ownerFactory = ownerFactory,
         sliderContract = sliderContract,
-        afterGridLayout = afterGridLayout,
+        afterLayout = afterLayout,
         applyScrollSkin = applyScrollSkin,
         renderGeneration = 0,
-        gridRendered = false,
+        settingsRendered = false,
         cardSession = nil,
         previewMounted = false,
     }
@@ -6211,9 +6478,9 @@ function EXUI:CreateStandardModulePage(options)
             dock = self.previewDock,
             scrollFrame = self.scrollFrame,
             scrollChild = self.scrollChild,
-            grid = _G.ExwindGrid,
             config = self.binding.getConfig(),
             cardSession = self.cardSession,
+            modulePage = EXUI:GetModulePage(self.moduleKey, self.scrollChild),
         }
     end
 
@@ -6232,14 +6499,11 @@ function EXUI:CreateStandardModulePage(options)
         self.topPreview:SyncHeight()
     end
 
-    function controller:RefreshGridControls()
+    function controller:RefreshControls()
         local session = self.cardSession
-        if session and not session.released and type(session.RefreshValues) == "function" then
-            return session:RefreshValues()
-        end
-        local grid = _G.ExwindGrid
-        if grid and self.scrollChild and type(grid.RefreshContainerControlsFromDB) == "function" then
-            return grid:RefreshContainerControlsFromDB(self.scrollChild)
+        if session and session.alive then
+            session:Refresh()
+            return true
         end
         return false
     end
@@ -6260,19 +6524,10 @@ function EXUI:CreateStandardModulePage(options)
         self.previewRelease(self.previewDock, BuildContext(self))
     end
 
-    function controller:ReleaseGrid()
-        local grid = _G.ExwindGrid
-        local session = self.cardSession
+    function controller:ReleaseSettings()
         self.cardSession = nil
-        self.gridRendered = false
-        if session then
-            if type(session.Release) ~= "function" then
-                error("StandardModulePage card session does not implement Release", 2)
-            end
-            session:Release()
-        elseif grid and self.scrollChild and type(grid.ReleaseContainerWidgets) == "function" then
-            grid:ReleaseContainerWidgets(self.scrollChild)
-        end
+        self.settingsRendered = false
+        if self.scrollChild then EXUI:ReleaseModuleSettingsPage(self.scrollChild) end
     end
 
     -- A delayed stage failure must leave no live half-page behind.  Cleanup is
@@ -6290,7 +6545,7 @@ function EXUI:CreateStandardModulePage(options)
             end
         end)
         self.previewMounted = false
-        pcall(function() self:ReleaseGrid() end)
+        pcall(function() self:ReleaseSettings() end)
         pcall(function() self:ClearActiveOwnership() end)
         pcall(function()
             EXUI:SetPreviewDockScrollOwner(self.previewDock, self, nil)
@@ -6337,7 +6592,7 @@ function EXUI:CreateStandardModulePage(options)
         -- generation 是 C_Timer.After 的取消令牌；不保留页面离开后的延迟 Render。
         self.renderGeneration = self.renderGeneration + 1
         self:ReleasePreview()
-        self:ReleaseGrid()
+        self:ReleaseSettings()
         self:ClearActiveOwnership()
         EXUI:SetPreviewDockScrollOwner(self.previewDock, self, nil)
         if self.previewRow then self.previewRow:Hide() end
@@ -6416,7 +6671,7 @@ function EXUI:CreateStandardModulePage(options)
             self:Teardown()
         end)
         scrollFrame:HookScript("OnShow", function()
-            if self._suppressOnShow or self.gridRendered or not self.contentFrame then return end
+            if self._suppressOnShow or self.settingsRendered or not self.contentFrame then return end
             self:Render(self.contentFrame)
         end)
         scrollFrame:HookScript("OnSizeChanged", function()
@@ -6453,9 +6708,9 @@ function EXUI:CreateStandardModulePage(options)
         self:EnsureFrames(contentFrame)
         -- 同一页被路由重复 Render 时不会触发 OnHide；必须先交还上一轮
         -- Grid/preview，才能重新绑定本轮唯一 container/session。
-        if self.gridRendered or self.cardSession or self.previewMounted then
+        if self.settingsRendered or self.cardSession or self.previewMounted then
             self:ReleasePreview()
-            self:ReleaseGrid()
+            self:ReleaseSettings()
         end
         self.renderGeneration = self.renderGeneration + 1
         local generation = self.renderGeneration
@@ -6488,11 +6743,9 @@ function EXUI:CreateStandardModulePage(options)
                 or scrollFrame:GetParent() ~= contentFrame then
                 return
             end
-            local grid = _G.ExwindGrid
-            local config, context, columns, slider
+            local config, context
 
             self:RunDelayedStage(generation, MODERN.standardModulePage.stages.grid, function()
-                if not grid then error("StandardModulePage requires ExwindGrid", 2) end
                 config = self.binding.getConfig()
                 if type(config) ~= "table" then error("StandardModulePage binding getConfig returned non-table", 2) end
                 self:SyncScrollChildWidth(true)
@@ -6507,33 +6760,21 @@ function EXUI:CreateStandardModulePage(options)
                 context = BuildContext(self)
                 context.config = config
                 local layout = type(self.layout) == "function" and self.layout(context) or self.layout
-                if self.moduleKey:match("^EXAura%.") and type(layout) == "table"
-                    and layout.version == nil and layout.cards == nil and layout.sections == nil then
-                    -- Original EXAura pages retain their authored Grid coordinates.
-                    -- Restore the existing Grid route from 6987675; do not reshape their layout.
-                    columns = type(self.getColumns) == "function" and self.getColumns(context) or self.getColumns
-                    columns = tonumber(columns)
-                    if not columns or columns <= 0 then error("StandardModulePage resolved invalid Grid column count", 2) end
-                    grid:SetContainerCols(scrollChild, columns)
-                    grid:Render(scrollChild, layout, config, self.moduleKey)
-                else
-                    local declaration = MODERN.standardModulePage.ResolveLayout(layout, context)
-                    if type(grid.MountSettingsDeclaration) ~= "function" then
-                        error("StandardModulePage requires ExwindGrid:MountSettingsDeclaration", 2)
-                    end
-                    self.cardSession = grid:MountSettingsDeclaration(scrollChild, declaration, {
-                        pageId = self.moduleKey,
-                        regionId = "standard-module",
-                        binding = self.binding,
-                        config = config,
-                        moduleKey = self.moduleKey,
-                        scrollFrame = scrollFrame,
-                    })
+                local declaration = MODERN.standardModulePage.ResolveLayout(layout, context)
+                local title = self.title
+                if type(title) == "function" then title = title(context) end
+                if title ~= nil and type(title) ~= "string" then
+                    error("StandardModulePage title must resolve to a string", 2)
                 end
-                self.gridRendered = true
+                local owner = self.ownerFactory and self.ownerFactory(context) or {}
+                if type(owner) ~= "table" then error("StandardModulePage ownerFactory must return table", 2) end
+                if owner.binding == nil then owner.binding = { moduleKey=self.moduleKey, config=config } end
+                self.cardSession = EXUI:MountModuleSettingsDeclarationV2(scrollChild, declaration, owner,
+                    title, nil, scrollFrame)
+                if type(owner.AttachSession) == "function" then owner:AttachSession(self.cardSession) end
+                self.settingsRendered = true
                 context = BuildContext(self)
                 context.config = config
-                context.columns = columns
             end)
 
             self.binding.contract.page = true
@@ -6542,7 +6783,7 @@ function EXUI:CreateStandardModulePage(options)
             -- surface 写入 binding.contract.surface。故必须先 mount 当前模块，
             -- 再审计当前模块；不能为通过 audit 在模块加载期虚构 session。
             self:RunDelayedStage(generation, MODERN.standardModulePage.stages.preview, function()
-                if self.afterGridLayout then self.afterGridLayout(context) end
+                if self.afterLayout then self.afterLayout(context) end
                 self.previewRender(dock, context)
                 self.previewMounted = true
             end)

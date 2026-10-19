@@ -977,11 +977,15 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
         itemHeight = 1,
     }
     collection.layout = EXUI:CreateWidgetLayout(parent, {})
+    EXUI:InitializeCollectionVisualAnimations(collection)
 
     function collection:AcquireItem(itemID)
         if type(itemID) ~= "string" or itemID == "" then error("IconCollection itemID must be non-empty string", 2) end
         local item = self.itemsByID[itemID]
-        if item then return item end
+        if item then
+            if self:IsItemVisualRetiring(itemID) then self:StopItemVisualAnimation(itemID) end
+            return item
+        end
         item = NewItem(self, itemID)
         self.itemsByID[itemID] = item
         self.geometryRevision = (self.geometryRevision or 0) + 1
@@ -990,6 +994,7 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
 
     function collection:ApplyItem(item, presentation)
         if not item or not item.widget then error("IconCollection ApplyItem requires an acquired item", 2) end
+        if self:IsItemVisualRetiring(item.id) then self:StopItemVisualAnimation(item.id) end
         if type(presentation) ~= "table" then error("IconCollection presentation must be table", 2) end
         self.geometryRevision = (self.geometryRevision or 0) + 1
         item.presentation = presentation
@@ -1096,7 +1101,7 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
             if item and item.id then wanted[item.id] = true end
         end
         for itemID, item in pairs(self.itemsByID) do
-            if not wanted[itemID] and item.root then item.root:Hide() end
+            if not wanted[itemID] and item.root and not self:IsItemVisualRetiring(itemID) then item.root:Hide() end
         end
         self.geometryRevision = (self.geometryRevision or 0) + 1
         self.layout:ApplyStyle(CopyLayout(layout, self.contentCenter), true)
@@ -1214,12 +1219,14 @@ local function CreateCollection(parent, interactionMode, moduleKey, callbacks)
     function collection:SetItemClickAction(itemID, spec)
         local item = self.itemsByID[itemID]
         if not item or not item.root then return false end
+        if self:IsItemVisualRetiring(itemID) then return false end
         return EXUI:ApplyCollectionItemClick(item, spec)
     end
 
     function collection:ReleaseItem(itemID)
         local item = self.itemsByID[itemID]
         if not item then return end
+        self:StopItemVisualAnimation(itemID)
         self.itemsByID[itemID] = nil
         self.geometryRevision = (self.geometryRevision or 0) + 1
         StopCoreGlow(item)

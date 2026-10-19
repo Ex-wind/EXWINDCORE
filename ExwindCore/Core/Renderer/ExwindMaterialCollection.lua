@@ -437,11 +437,15 @@ function EXUI:CreateMaterialCollection(parent, interactionMode, moduleKey, callb
         itemsByID = {}, currentItems = {}, currentLayout = nil, itemWidth = 1, itemHeight = 1, released = false,
     }
     collection.layout = EXUI:CreateWidgetLayout(parent, {})
+    EXUI:InitializeCollectionVisualAnimations(collection)
 
     function collection:AcquireItem(itemID)
         if type(itemID) ~= "string" or itemID == "" then error("MaterialCollection itemID must be non-empty string", 2) end
         local item = self.itemsByID[itemID]
-        if item then return item end
+        if item then
+            if self:IsItemVisualRetiring(itemID) then self:StopItemVisualAnimation(itemID) end
+            return item
+        end
         item = NewItem(self, itemID)
         self.itemsByID[itemID] = item
         return item
@@ -449,6 +453,7 @@ function EXUI:CreateMaterialCollection(parent, interactionMode, moduleKey, callb
 
     function collection:ApplyItem(item, presentation)
         if not item or not item.widget then error("MaterialCollection ApplyItem requires an acquired item", 2) end
+        if self:IsItemVisualRetiring(item.id) then self:StopItemVisualAnimation(item.id) end
         if type(presentation) ~= "table" then error("MaterialCollection presentation must be table", 2) end
         item.presentation = presentation
         item.declaredBounds = RequireDeclaredBounds(presentation)
@@ -481,7 +486,9 @@ function EXUI:CreateMaterialCollection(parent, interactionMode, moduleKey, callb
         if width then self.itemWidth, self.itemHeight = width, height end
         local wanted = {}
         for _, item in ipairs(items or {}) do wanted[item.id] = true end
-        for id, item in pairs(self.itemsByID) do if not wanted[id] then item.root:Hide() end end
+        for id, item in pairs(self.itemsByID) do
+            if not wanted[id] and not self:IsItemVisualRetiring(id) then item.root:Hide() end
+        end
         local layoutStyle = CopyLayout(layout, self.contentCenter)
         self.layout:ApplyStyle(layoutStyle)
         self.layout:SetSemanticItems(items or {}, self.itemWidth, self.itemHeight)
@@ -542,6 +549,7 @@ function EXUI:CreateMaterialCollection(parent, interactionMode, moduleKey, callb
     function collection:SetItemClickAction(itemID, spec)
         local item = self.itemsByID[itemID]
         if not item or not item.root then return false end
+        if self:IsItemVisualRetiring(itemID) then return false end
         return EXUI:ApplyCollectionItemClick(item, spec)
     end
 
@@ -556,6 +564,7 @@ function EXUI:CreateMaterialCollection(parent, interactionMode, moduleKey, callb
     function collection:ReleaseItem(itemID)
         local item = self.itemsByID[itemID]
         if not item then return end
+        self:StopItemVisualAnimation(itemID)
         self.itemsByID[itemID] = nil
         EXUI:ReleaseCollectionItemClick(item)
         EXUI:ReleaseCollectionItemVisualEffects(item.root)

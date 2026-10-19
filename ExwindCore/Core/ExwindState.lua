@@ -35,6 +35,7 @@
     - ClassName (string)
     - SpecID (number)
     - SpecName (string)
+    - HeroSpecID (number, 当前英雄天赋 SubTreeID，未激活为 0)
     - RoleKey (string: tank/heal/dps/unknown)
     - RoleName (string)
     - DevMode (boolean)
@@ -129,6 +130,7 @@ ExwindTools.State = {
     ClassName = L["未知"],
     SpecID = 0,
     SpecName = L["未知"],
+    HeroSpecID = 0,
     RoleKey = "unknown",
     RoleName = L["未知职责"],
     Level = 0,
@@ -1370,6 +1372,7 @@ local function InitializeStateMonitors()
         ExwindTools:UpdateState("ClassName", className)
         ExwindTools:UpdateState("SpecID", specID or 0)
         ExwindTools:UpdateState("SpecName", specName)
+        ExwindTools:UpdateState("HeroSpecID", C_ClassTalents.GetActiveHeroTalentSpec() or 0)
         ExwindTools:UpdateState("RoleKey", roleKey)
         ExwindTools:UpdateState("RoleName", roleName)
         ExwindTools:UpdateState("Level", UnitLevel("player") or 0)
@@ -1381,8 +1384,8 @@ local function InitializeStateMonitors()
         end
     end
 
-    local function ScheduleSpecInfoUpdate(_, unit)
-        if unit and unit ~= "player" then
+    local function ScheduleSpecInfoUpdate(event, unit)
+        if event == "PLAYER_SPECIALIZATION_CHANGED" and unit and unit ~= "player" then
             return
         end
 

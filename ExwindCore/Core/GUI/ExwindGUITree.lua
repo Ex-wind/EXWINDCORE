@@ -1,6 +1,6 @@
 -- =========================================================
 -- ExwindGUITree.lua: 树控件 EXUI:CreateTree。
--- 缩进、折叠箭头、图标、左侧徽标、右侧状态文字与数量胶囊、行内三态勾选（CreateTriStateCheckbox）、
+-- 缩进、折叠箭头、图标、左侧徽标、右侧状态文字与数量胶囊、行内三态勾选（CreateTriStateCheckbox）、行尾眼睛（CreateIconButton）、
 -- 选中/悬停/容器底色、点击修饰键信息、拖放源与落点回调。
 -- 新增文件理由：树是自带滚动区、行对象池与拖放状态的独立控件族（约 500 行）；ExwindGUI.lua 与
 -- ExwindGUIComposite.lua 已分别接近 6000 与 5000 行，ExwindChoiceGroup.lua 只管 Tab/选项组，
@@ -20,6 +20,10 @@ local MODERN_MEDIA = EXUI._GUIInternal.MODERN_MEDIA
 local TREE_POOL = "EXUI.Tree"
 local ROW_POOL = "EXUI.TreeRow"
 local TRI_STATES = { checked = true, unchecked = true, mixed = true }
+-- 行最右的眼睛：on 显示、off 隐藏、mixed 部分显示（容器里有开有关）。
+local EYE_ICONS = { on = "eye", off = "eye-off", mixed = "eye-partial" }
+-- options.eyeTint = true 时眼睛按状态染色：开 = 正文色、部分 = 暗灰、关 = 禁用灰。
+local EYE_TINT = { on = GC.text, off = GC.textDisabled, mixed = GC.textDim }
 -- 落点区域：容器行分上 1/4（之前）、中间（之内）、下 1/4（之后）；非容器行分上下各一半。
 local DROP_EDGE = 0.25
 
@@ -43,7 +47,9 @@ local function PaintRow(row)
     -- 选中/悬停底色是半透明色，边框用透明，避免边缘叠两层 alpha。
     if fill then EXUI:SetControlSurface(row, GM.radius.control, fill, GC.transparent)
     else EXUI:ClearControlSurface(row) end
-    row._treeName:SetTextColor(unpack(data.selected and GC.selectedText or GC.text))
+    -- 眼睛关掉（eye = "off"）的行名称变暗。
+    row._treeName:SetTextColor(unpack(data.eye == "off" and GC.textDim
+        or (data.selected and GC.selectedText or GC.text)))
     row._treeFoldIcon:SetVertexColor(unpack(row._treeHover and GC.text or GC.textDim))
 end
 
@@ -55,12 +61,48 @@ local function ReleaseRowCheck(row)
     Factory:Release(check._fromPool, check)
 end
 
--- 每个池化行只建一次。主脚本会被池的标准重置清掉，所以事件用 HookScript 一次性挂上，
--- 回调只读行字段（_treeOwner / _treeData），归还后字段为 nil，钩子自然失效。
-local function BuildRow(row)
-    row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
-    row:RegisterForDrag("LeftButton")
+local function ReleaseRowEye(row)
+    local eye = row._treeEye
+    if not eye then return end
+    row._treeEye = nil
+    eye:Release()
+end
 
+local function CursorInside(frame, cursorX, cursorY)
+    if not frame:IsVisible() then return false end
+    local left, right, top, bottom = frame:GetLeft(), frame:GetRight(), frame:GetTop(), frame:GetBottom()
+    if not left or not right or not top or not bottom or top <= bottom then return false end
+    local scale = frame:GetEffectiveScale()
+    local x, y = cursorX / scale, cursorY / scale
+    return x >= left and x <= right and y >= bottom and y <= top
+end
+
+local function DropTarget(tree)
+    local cursorX, cursorY = GetCursorPosition()
+    local scroll = tree._treeScroll
+    if not CursorInside(scroll, cursorX, cursorY) then return nil, "cancel" end
+    -- 保留原生遮挡和子控件命中语义；焦点必须来自这个滚动区。
+    local focus = GetMouseFoci()[1]
+    while focus and focus ~= scroll do focus = focus:GetParent() end
+    if not focus then return nil, "cancel" end
+    for _, row in ipairs(tree._treeRows) do
+        if CursorInside(row, cursorX, cursorY) then
+            local target = row._treeData
+            local fraction = (row:GetTop() - cursorY / row:GetEffectiveScale()) / row:GetHeight()
+            local zone
+            if target.container then
+                zone = fraction < DROP_EDGE and "before" or (fraction > 1 - DROP_EDGE and "after" or "inside")
+            else
+                zone = fraction < 0.5 and "before" or "after"
+            end
+            return target.id, zone, row
+        end
+    end
+    return nil, "blank"
+end
+
+-- 行的视觉只建一次，业务脚本随每次池租约恢复。
+local function BuildRow(row)
     local fold = CreateFrame("Button", nil, row)
     fold:RegisterForClicks("LeftButtonUp")
     local foldIcon = fold:CreateTexture(nil, "OVERLAY")
@@ -109,8 +151,10 @@ local function BuildRow(row)
     Appearance.ApplyTextRole(pillText, "control", GC.text)
     row._treePill, row._treePillText = pill, pillText
 
-    row:HookScript("OnMouseDown", function(self) self._treeDragged = false end)
-    row:HookScript("OnClick", function(self, mouseButton)
+    row._treeScripts = {}
+    local function Script(name, callback) row._treeScripts[name] = callback end
+    Script("OnMouseDown", function(self) self._treeDragged = false end)
+    Script("OnClick", function(self, mouseButton)
         local owner, data = self._treeOwner, self._treeData
         if not owner or not data then return end
         -- 拖放结束时不再当作一次点击。
@@ -118,7 +162,7 @@ local function BuildRow(row)
         local callback = owner._treeOptions.onClick
         if callback then callback(data.id, mouseButton, Modifiers(), owner) end
     end)
-    row:HookScript("OnEnter", function(self)
+    Script("OnEnter", function(self)
         local owner, data = self._treeOwner, self._treeData
         if not owner or not data then return end
         self._treeHover = true
@@ -126,7 +170,7 @@ local function BuildRow(row)
         local callback = owner._treeOptions.onEnter
         if callback then callback(data.id, self, owner) end
     end)
-    row:HookScript("OnLeave", function(self)
+    Script("OnLeave", function(self)
         local owner, data = self._treeOwner, self._treeData
         if not owner or not data then return end
         self._treeHover = false
@@ -134,7 +178,7 @@ local function BuildRow(row)
         local callback = owner._treeOptions.onLeave
         if callback then callback(data.id, self, owner) end
     end)
-    row:HookScript("OnDragStart", function(self)
+    Script("OnDragStart", function(self)
         local owner, data = self._treeOwner, self._treeData
         if not owner or not data then return end
         local callback = owner._treeOptions.onDragStart
@@ -144,7 +188,7 @@ local function BuildRow(row)
         self._treeDragged = true
         owner._treeDragId = data.id
     end)
-    row:HookScript("OnDragStop", function(self)
+    Script("OnDragStop", function(self)
         local owner = self._treeOwner
         if not owner then return end
         local sourceID = owner._treeDragId
@@ -152,27 +196,9 @@ local function BuildRow(row)
         if sourceID == nil then return end
         local callback = owner._treeOptions.onDrop
         if not callback then return end
-        -- 滚动区之外（含滚动条）松手不算落点；行被滚出可视区时 IsMouseOver 不能代表可见。
-        if not owner._treeScroll:IsMouseOver() then return end
-        for _, candidate in ipairs(owner._treeRows) do
-            if candidate:IsShown() and candidate:IsMouseOver() then
-                local target = candidate._treeData
-                if target.id == sourceID then return end
-                local _, cursorY = GetCursorPosition()
-                local top, bottom = candidate:GetTop(), candidate:GetBottom()
-                local fraction = (top - cursorY / candidate:GetEffectiveScale()) / (top - bottom)
-                local zone
-                if target.container then
-                    zone = fraction < DROP_EDGE and "before" or (fraction > 1 - DROP_EDGE and "after" or "inside")
-                else
-                    zone = fraction < 0.5 and "before" or "after"
-                end
-                callback(sourceID, target.id, zone, owner)
-                return
-            end
-        end
-        -- 在滚动区内、没有压在任何行上：空白处落点。
-        callback(sourceID, nil, "blank", owner)
+        local targetID, zone = owner:GetDropTarget()
+        if zone == "cancel" or targetID == sourceID then return end
+        callback(sourceID, targetID, zone, owner)
     end)
 end
 
@@ -183,10 +209,14 @@ local function AcquireRow(tree)
     local row = Factory:Acquire(ROW_POOL, tree._treeContent)
     -- 池的 Acquire 把按钮重置为只收左键抬起；本控件要收右键。
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
+    row:RegisterForDrag("LeftButton")
+    for name, callback in pairs(row._treeScripts) do row:SetScript(name, callback) end
     row._treeOwner = tree
     row._treeHover, row._treeDragged = false, false
     Factory:AttachPoolRelease(row, function(self)
         ReleaseRowCheck(self)
+        ReleaseRowEye(self)
+        self._treeIcon:SetAlpha(1)
         self._treeOwner, self._treeData, self._treeHover, self._treeDragged = nil, nil, nil, nil
         self._treeFold:Hide()
         self._treeIcon:SetTexture(nil)
@@ -233,6 +263,8 @@ local function BindRow(tree, row, index, data)
         -- 统一图标库是白色线条贴图，跟随文字色；其它图标（法术/物品）保持原色并裁掉边缘。
         icon:SetTexCoord(unpack(coreIcon and { 0, 1, 0, 1 } or { 0.08, 0.92, 0.08, 0.92 }))
         icon:SetVertexColor(unpack(coreIcon and GC.text or GC.white))
+        -- 眼睛关掉的行图标变淡。
+        icon:SetAlpha(data.eye == "off" and .45 or 1)
         icon:ClearAllPoints()
         icon:SetPoint("LEFT", row, "LEFT", x, 0)
         icon:Show()
@@ -253,8 +285,31 @@ local function BindRow(tree, row, index, data)
         badge:Hide()
     end
 
-    -- 右侧从右到左：行内勾选、数量胶囊、状态文字；rx 是下一个元素右边缘相对行右边缘的偏移。
+    -- 右侧从右到左：眼睛、行内勾选、数量胶囊、状态文字；rx 是下一个元素右边缘相对行右边缘的偏移。
     local rx = -pad
+    if data.eye ~= nil then
+        local eye = row._treeEye
+        if not eye then
+            eye = EXUI:CreateIconButton(row, GM.size.treeEyeSize, GM.size.treeEyeSize, {
+                icon = EYE_ICONS[data.eye], iconSize = GM.size.treeEyeIconSize, appearance = "ghost",
+                onClick = function()
+                    local owner, current = row._treeOwner, row._treeData
+                    local callback = owner and current and owner._treeOptions.onEye
+                    if callback then callback(current.id, owner) end
+                end,
+            })
+            row._treeEye = eye
+            eye:SetFrameLevel(row:GetFrameLevel() + 2)
+        end
+        eye:SetIcon(EYE_ICONS[data.eye])
+        eye:SetIconColor(tree._treeOptions.eyeTint and EYE_TINT[data.eye] or nil)
+        eye:ClearAllPoints()
+        eye:SetPoint("RIGHT", row, "RIGHT", rx, 0)
+        eye:Show()
+        rx = rx - GM.size.treeEyeSize - gap
+    else
+        ReleaseRowEye(row)
+    end
     if data.check ~= nil then
         local check = row._treeCheck
         if not check then
@@ -359,6 +414,9 @@ local function CopyRow(row, index, seen)
     if row.check ~= nil and not TRI_STATES[row.check] then
         error(string.format("CreateTree: rows[%d].check must be checked/unchecked/mixed", index), 3)
     end
+    if row.eye ~= nil and not EYE_ICONS[row.eye] then
+        error(string.format("CreateTree: rows[%d].eye must be on/off/mixed", index), 3)
+    end
     if row.icon ~= nil and type(row.icon) ~= "string" and type(row.icon) ~= "number" then
         error(string.format("CreateTree: rows[%d].icon must be a Core icon id, texture path or file id", index), 3)
     end
@@ -381,7 +439,7 @@ local function CopyRow(row, index, seen)
         container = row.container == true, hasChildren = row.hasChildren == true, expanded = row.expanded == true,
         icon = row.icon, badge = badge, mark = mark,
         pill = row.pill ~= nil and tostring(row.pill) or nil,
-        check = row.check, checkEnabled = row.checkEnabled ~= false,
+        check = row.check, checkEnabled = row.checkEnabled ~= false, eye = row.eye,
         selected = row.selected == true,
     }
 end
@@ -391,6 +449,7 @@ end
 -- ---------------------------------------------------------
 local function BuildTree(tree)
     local scroll = EXUI:CreateScrollFrame(tree)
+    scroll:EnableMouse(true)
     scroll:SetPoint("TOPLEFT", tree, "TOPLEFT", 0, 0)
     scroll:SetPoint("BOTTOMRIGHT", tree, "BOTTOMRIGHT", -EXUI.MODERN_SCROLL_FRAME_RIGHT_INSET, 0)
     local content = CreateFrame("Frame", nil, scroll)
@@ -422,6 +481,7 @@ local function BuildTree(tree)
         self._treeContent:SetHeight(math.max(1, #copied * (self._treeRowHeight + GM.space.treeRowGap)))
     end
     function tree:GetDragId() return self._treeDragId end
+    function tree:GetDropTarget() return DropTarget(self) end
     function tree:GetScrollFrame() return self._treeScroll end
     function tree:Release() Factory:ReleaseCompositeHost(self) end
 end
@@ -433,6 +493,9 @@ end
 --   onToggle(id, tree)                          点折叠箭头（展开状态由使用方维护，用 SetRows 回传 expanded）
 --   onCheck(id, state, tree)                    点行内勾选框；state 为 "checked" 或 "unchecked"（控件已切到该状态）
 --   onCheckEnter(id, checkFrame, tree) / onCheckLeave(id, checkFrame, tree) 勾选框提示锚点
+--   onEye(id, tree)                             点行最右的眼睛（显隐状态由使用方维护，用 SetRows 回传 eye）
+--   eyeTint = true                              可选：眼睛按状态染色（on 正文色、mixed 暗灰、off 禁用灰）；
+--                                               不写时三种状态同色（ghost 默认灰，悬停变白）
 --   onEnter(id, rowFrame, tree) / onLeave(id, rowFrame, tree)   悬停进入/离开（提示条由使用方用 rowFrame 做锚点）
 --   onDragStart(id, tree)                       开始拖动；返回 false 否决
 --   onDrop(sourceId, targetId, zone, tree)      松手落点：zone = "before" / "inside"（仅容器行）/ "after"；
@@ -443,8 +506,10 @@ end
 --   container（容器行：预留折叠槽并用 subcard 底色）、hasChildren（容器行是否显示折叠箭头）、expanded、
 --   icon（统一图标库 id、贴图路径或文件 id）、badge = { text, color, textColor? }（左侧彩色方块徽标）、
 --   pill（右侧数量胶囊文字）、mark = { text, color? }（右侧状态文字）、
---   check（"checked"/"unchecked"/"mixed"，有值才画行内勾选框）、checkEnabled（默认 true）、selected。
+--   check（"checked"/"unchecked"/"mixed"，有值才画行内勾选框）、checkEnabled（默认 true）、selected、
+--   eye（"on"/"off"/"mixed"，有值才在行最右画眼睛按钮：eye / eye-off / eye-partial；off 时名称变暗、图标变淡）。
 -- 返回池化宿主：SetRows(rows)、GetDragId()、GetScrollFrame()、Release()。
+-- GetDropTarget() 返回当前指针的 targetId, zone, rowFrame；区外/遮挡为 nil,"cancel"，区内空白为 nil,"blank"。
 function EXUI:CreateTree(parent, width, height, options)
     options = options or {}
     if type(options) ~= "table" then error("CreateTree: options must be a table", 2) end
@@ -454,7 +519,10 @@ function EXUI:CreateTree(parent, width, height, options)
     if options.rowHeight ~= nil and (type(options.rowHeight) ~= "number" or options.rowHeight <= 0) then
         error("CreateTree: options.rowHeight must be a positive number", 2)
     end
-    for _, key in ipairs({ "onClick", "onToggle", "onCheck", "onCheckEnter", "onCheckLeave", "onEnter", "onLeave", "onDragStart", "onDrop" }) do
+    if options.eyeTint ~= nil and type(options.eyeTint) ~= "boolean" then
+        error("CreateTree: options.eyeTint must be a boolean", 2)
+    end
+    for _, key in ipairs({ "onClick", "onToggle", "onCheck", "onCheckEnter", "onCheckLeave", "onEye", "onEnter", "onLeave", "onDragStart", "onDrop" }) do
         if options[key] ~= nil and type(options[key]) ~= "function" then
             error("CreateTree: options." .. key .. " must be a function", 2)
         end

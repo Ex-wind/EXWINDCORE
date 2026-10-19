@@ -1,7 +1,8 @@
-## Interface: 120100
+## Interface: 120105, 120100
 ## Title: |cffff0000Exwind|r |cff00ffffCore|r
 ## Notes: ExwindTools 核心引擎
 ## Version: 6.0.0
+## X-Wago-ID: ANzkjM64
 ## Author: Exwind
 ## LoadSavedVariablesFirst: 1
 ## OptionalDeps: SharedMedia, LibSharedMedia-3.0,MythicDungeonTools
@@ -39,6 +40,7 @@ Core\ExwindMedia.lua
 Core\ExwindUnitFrame.lua
 Core\Renderer\ExwindBlizzardNameplateAnchor.lua
 Core\ExwindEvent.lua
+Core\ExwindFrameTask.lua
 Core\GUI\ExwindTools_Changelog.lua
 
 
@@ -47,7 +49,7 @@ Core\ExwindDB.lua
 Core\ExwindState.lua
 Core\Renderer\ExwindEditMode.lua
 
-# 3. GRID引擎
+# 3. 公共控件、V2设置页与显示
 Core\GUI\ExwindFramePool.lua
 Core\GUI\ExwindVirtualList.lua
 Core\GUI\ExwindGUI.lua
@@ -62,17 +64,19 @@ Core\Renderer\ExwindWidgets.lua
 Core\Renderer\ExwindRegionElements.lua
 Core\Renderer\ExwindPreviewWorkspace.lua
 Core\Renderer\ExwindWidgetLayout.lua
+Core\Renderer\ExwindCollectionVisualAnimation.lua
 Core\Renderer\ExwindMaterialCollection.lua
 Core\Renderer\ExwindTextList.lua
 Core\Renderer\ExwindTextCollection.lua
 Core\Renderer\ExwindIconCollection.lua
 Core\Renderer\ExwindSecureActionPanelWidget.lua
 Core\Renderer\ExwindTimerBarCollection.lua
+Core\Renderer\ExwindStackBarCollection.lua
+Core\Renderer\ExwindRingCollection.lua
 Core\Panel\ExwindPanelPreview.lua
 Core\Renderer\ExwindStandardPreview.lua
 Core\Renderer\ExwindStandardTimerBar.lua
 Core\Renderer\ExwindGlow.lua
-Core\GUI\ExwindGrid.lua
 Core\GUI\ExwindToolsUI.lua
 Core\GUI\ExwindSettingsV2.lua
 Core\Renderer\ExwindModuleDefinition.lua

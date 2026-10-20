@@ -4220,12 +4220,65 @@ local function LayoutFloatingTitle(window, closable)
     end
 end
 
+-- 贴靠函数在下文定义，这里先声明，window.SetAnchor 才能取到同一个 local。
+local SetFloatingWindowAnchor
+
 -- 每个池化宿主只建一次：标题栏（拖动条）、标题文字、关闭按钮、内容区。
 -- 这些子对象和下面的脚本都不捕获任何租约数据；租约数据只放在宿主字段里。
+local function FloatingWindowDragStart(window)
+    -- 用户手动拖走：不再跟随贴靠目标，只留在拖到的位置。
+    if window._exFloatAnchor then window:SetAnchor(nil) end
+    window:StartMoving()
+end
+local function FloatingWindowDragStop(window) window:StopMovingOrSizing() end
+
+-- 空白处也能拖：吃鼠标但没有任何鼠标手势的纯背景 Frame（卡片、分组底等）把拖动转给所在浮窗。
+-- 按钮、输入框、滑条等交互控件及已有鼠标脚本的框保持原样；内容是动态建的，所以显示时和调用方要求时各扫一遍。
+local function FloatingDragForwardStart(surface)
+    local window = surface._exFloatDragWindow
+    if not window or not window:IsShown() then return end
+    -- 池化子框可能已被挪到别处：只有仍在这只窗口里才转发。
+    local parent = surface:GetParent()
+    while parent and parent ~= window do parent = parent:GetParent() end
+    if parent == window then FloatingWindowDragStart(window) end
+end
+local function FloatingDragForwardStop(surface)
+    local window = surface._exFloatDragWindow
+    if window then FloatingWindowDragStop(window) end
+end
+local function BindFloatingDragSurface(window, surface)
+    if surface._exFloatDragWindow == nil then
+        if surface:GetScript("OnMouseDown") or surface:GetScript("OnMouseUp")
+            or surface:GetScript("OnDragStart") or surface:GetScript("OnDragStop") then return false end
+        surface:SetScript("OnDragStart", FloatingDragForwardStart)
+        surface:SetScript("OnDragStop", FloatingDragForwardStop)
+        surface:RegisterForDrag("LeftButton")
+    elseif surface:GetScript("OnDragStart") ~= FloatingDragForwardStart then
+        return false
+    end
+    surface._exFloatDragWindow = window
+    return true
+end
+local function RefreshFloatingDragSurfaces(window)
+    local function Visit(surface)
+        local kind = surface:GetObjectType()
+        if (kind ~= "Frame" and kind ~= "ScrollFrame") or surface._gridType then return end
+        if surface:IsMouseEnabled() and not BindFloatingDragSurface(window, surface) then return end
+        for _, child in ipairs({ surface:GetChildren() }) do Visit(child) end
+    end
+    for _, child in ipairs({ window.content:GetChildren() }) do Visit(child) end
+end
+
 local function BuildFloatingWindow(window)
     window:SetMovable(true)
     window:SetClampedToScreen(true)
     window:HookScript("OnMouseDown", RaiseFloatingWindow)
+    window:RegisterForDrag("LeftButton")
+    window:SetScript("OnDragStart", FloatingWindowDragStart)
+    window:SetScript("OnDragStop", FloatingWindowDragStop)
+    window:HookScript("OnShow", function(self)
+        C_Timer.After(0, function() if self:IsShown() then RefreshFloatingDragSurfaces(self) end end)
+    end)
 
     local header = CreateFrame("Frame", nil, window)
     header:SetPoint("TOPLEFT", window, "TOPLEFT", 0, 0)
@@ -4233,8 +4286,8 @@ local function BuildFloatingWindow(window)
     header:SetHeight(GM.size.floatingHeaderHeight)
     header:EnableMouse(true)
     header:RegisterForDrag("LeftButton")
-    header:SetScript("OnDragStart", function() window:StartMoving() end)
-    header:SetScript("OnDragStop", function() window:StopMovingOrSizing() end)
+    header:SetScript("OnDragStart", function() FloatingWindowDragStart(window) end)
+    header:SetScript("OnDragStop", function() FloatingWindowDragStop(window) end)
     header:HookScript("OnMouseDown", function() RaiseFloatingWindow(window) end)
     window._exFloatHeader = header
 
@@ -4270,6 +4323,68 @@ local function BuildFloatingWindow(window)
 
     window.SetTitle = function(self, text) self._exFloatTitle:SetText(text or "") end
     window.Release = function(self) Factory:ReleaseCompositeHost(self) end
+    window.SetAnchor = function(self, spec) SetFloatingWindowAnchor(self, spec) end
+    -- 内容重建后由调用方调用，让新建的背景框也能拖窗口。
+    window.RefreshDragSurfaces = RefreshFloatingDragSurfaces
+end
+
+-- 贴靠：全部换算成窗口自己的坐标单位，相对 UIParent 左下角摆放。
+-- 先放目标右边（顶对齐），放不下换左边，再不行上方、下方（左对齐）；都放不下仍用右边。最后夹在屏幕内。
+local function PlaceFloatingWindowBeside(window)
+    local anchor = window._exFloatAnchor
+    local target = anchor.frame
+    local left, bottom, width, height = target:GetRect()
+    if not left then return end
+    local ws = window:GetEffectiveScale()
+    local ratio = target:GetEffectiveScale() / ws
+    local L, B = left * ratio, bottom * ratio
+    local R, T = L + width * ratio, B + height * ratio
+    local us = UIParent:GetEffectiveScale() / ws
+    local sw, sh = UIParent:GetWidth() * us, UIParent:GetHeight() * us
+    local ww, wh = window:GetWidth(), window:GetHeight()
+    local gap = anchor.gap
+    local x, y
+    if R + gap + ww <= sw then
+        x, y = R + gap, T - wh
+    elseif L - gap - ww >= 0 then
+        x, y = L - gap - ww, T - wh
+    elseif T + gap + wh <= sh then
+        x, y = L, T + gap
+    elseif B - gap - wh >= 0 then
+        x, y = L, B - gap - wh
+    else
+        x, y = R + gap, T - wh
+    end
+    x = math.max(0, math.min(x, sw - ww))
+    y = math.max(0, math.min(y, sh - wh))
+    window:ClearAllPoints()
+    window:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, y)
+end
+
+local function FloatingWindowFollow(window)
+    if window._exFloatAnchor then PlaceFloatingWindowBeside(window) end
+end
+
+-- window:SetAnchor(spec)：spec = { frame = 目标框, gap = 间距（可选，默认 GM.space.descriptionGap）,
+-- follow = true 时每帧跟随目标移动 }；传 nil 取消贴靠（窗口停在当前位置）。
+SetFloatingWindowAnchor = function(window, spec)
+    if spec == nil then
+        window._exFloatAnchor = nil
+        window:SetScript("OnUpdate", nil)
+        return
+    end
+    if type(spec) ~= "table" or type(spec.frame) ~= "table" or type(spec.frame.GetRect) ~= "function" then
+        error("CreateFloatingWindow: anchor.frame must be a frame", 3)
+    end
+    if spec.gap ~= nil and type(spec.gap) ~= "number" then
+        error("CreateFloatingWindow: anchor.gap must be a number", 3)
+    end
+    if spec.follow ~= nil and type(spec.follow) ~= "boolean" then
+        error("CreateFloatingWindow: anchor.follow must be boolean", 3)
+    end
+    window._exFloatAnchor = { frame = spec.frame, gap = spec.gap or GM.space.descriptionGap }
+    window:SetScript("OnUpdate", spec.follow == true and FloatingWindowFollow or nil)
+    PlaceFloatingWindowBeside(window)
 end
 
 local function FloatingWindowOnHide(window)
@@ -4287,7 +4402,11 @@ end
 --   onHide(window)  可选；窗口因关闭按钮、Hide()、父级隐藏等原因隐藏时调用（Release 引发的隐藏不调用；
 --   onCloseRequested(window, "close-button") 可选；×只请求关闭，owner先收尾再Hide/Release。
 --                   可以在 onHide 里调 window:Release()）
--- 返回已隐藏的窗口：window.content 是内容区 Frame，window:SetTitle(text)，window:Release()；位置默认屏幕中心，
+--   anchor          可选 { frame, gap, follow }：贴在 frame 旁边（右→左→上→下，夹在屏幕内），follow=true 每帧跟随；
+--                   之后可用 window:SetAnchor(spec) 换目标、SetAnchor(nil) 取消；用户拖动窗口会自动取消。
+--                   不传时位置照旧为屏幕中心。
+-- 返回已隐藏的窗口：window.content 是内容区 Frame，window:SetTitle(text)，window:Release()，
+-- window:RefreshDragSurfaces()（内容重建后让新背景框也能拖窗口；显示时自动扫一次）；位置默认屏幕中心，
 -- 调用方自行 ClearAllPoints/SetPoint 与 Show()。不吞 Esc、不遮罩、不抢键盘。
 function EXUI:CreateFloatingWindow(options)
     if type(options) ~= "table" then error("CreateFloatingWindow: options must be a table", 2) end
@@ -4324,11 +4443,14 @@ function EXUI:CreateFloatingWindow(options)
     window._exFloatOnHide = options.onHide
     window._exFloatOnCloseRequested = options.onCloseRequested
     window:SetScript("OnHide", FloatingWindowOnHide)
+    if options.anchor ~= nil then SetFloatingWindowAnchor(window, options.anchor) end
     Factory:AttachPoolRelease(window, function(self)
         -- 先清回调再隐藏：归还引发的隐藏不再调用 onHide，
         -- 使用方在 onHide 里调 window:Release() 时同一窗口不会被归还两次。
         self._exFloatOnHide = nil
         self._exFloatOnCloseRequested = nil
+        self._exFloatAnchor = nil
+        self:SetScript("OnUpdate", nil)
         self:StopMovingOrSizing()
         if self:IsShown() then self:Hide() end
         self:SetScript("OnHide", nil)

@@ -53,6 +53,9 @@ local OVERLAY_PROFILES = {
         -- [WEB-REQ 08/10/13/35/59/60/61] 画面直编的视觉常量：与网页原型同色（#1e90ff 主色），
         -- 尺寸按原型 ×1.25 画布换算（原型 handle 9 → 8，选框外扩 6/11 → 5/9）。
         world = {
+            -- 选框下面不画“宽 × 高”尺寸条；可选元素不常显淡轮廓，只在悬停时显示（用户 10-20 定）。
+            sizeBadge = false,
+            faintOutlines = false,
             accent = { r = 0.118, g = 0.565, b = 1.00, a = 1.00 },
             hover = { r = 0.44, g = 0.72, b = 1.00, a = 0.95 },
             folder = { r = 0.24, g = 0.55, b = 0.99, a = 0.90 },
@@ -1117,7 +1120,7 @@ end
 
 -- ---------- 单一指针会话（元素移动 / 缩放、整根移动、容器移动、格子拖放、手柄拖动共用） ----------
 -- 会话只存在于鼠标按下期间：OnUpdate 只在会话期间挂在一个专用 frame 上，鼠标松开或 Esc 即卸下。
-local POINTER_THRESHOLD = 2
+local POINTER_THRESHOLD = 4
 
 local function EnsurePointerDriver()
     if state.pointerDriver then return state.pointerDriver end
@@ -1351,8 +1354,12 @@ function WorldInput.Layout(entry)
                 strip:SetShown(entry.spec.resizable == true and not small)
             end
         end
-        SetChip(entry.badge, string.format("%d × %d", math.floor(rect.width + 0.5), math.floor(rect.height + 0.5)),
-            theme.accent, theme.chipText, theme.badgeSize)
+        if theme.sizeBadge == false then
+            entry.badge:Hide()
+        else
+            SetChip(entry.badge, string.format("%d × %d", math.floor(rect.width + 0.5), math.floor(rect.height + 0.5)),
+                theme.accent, theme.chipText, theme.badgeSize)
+        end
     end
 end
 
@@ -1394,8 +1401,9 @@ local function SetWorldElementSelection(session)
                 entry.selection:SetShown(showSelection)
                 entry.outline:SetShown(showOutline)
             end
-            -- 会话中所有可选元素常显淡色轮廓；选中 / 资料夹描边的元素由各自更醒目的框代替。
-            entry.faint:SetShown(shown and visible and not showSelection and not showOutline)
+            -- 会话中所有可选元素常显淡色轮廓（主题 faintOutlines = false 时不显示）；选中 / 资料夹描边的元素由各自更醒目的框代替。
+            entry.faint:SetShown(entry.theme.faintOutlines ~= false and shown and visible
+                and not showSelection and not showOutline)
             if showSelection then
                 WorldInput.HideHover(entry)
                 anchor = entry.selection
@@ -1423,6 +1431,14 @@ local function SelectWorldElement(session, rootID, elementID, button)
     SetWorldElementSelection(session)
     if type(session.provider.OnSelect) == "function" then
         session.provider.OnSelect(rootID, elementID, button, WorldModifiers())
+    end
+end
+
+-- 左键按下后没拖动就松手（拖动由 OnDragStart 清掉 press，不会走到这里）：按下时的选中照旧，
+-- 松手再回报一次，provider 可以在这里开面板。elementID 为 nil 表示点的是群组外框 / 标签。
+local function NotifyClickRelease(session, rootID, elementID)
+    if type(session.provider.OnClickRelease) == "function" then
+        session.provider.OnClickRelease({ rootID = rootID, elementID = elementID })
     end
 end
 
@@ -1843,9 +1859,11 @@ function WorldInput.OnRelease(session, rootID, entity, entry, button)
     local press = state.press
     if button ~= "LeftButton" or not press or press.kind ~= "element" or press.entry ~= entry then return end
     state.press = nil
-    if press.mode == "container" and session.entities[rootID] == entity and SelectionAllowed() then
+    if session.entities[rootID] ~= entity or not SelectionAllowed() then return end
+    if press.mode == "container" then
         SelectWorldElement(session, rootID, press.spec.elementID, "LeftButton")
     end
+    NotifyClickRelease(session, rootID, press.spec.elementID)
 end
 
 function WorldInput.OnDragStart(session, rootID, entity, entry)
@@ -2148,6 +2166,14 @@ local function CreateOverlayWidget(session, rootID, entity, bundle, spec, theme)
             end })
     end
 
+    local function OnRelease(source, kind, button)
+        local press = state.press
+        if button ~= "LeftButton" or not press or press.source ~= source or press.kind ~= kind then return end
+        state.press = nil
+        if session.entities[rootID] ~= entity or not SelectionAllowed() then return end
+        NotifyClickRelease(session, rootID, nil)
+    end
+
     local function OnDrag(source, kind)
         local press = state.press
         if not press or press.source ~= source or press.kind ~= kind then return end
@@ -2256,7 +2282,7 @@ local function CreateOverlayWidget(session, rootID, entity, bundle, spec, theme)
     function widget.Release()
         if spec.kind == "frame" then
             for _, strip in pairs(parts.edges) do
-                strip:Hide(); strip:SetScript("OnMouseDown", nil); strip:SetScript("OnDragStart", nil); strip:ClearAllPoints()
+                strip:Hide(); strip:SetScript("OnMouseDown", nil); strip:SetScript("OnMouseUp", nil); strip:SetScript("OnDragStart", nil); strip:ClearAllPoints()
             end
             SetDashedShown(parts.dashed, false)
         end
@@ -2265,7 +2291,7 @@ local function CreateOverlayWidget(session, rootID, entity, bundle, spec, theme)
             if frame then
                 frame:Hide()
                 frame:ClearAllPoints()
-                if frame.SetScript then frame:SetScript("OnMouseDown", nil); frame:SetScript("OnDragStart", nil) end
+                if frame.SetScript then frame:SetScript("OnMouseDown", nil); frame:SetScript("OnMouseUp", nil); frame:SetScript("OnDragStart", nil) end
             end
         end
         local list = bundle.overlayPool[key]
@@ -2277,10 +2303,12 @@ local function CreateOverlayWidget(session, rootID, entity, bundle, spec, theme)
     if spec.kind == "frame" then
         for _, strip in pairs(parts.edges) do
             strip:SetScript("OnMouseDown", function(self, button) OnPress(self, "root", button) end)
+            strip:SetScript("OnMouseUp", function(self, button) OnRelease(self, "root", button) end)
             strip:SetScript("OnDragStart", function(self) OnDrag(self, "root") end)
         end
         if parts.chip then
             parts.chip:SetScript("OnMouseDown", function(self, button) OnPress(self, "root", button) end)
+            parts.chip:SetScript("OnMouseUp", function(self, button) OnRelease(self, "root", button) end)
             parts.chip:SetScript("OnDragStart", function(self) OnDrag(self, "root") end)
         end
     elseif spec.kind == "handle" then
@@ -3213,7 +3241,7 @@ function EXUI:RegisterEditSessionProvider(provider)
         -- 画面直编的可选回调（见“画面直编”一节）：声明了就必须是函数，否则注册时就报错，不会拖到鼠标按下才炸。
         for _, callbackName in ipairs({ "GetWorldPressMode", "PreviewWorldElement", "PreviewWorldElementLive",
             "ListWorldOverlays", "PreviewWorldOverlay", "OnMarqueeSelect", "IsWorldInputBlocked",
-            "BeforeWorldInput", "OnWorldSelectionAnchor" }) do
+            "BeforeWorldInput", "OnWorldSelectionAnchor", "OnClickRelease" }) do
             if provider[callbackName] ~= nil and type(provider[callbackName]) ~= "function" then
                 error("RegisterEditSessionProvider: " .. callbackName .. " must be function", 2)
             end

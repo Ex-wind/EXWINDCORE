@@ -822,6 +822,8 @@ function EXUI:CreateSettingsRow(parent, options)
     -- autoWidth：这一行单独按标签实际字宽排文字列（同预设 labelAutoWidth），只在有样式时生效；每次借出重设。
     row._exSettingsRowAutoWidth = style and options.autoWidth == true or nil
     row._exSettingsRowTrailingWidth = style and tonumber(options.trailingWidth) or nil
+    -- leadExtra = 标签前（勾选框 / 图标位之前）再多留的宽，调用方自己在这里摆东西（V2 快速工具条的星号）；不给为 0。
+    row._exSettingsRowLeadExtra = tonumber(options.leadExtra)
     if style and style.rowMinHeight then row._exSettingsRowMinHeight = style.rowMinHeight end
     row._exSettingsRowIsLast = options.isLast == true
     -- 标签前的可选位：lead = "checkbox"（勾选框由调用方摆在 UpdateSettingsRowLayout 返回的位置）
@@ -893,8 +895,10 @@ function EXUI:UpdateSettingsRowLayout(row, width, controlHeight, descriptionWidg
     local leadSize = row._exSettingsRowLead == "checkbox" and GM.size.checkboxBoxSize
         or (row._exSettingsRowLead == "icon" and GM.settings.leadIconSize) or 0
     local leadWidth = leadSize > 0 and (leadSize + GM.settings.leadGap) or 0
-    local textX = rowPaddingX + leadWidth
-    innerWidth = math.max(1, innerWidth - leadWidth)
+    local leadExtra = row._exSettingsRowLeadExtra or 0
+    local leadX = rowPaddingX + leadExtra
+    local textX = leadX + leadWidth
+    innerWidth = math.max(1, innerWidth - leadWidth - leadExtra)
     local textWidth, textHeight, controlX, controlY, controlWidth, height, stacked, labelColumn
     -- 标签文字列扣掉文字后面留的宽（只有样式行会有）；说明仍占整列。
     local trailing = row._exSettingsRowTrailingWidth or 0
@@ -975,7 +979,7 @@ function EXUI:UpdateSettingsRowLayout(row, width, controlHeight, descriptionWidg
     local leadTop = math.floor(textTop + (lineHeight - leadSize) * 0.5 + 0.5)
     if row._exSettingsRowLead == "icon" then
         row._exSettingsRowIcon:ClearAllPoints()
-        row._exSettingsRowIcon:SetPoint("TOPLEFT", row, "TOPLEFT", rowPaddingX, -leadTop)
+        row._exSettingsRowIcon:SetPoint("TOPLEFT", row, "TOPLEFT", leadX, -leadTop)
     end
     if descriptionShown then
         local descriptionHeight = SettingsTextHeight(description, textWidth)
@@ -1005,8 +1009,8 @@ function EXUI:UpdateSettingsRowLayout(row, width, controlHeight, descriptionWidg
     divider:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -dividerInset, 0)
     divider:SetShown(not row._exSettingsRowIsLast)
     EXUI:ClearControlSurface(row)
-    -- 第 6、7 个返回值：标签前勾选框 / 图标的左上角（相对行）。
-    return height, controlX, controlY, controlWidth, stacked == true, rowPaddingX, leadTop
+    -- 第 6、7 个返回值：标签前勾选框 / 图标的左上角（相对行）；leadExtra 留的位在它左边。
+    return height, controlX, controlY, controlWidth, stacked == true, leadX, leadTop
 end
 
 local function SettingsControlTextWidth(region)

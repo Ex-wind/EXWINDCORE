@@ -43,6 +43,68 @@ ExwindTools.GUIMetrics = {
         -- 可选页面样式预设（EXAura 编辑器新版）：页面声明只写预设名，不写像素。
         -- 颜色直接引用 Core 色表 GUIColors 里的项。styles 在下方表外填入。
         styles = {},
+        -- 设置页 V2 新种类的默认尺寸（像素 / 字号）。页面样式预设写了同名键就用预设的值，
+        -- 所以 EXAura 外观定稿只改这里或预设里的数字，声明不写像素。
+        parts = {
+            moreRowHeight = 32,        -- 渐进披露“更多 ›”行高
+            moreFont = 14,             -- “更多 ›”字号
+            moreTextInset = 0,         -- “更多 ›”文字离行左缘
+            panelSmallWidth = 380,     -- 二级面板 size="small" 外框宽
+            panelSmallHeight = 440,    -- 二级面板 size="small" 外框高
+            panelLargeWidth = 560,     -- 二级面板 size="large" 外框宽
+            panelLargeHeight = 640,    -- 二级面板 size="large" 外框高
+            panelFooterHeight = 46,    -- 二级面板底栏高（放动作按钮）
+            panelButtonGap = 8,        -- 底栏按钮之间
+            panelAnchorGap = 6,        -- 二级面板与贴靠框体的间距
+            summaryPaddingX = 12,      -- 摘要行左右内距
+            summaryPaddingY = 8,       -- 摘要行上下内距
+            summaryTitleFont = 15,     -- 摘要行标题字号
+            summaryTextFont = 13,      -- 摘要行摘要字号
+            summaryLineGap = 4,        -- 标题与摘要之间
+            summaryIconSize = 20,      -- 摘要行行首图标边长
+            summaryButtonSize = 22,    -- 摘要行编辑 / 删除图标按钮边长
+            summaryButtonIconSize = 13, -- 摘要行图标按钮里的图标边长
+            summaryGap = 8,            -- 行首图标、文字、尾部按钮之间
+            catalogCardMinWidth = 96,  -- 预览卡最窄（按它算每行几张，多出的宽平分）
+            catalogPreviewHeight = 60, -- 预览卡里预览区高
+            catalogIconSize = 32,      -- 预览区里的图标边长（没给绘制回调时）
+            catalogLabelFont = 13,     -- 预览卡名字字号
+            catalogPadding = 6,        -- 预览卡内距
+            catalogLabelGap = 4,       -- 预览区与名字之间
+            catalogGap = 8,            -- 预览卡之间
+            chipIconSize = 16,         -- 带图标芯片里的图标边长
+            chipIconGap = 4,           -- 芯片图标与文字之间
+            chipInputWidth = 140,      -- 芯片列表末尾输入框的宽
+            inlineButtonSize = 22,     -- 输入框内嵌图标按钮边长
+            inlineButtonIconSize = 14, -- 内嵌图标按钮里的图标边长
+            inlineButtonInset = 4,     -- 内嵌按钮离输入框右缘
+            prefixWidth = 18,          -- 数字框前缀（字母或图标）占的宽
+            prefixFont = 13,           -- 前缀字母字号
+            prefixIconSize = 14,       -- 前缀图标边长
+            prefixInset = 6,           -- 前缀离输入框左缘
+            noticePaddingX = 10,       -- 行内提示条左右内距
+            noticePaddingY = 8,        -- 行内提示条上下内距
+            noticeFont = 13,           -- 行内提示条字号
+            urlWidth = 320,            -- 可复制网址框的自然宽
+            pickColumns = 2,           -- 分组多选列表的栏数
+            pickColumnGap = 16,        -- 两栏之间
+            pickGroupFont = 14,        -- 分组标题字号
+            pickGroupGap = 10,         -- 组与组之间
+            pickTitleGap = 4,          -- 组标题与第一项之间
+            pickRowHeight = 26,        -- 每一项的行高
+            pickSearchWidth = 200,     -- 搜索框宽
+            pickCountFont = 13,        -- 计数字号
+            pickHeaderGap = 10,        -- 搜索行与分组之间
+            quickButtonSize = 26,      -- 快速工具条按钮边长
+            quickIconSize = 15,        -- 工具条按钮里的图标边长
+            quickPadding = 4,          -- 工具条内距
+            quickButtonGap = 4,        -- 工具条按钮之间
+            quickAnchorGap = 6,        -- 工具条与选中元素、小框与工具条的间距
+            quickPopoverWidth = 300,   -- 工具条小框宽
+            quickPopoverPadding = 2,   -- 小框外框内距（里面的页面自带页边距）
+            quickStarSize = 14,        -- 完整面板行名字前的星号边长
+            quickStarGap = 6,          -- 星号与后面（勾选框 / 图标 / 名字）之间
+        },
     },
 
     -- 圆角角色（视觉半径，像素；必须是 SetControlSurface 白名单 3/4/5/6/8/10 之一；白名单里的 21 只给胶囊按钮组）。

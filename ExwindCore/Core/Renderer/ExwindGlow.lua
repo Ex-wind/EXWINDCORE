@@ -9,7 +9,6 @@ local EXUI = ExwindTools and ExwindTools.UI
 local EXFactory = _G.ExwindFactory
 if not EXUI or not EXFactory then return end
 
-local GLOW_WIDGET_POOL = "RuntimeGlowWidget"
 local EDGE_ORDER = { "top", "right", "bottom", "left" }
 local MAX_EDGE_TRAINS = 36
 
@@ -65,6 +64,7 @@ local function HideAllVisuals(widget)
     StopGroup(widget.pulseGroup)
     StopGroup(widget.procStartGroup)
     StopGroup(widget.procLoopGroup)
+    StopGroup(widget.procRevealGroup)
     widget.pulseTexture:Hide()
     widget.procStart:Hide()
     widget.procLoop:Hide()
@@ -213,7 +213,10 @@ local function ConfigureProcFlipbook(widget, style)
     widget.procStartFlip:SetFlipBookFrames(30)
     widget.procStartFlip:SetFlipBookFrameWidth(0)
     widget.procStartFlip:SetFlipBookFrameHeight(0)
-    widget.procStartFlip:SetDuration(0.7 / frequency)
+    local startDuration = 0.7 / frequency
+    widget.procStartFlip:SetDuration(startDuration)
+    widget.procStartFade:SetStartDelay(startDuration)
+    widget.procRevealFade:SetStartDelay(startDuration)
 
     widget.procLoopFlip:SetFlipBookRows(6)
     widget.procLoopFlip:SetFlipBookColumns(5)
@@ -222,11 +225,14 @@ local function ConfigureProcFlipbook(widget, style)
     widget.procLoopFlip:SetFlipBookFrameHeight(0)
     widget.procLoopFlip:SetDuration(1 / frequency)
 
-    widget.procLoopGroup:Stop()
-    widget.procStartGroup:Stop()
-    widget.procLoop:Hide()
+    -- 宿主子树可能不执行 Lua 脚本，不能靠 OnFinished 衔接：两段同时播放，循环段延迟显形。
+    widget.procStart:SetAlpha(1)
+    widget.procLoop:SetAlpha(0)
     widget.procStart:Show()
+    widget.procLoop:Show()
     widget.procStartGroup:Play()
+    widget.procLoopGroup:Play()
+    widget.procRevealGroup:Play()
 end
 
 local function ApplyGlowStyle(widget, style)
@@ -265,16 +271,22 @@ local function HideGlowWidget(widget)
     return widget
 end
 
+-- 发光框按父级就地创建、就地复用：部分宿主（如暴雪 AuraButton）的子树禁止 SetParent 进入，
+-- 所以不能从全局池借出再挂过去。释放时只隐藏并记进父级自己的空闲表。
 local function ReleaseGlowWidget(widget)
     if not widget or widget._released then return end
     widget._released = true
     StopGlowWidget(widget)
     widget:ClearAllPoints()
     widget.style = nil
-    EXFactory:Release(GLOW_WIDGET_POOL, widget)
+    local parent = widget:GetParent()
+    if parent then
+        parent._exGlowFree = parent._exGlowFree or {}
+        table.insert(parent._exGlowFree, widget)
+    end
 end
 
-EXFactory:InitPool(GLOW_WIDGET_POOL, "Frame", nil, function(widget)
+local function InitGlowWidget(widget)
     widget:SetClipsChildren(false)
     widget:EnableMouse(false)
 
@@ -313,17 +325,20 @@ EXFactory:InitPool(GLOW_WIDGET_POOL, "Frame", nil, function(widget)
     widget.procStartGroup:SetToFinalAlpha(true)
     widget.procStartFlip = widget.procStartGroup:CreateAnimation("FlipBook")
     widget.procStartFlip:SetOrder(1)
+    widget.procStartFade = widget.procStartGroup:CreateAnimation("Alpha")
+    widget.procStartFade:SetFromAlpha(1)
+    widget.procStartFade:SetToAlpha(0)
+    widget.procStartFade:SetDuration(0.01)
     widget.procLoopGroup = widget.procLoop:CreateAnimationGroup()
     widget.procLoopGroup:SetLooping("REPEAT")
     widget.procLoopFlip = widget.procLoopGroup:CreateAnimation("FlipBook")
     widget.procLoopFlip:SetOrder(1)
-    widget.procStartGroup:SetScript("OnFinished", function()
-        if widget._styleName == "PROC_FLIPBOOK" and widget._isShown then
-            widget.procStart:Hide()
-            widget.procLoop:Show()
-            widget.procLoopGroup:Play()
-        end
-    end)
+    widget.procRevealGroup = widget.procLoop:CreateAnimationGroup()
+    widget.procRevealGroup:SetToFinalAlpha(true)
+    widget.procRevealFade = widget.procRevealGroup:CreateAnimation("Alpha")
+    widget.procRevealFade:SetFromAlpha(0)
+    widget.procRevealFade:SetToAlpha(1)
+    widget.procRevealFade:SetDuration(0.01)
 
     widget.flowClip = CreateFrame("Frame", nil, widget)
     widget.flowClip:SetAllPoints(widget)
@@ -356,11 +371,16 @@ EXFactory:InitPool(GLOW_WIDGET_POOL, "Frame", nil, function(widget)
     widget.ShowGlow = ShowGlowWidget
     widget.HideGlow = HideGlowWidget
     widget.Release = ReleaseGlowWidget
-end)
+end
 
 --- 创建独立 Overlay；parent 必须是调用方可安全持有的宿主，宽高必须通过 style 传入。
 function EXUI:CreateGlowWidget(parent, style)
-    local widget = EXFactory:Acquire(GLOW_WIDGET_POOL, parent)
+    local free = parent and parent._exGlowFree
+    local widget = free and table.remove(free)
+    if not widget then
+        widget = CreateFrame("Frame", nil, parent or UIParent)
+        InitGlowWidget(widget)
+    end
     widget._released = false
     widget._isShown = false
     widget.style = style or DEFAULT_STYLE

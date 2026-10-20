@@ -1352,7 +1352,9 @@ local function ApplyModernInput(frame)
             -- 字号与框宽是一组（2026-10-05 由 11/40 提到 13/48），只改一个会截断数值。
             editBox:SetTextInsets(SLIDER_NUMBER_INPUT_INSET, SLIDER_NUMBER_INPUT_INSET, 0, 0)
         else
-            editBox:SetTextInsets(GM.space.inputTextPadX, GM.space.inputTextPadX, editBox == frame and 0 or 7, editBox == frame and 0 or 7)
+            -- _exInsetLeft / _exInsetRight：设置页 V2 在框内放前缀或内嵌按钮时额外让出的宽（没放时为 nil）。
+            editBox:SetTextInsets(GM.space.inputTextPadX + (editBox._exInsetLeft or 0),
+                GM.space.inputTextPadX + (editBox._exInsetRight or 0), editBox == frame and 0 or 7, editBox == frame and 0 or 7)
         end
     end
     MODERN.ApplyTextRole(editBox, editBox._exSearchAppearance and "control"

@@ -1,7 +1,7 @@
 -- =========================================================
 -- ExwindGUITree.lua: 树控件 EXUI:CreateTree。
 -- 缩进、折叠箭头、图标、左侧徽标、右侧状态文字与数量胶囊、行内三态勾选（CreateTriStateCheckbox）、行尾眼睛（CreateIconButton）、
--- 选中/悬停/容器底色、点击修饰键信息、拖放源与落点回调。
+-- 选中/悬停/容器底色、点击修饰键信息、拖放源与落点回调、行名原地重命名（可选）。
 -- 新增文件理由：树是自带滚动区、行对象池与拖放状态的独立控件族（约 500 行）；ExwindGUI.lua 与
 -- ExwindGUIComposite.lua 已分别接近 6000 与 5000 行，ExwindChoiceGroup.lua 只管 Tab/选项组，
 -- 都不适合再塞入。本文件依赖 ExwindGUI.lua（CreateTriStateCheckbox / CreateScrollFrame / ControlAppearance）
@@ -116,8 +116,8 @@ local function BuildRow(row)
     end)
     row._treeFold, row._treeFoldIcon = fold, foldIcon
 
+    -- 图标边长每次绑定时按所属树设置（行池在各树之间共用）。
     local icon = EXUI:CreateVisualTexture(row, EXBASEFRAME)
-    icon:SetSize(GM.size.treeIconSize, GM.size.treeIconSize)
     row._treeIcon = icon
 
     local badge = CreateFrame("Frame", nil, row)
@@ -162,6 +162,14 @@ local function BuildRow(row)
         local callback = owner._treeOptions.onClick
         if callback then callback(data.id, mouseButton, Modifiers(), owner) end
     end)
+    -- 双击名称开始原地重命名：只在 options.renameOnDoubleClick 的树上装（见 AcquireRow），
+    -- 其他树不装，第二下点击照常走 OnClick。
+    row._treeDoubleClick = function(self, mouseButton)
+        local owner, data = self._treeOwner, self._treeData
+        if not owner or not data or mouseButton ~= "LeftButton" or self._treeDragged then return end
+        if not self._treeName:IsMouseOver() then return end
+        owner:BeginRename(data.id)
+    end
     Script("OnEnter", function(self)
         local owner, data = self._treeOwner, self._treeData
         if not owner or not data then return end
@@ -211,6 +219,7 @@ local function AcquireRow(tree)
     row:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     row:RegisterForDrag("LeftButton")
     for name, callback in pairs(row._treeScripts) do row:SetScript(name, callback) end
+    row:SetScript("OnDoubleClick", tree._treeOptions.renameOnDoubleClick and row._treeDoubleClick or nil)
     row._treeOwner = tree
     row._treeHover, row._treeDragged = false, false
     Factory:AttachPoolRelease(row, function(self)
@@ -225,6 +234,8 @@ local function AcquireRow(tree)
         self._treePill:Hide()
         self._treeMark:SetText("")
         self._treeName:SetText("")
+        self._treeName:Show()
+        self:SetScript("OnDoubleClick", nil)
     end)
     return row
 end
@@ -257,7 +268,9 @@ local function BindRow(tree, row, index, data)
         fold:Hide()
     end
     local icon = row._treeIcon
+    local iconSize = tree._treeIconSize
     if data.icon ~= nil then
+        icon:SetSize(iconSize, iconSize)
         local coreIcon = type(data.icon) == "string" and ExwindTools.GUIIcons.ids[data.icon] ~= nil
         icon:SetTexture(coreIcon and EXUI:GetIcon(data.icon) or data.icon)
         -- 统一图标库是白色线条贴图，跟随文字色；其它图标（法术/物品）保持原色并裁掉边缘。
@@ -268,7 +281,7 @@ local function BindRow(tree, row, index, data)
         icon:ClearAllPoints()
         icon:SetPoint("LEFT", row, "LEFT", x, 0)
         icon:Show()
-        x = x + GM.size.treeIconSize + gap
+        x = x + iconSize + gap
     else
         icon:Hide()
     end
@@ -380,7 +393,12 @@ local function BindRow(tree, row, index, data)
     end
 
     local name = row._treeName
+    -- 行池在各树之间共用：每次绑定都按所属树重设字号（不写 fontSize 时回到 title 文字角色）。
+    if tree._treeFontSize then Appearance.Font(name, tree._treeFontSize, GC.text)
+    else Appearance.ApplyTextRole(name, "title", GC.text) end
     name:SetText(data.text)
+    -- 正在原地重命名的行由输入框盖住名称。
+    name:SetShown(tree._treeRenameId ~= data.id)
     name:ClearAllPoints()
     name:SetPoint("LEFT", row, "LEFT", x, 0)
     name:SetPoint("RIGHT", row, "RIGHT", rx, 0)
@@ -445,6 +463,77 @@ local function CopyRow(row, index, seen)
 end
 
 -- ---------------------------------------------------------
+-- 原地重命名：一棵树同一时间最多一个输入框，盖在该行名称上；回车 / 点别处确定，Esc 取消。
+-- 行被 SetRows 重新绑定后按 id 找回所在行重新贴上；该 id 不在列表里了就取消。
+-- ---------------------------------------------------------
+local function RenameRow(tree)
+    local id = tree._treeRenameId
+    if id == nil then return nil end
+    for _, row in ipairs(tree._treeRows) do
+        if row._treeData and row._treeData.id == id then return row end
+    end
+end
+
+local function PlaceRenameBox(tree, row)
+    local box = tree._treeRenameBox
+    box:SetParent(row)
+    box:SetFrameLevel(row:GetFrameLevel() + 3)
+    box:SetHeight(math.min(GM.size.inputHeight, tree._treeRowHeight))
+    box:ClearAllPoints()
+    box:SetPoint("LEFT", row._treeName, "LEFT", 0, 0)
+    box:SetPoint("RIGHT", row._treeName, "RIGHT", 0, 0)
+    box:Show()
+end
+
+local function FinishRename(tree, commit)
+    local box, id, original = tree._treeRenameBox, tree._treeRenameId, tree._treeRenameText
+    if not box then return end
+    local text = box:GetText()
+    tree._treeRenameBox, tree._treeRenameId, tree._treeRenameText = nil, nil, nil
+    tree._treeRenameWatch:UnregisterEvent("GLOBAL_MOUSE_DOWN")
+    -- 可能正处在输入框自己的失焦脚本里：先藏起来，下一帧再还回池。
+    box:Hide()
+    box:ClearAllPoints()
+    C_Timer.After(0, function() Factory:Release(box._fromPool, box) end)
+    for _, row in ipairs(tree._treeRows or {}) do
+        if row._treeData and row._treeData.id == id then row._treeName:Show() end
+    end
+    local callback = tree._treeOptions and tree._treeOptions.onRename
+    if commit and callback and text ~= "" and text ~= original then callback(id, text, tree) end
+end
+
+local function BeginRename(tree, id)
+    if not tree._treeOptions.onRename then error("Tree:BeginRename requires options.onRename", 3) end
+    if tree._treeRenameId == id then return true end
+    if tree._treeRenameBox then FinishRename(tree, true) end
+    tree._treeRenameId = id
+    local row = RenameRow(tree)
+    if not row then tree._treeRenameId = nil; return false end
+    local original = row._treeData.text
+    tree._treeRenameText = original
+    local box = EXUI:CreateEditBox(row, original, 1, math.min(GM.size.inputHeight, tree._treeRowHeight), nil, {
+        onEditFocusLost = function()
+            if tree._treeRenameBox ~= nil and tree._treeRenameId == id then
+                FinishRename(tree, not tree._treeRenameCancel)
+            end
+        end,
+    })
+    tree._treeRenameBox, tree._treeRenameCancel = box, false
+    -- Core 输入框的 Esc 只是失焦（= 确定）；这里改成先记下“取消”再失焦。下次借出时 CreateEditBox 会重设。
+    box:SetScript("OnEscapePressed", function(self)
+        tree._treeRenameCancel = true
+        self:ClearFocus()
+    end)
+    if tree._treeFontSize then Appearance.Font(box, tree._treeFontSize, GC.text) end
+    row._treeName:Hide()
+    PlaceRenameBox(tree, row)
+    tree._treeRenameWatch:RegisterEvent("GLOBAL_MOUSE_DOWN")
+    box:SetFocus()
+    box:HighlightText()
+    return true
+end
+
+-- ---------------------------------------------------------
 -- 树宿主
 -- ---------------------------------------------------------
 local function BuildTree(tree)
@@ -456,6 +545,13 @@ local function BuildTree(tree)
     content:SetSize(1, 1)
     scroll:SetScrollChild(content)
     tree._treeScroll, tree._treeContent = scroll, content
+    -- 原地重命名时点在输入框外面 = 确定。
+    local watch = CreateFrame("Frame", nil, tree)
+    watch:SetScript("OnEvent", function()
+        local box = tree._treeRenameBox
+        if box and not box:IsMouseOver() then box:ClearFocus() end
+    end)
+    tree._treeRenameWatch = watch
     tree:HookScript("OnSizeChanged", function(self, width)
         self._treeContent:SetWidth(math.max(1, width - EXUI.MODERN_SCROLL_FRAME_RIGHT_INSET))
     end)
@@ -479,7 +575,16 @@ local function BuildTree(tree)
             BindRow(self, row, index, data)
         end
         self._treeContent:SetHeight(math.max(1, #copied * (self._treeRowHeight + GM.space.treeRowGap)))
+        if self._treeRenameId ~= nil then
+            local renameRow = RenameRow(self)
+            if renameRow then PlaceRenameBox(self, renameRow) else FinishRename(self, false) end
+        end
     end
+    -- 原地重命名：BeginRename(id) 在该行名称上开输入框（该行不在当前列表里返回 false）；
+    -- CancelRename() 放弃；IsRenaming() 是否正在重命名。
+    function tree:BeginRename(id) return BeginRename(self, id) end
+    function tree:CancelRename() FinishRename(self, false) end
+    function tree:IsRenaming() return self._treeRenameId ~= nil end
     function tree:GetDragId() return self._treeDragId end
     function tree:GetDropTarget() return DropTarget(self) end
     function tree:GetScrollFrame() return self._treeScroll end
@@ -488,6 +593,11 @@ end
 
 -- options（纯数据 + 回调）:
 --   rowHeight   可选，行高，默认 GM.size.treeRowHeight
+--   iconSize    可选，行图标边长，默认 GM.size.treeIconSize
+--   fontSize    可选，行名称字号，默认用 title 文字角色的字号
+--   onRename(id, text, tree)                    可选：原地重命名确定（回车或点别处）且名字非空、有改动时调用；
+--                                               写入数据由使用方做，之后用 SetRows 回传 text。Esc 取消不调用。
+--   renameOnDoubleClick = true                  可选（需 onRename）：左键双击行名称开始原地重命名
 --   onClick(id, mouseButton, modifiers, tree)   点行（左键/右键）；modifiers = { ctrl, shift, alt } 布尔值。
 --                                               选中集合与 Ctrl/Shift 多选逻辑由使用方维护，之后用 SetRows 回传 selected。
 --   onToggle(id, tree)                          点折叠箭头（展开状态由使用方维护，用 SetRows 回传 expanded）
@@ -508,7 +618,8 @@ end
 --   pill（右侧数量胶囊文字）、mark = { text, color? }（右侧状态文字）、
 --   check（"checked"/"unchecked"/"mixed"，有值才画行内勾选框）、checkEnabled（默认 true）、selected、
 --   eye（"on"/"off"/"mixed"，有值才在行最右画眼睛按钮：eye / eye-off / eye-partial；off 时名称变暗、图标变淡）。
--- 返回池化宿主：SetRows(rows)、GetDragId()、GetScrollFrame()、Release()。
+-- 返回池化宿主：SetRows(rows)、GetDragId()、GetScrollFrame()、Release()、
+--   BeginRename(id) / CancelRename() / IsRenaming()（原地重命名，需 options.onRename）。
 -- GetDropTarget() 返回当前指针的 targetId, zone, rowFrame；区外/遮挡为 nil,"cancel"，区内空白为 nil,"blank"。
 function EXUI:CreateTree(parent, width, height, options)
     options = options or {}
@@ -519,10 +630,21 @@ function EXUI:CreateTree(parent, width, height, options)
     if options.rowHeight ~= nil and (type(options.rowHeight) ~= "number" or options.rowHeight <= 0) then
         error("CreateTree: options.rowHeight must be a positive number", 2)
     end
+    for _, key in ipairs({ "iconSize", "fontSize" }) do
+        if options[key] ~= nil and (type(options[key]) ~= "number" or options[key] <= 0) then
+            error("CreateTree: options." .. key .. " must be a positive number", 2)
+        end
+    end
+    if options.renameOnDoubleClick ~= nil and type(options.renameOnDoubleClick) ~= "boolean" then
+        error("CreateTree: options.renameOnDoubleClick must be a boolean", 2)
+    end
+    if options.renameOnDoubleClick and not options.onRename then
+        error("CreateTree: options.renameOnDoubleClick requires options.onRename", 2)
+    end
     if options.eyeTint ~= nil and type(options.eyeTint) ~= "boolean" then
         error("CreateTree: options.eyeTint must be a boolean", 2)
     end
-    for _, key in ipairs({ "onClick", "onToggle", "onCheck", "onCheckEnter", "onCheckLeave", "onEye", "onEnter", "onLeave", "onDragStart", "onDrop" }) do
+    for _, key in ipairs({ "onClick", "onToggle", "onCheck", "onCheckEnter", "onCheckLeave", "onEye", "onEnter", "onLeave", "onDragStart", "onDrop", "onRename" }) do
         if options[key] ~= nil and type(options[key]) ~= "function" then
             error("CreateTree: options." .. key .. " must be a function", 2)
         end
@@ -531,6 +653,8 @@ function EXUI:CreateTree(parent, width, height, options)
     if isNew then BuildTree(tree) end
     tree._treeOptions = options
     tree._treeRowHeight = options.rowHeight or GM.size.treeRowHeight
+    tree._treeIconSize = options.iconSize or GM.size.treeIconSize
+    tree._treeFontSize = options.fontSize
     tree._treeRows = {}
     tree._treeDragId = nil
     tree:SetSize(width, height)
@@ -538,6 +662,7 @@ function EXUI:CreateTree(parent, width, height, options)
     tree._treeContent:SetHeight(1)
     tree._treeScroll:SetVerticalScroll(0)
     Factory:AttachPoolRelease(tree, function(self)
+        FinishRename(self, false)
         for index = #self._treeRows, 1, -1 do ReleaseRow(self._treeRows[index]) end
         self._treeRows, self._treeOptions, self._treeDragId = nil, nil, nil
     end)

@@ -426,6 +426,7 @@ local function AcquireButton(host, parent, item, onClick)
         host.choiceStyle == "connected") and "fieldValue" or "control"
     if host.darkTrack then textRole = "control" end -- 黑色轨道（迷你分段）用 13 号字
     Appearance.ApplyTextRole(button.label, textRole, nil, textRole == "control" and "GameFontNormalSmall" or nil)
+    if host.tabFontSize then Appearance.Font(button.label, host.tabFontSize, nil, "", "GameFontHighlight") end
     Appearance.ApplyTextRole(button.description, "hint", GC.optionDesc)
     button:SetPushedTextOffset(0, 0)
     button.label:SetText(item.iconOnly and "" or item.label)
@@ -445,7 +446,10 @@ local function AcquireButton(host, parent, item, onClick)
     button:SetScript("OnClick", onClick or Choose)
     button:SetScript("OnEnter", function(self)
         self._choiceHover = true; Paint(self)
-        if _G.GameTooltip and self._choiceItem then
+        -- 文字完整可见、又没有额外 tooltip 时不出提示（否则只是把按钮名再写一遍，还会盖住旁边的页签）。
+        local item = self._choiceItem
+        local labelHidden = item and (item.iconOnly or not self.label:IsShown() or self.label:IsTruncated())
+        if _G.GameTooltip and item and (item.tooltip or labelHidden) then
             GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
             GameTooltip:SetText(self._choiceItem.label)
             if self._choiceItem.tooltip then GameTooltip:AddLine(self._choiceItem.tooltip, .8, .85, .9, true) end
@@ -700,6 +704,9 @@ local function Create(parent, options, tabs)
     -- 页签选中字色每次借出重设，没写就是 nil。
     assert(not tabs or options.selectedText == nil or type(options.selectedText) == "table", "selectedText must be a color table")
     host.tabSelectedText = tabs and options.selectedText or nil
+    -- 页签字号 options.fontSize（可选，正数）：不传时照旧（fieldValue 字号）。
+    assert(not tabs or options.fontSize == nil or (type(options.fontSize) == "number" and options.fontSize > 0), "fontSize must be a positive number")
+    host.tabFontSize = tabs and options.fontSize or nil
     host.fit = tabs and options.fit == true or nil
     host.sizing = options.sizing == "content" and "content" or "equal"
     if tabs then host.sizing = "content" end
@@ -801,6 +808,7 @@ end
 -- appearance = "segmented": a single-selection track with a sliding solid fill.
 -- 页签组 options.fit = true：总宽超过可用宽时先把每项左右内距逐步压到最小值，仍放不下才出滚动箭头；不传时不变。
 -- 页签组 options.selectedText = 色表颜色：选中页签的文字色（如 GC.accent）；按下、停用时照旧；不传时不变。
+-- 页签组 options.itemHeight = 页签高（不低于 GM.size.tabHeight），options.fontSize = 页签字号；不传时不变。
 -- items = { { id, label, icon?, tooltip?, description?, disabled?, tone? }, ... }
 -- single value = id; multiple value = { [id] = true }. onChange may return false.
 function UI:CreateTabGroup(parent, options) return Create(parent, options, true) end

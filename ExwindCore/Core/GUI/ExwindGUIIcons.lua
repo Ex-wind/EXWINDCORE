@@ -130,6 +130,7 @@ ExwindTools.GUIIcons = {
         ["timer"] = true,
         ["timer-reset"] = true,
         ["toolbox"] = true,
+        ["trash-2"] = true,
         ["trophy"] = true,
         ["type"] = true,
         ["user"] = true,

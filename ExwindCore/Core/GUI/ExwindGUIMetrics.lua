@@ -65,16 +65,71 @@ ExwindTools.GUIMetrics = {
             summaryButtonSize = 22,    -- 摘要行编辑 / 删除图标按钮边长
             summaryButtonIconSize = 13, -- 摘要行图标按钮里的图标边长
             summaryGap = 8,            -- 行首图标、文字、尾部按钮之间
+            sentenceLineHeight = 30,   -- 句子卡每行行高
+            sentenceFragmentIconSize = 18, -- 句子里词前的小图标（法术图标）边长
+            sentenceIconGap = 4,       -- 小图标与文字之间
+            sentenceTokenPadX = 6,     -- 可点词左右内距
+            sentenceTokenPadY = 3,     -- 可点词上下内距
+            sentenceUnderlineOffset = 4, -- 悬停词下划线离文字
+            sentenceButtonInset = 8,   -- 右上编辑 / 删除按钮离卡角
+            stepRailWidth = 40,        -- 步骤条左栏宽（卡标题和内容右移这么多）
+            stepTitleFont = 15,        -- 步骤名字号
+            stepTitleHeight = 30,      -- 步骤名行高
+            stepTitleGap = 6,          -- 步骤名到内容
+            stepBottom = 4,            -- 步骤内容下内距（再加组间距到下一步）
+            stepDotSize = 12,          -- 步骤圆点直径
+            stepDotBorder = 2,         -- 圆点边宽
+            stepDotX = 21,             -- 圆点离卡左缘
+            stepNumberFont = 13,       -- 序号字号
+            stepNumberGap = 5,         -- 序号右缘到圆点
+            stepLineWidth = 2,         -- 连线宽
+            stepLineGap = 4,           -- 连线两端离圆点
+            optionCardGap = 8,         -- 横排选择卡之间
+            optionCardPadX = 12,       -- 选择卡左右内距
+            optionCardPadY = 10,       -- 选择卡上下内距
+            optionCardIconSize = 20,   -- 选择卡图标边长
+            optionCardIconGap = 8,     -- 图标与名字之间
+            optionCardNameFont = 15,   -- 选择卡名字字号
+            optionCardDescFont = 13,   -- 选择卡描述字号
+            optionCardDescGap = 4,     -- 名字到描述
+            propsFont = 13,            -- 小字键值区字号（键名与值）
+            propsPaddingX = 8,         -- 键值区左右内距
+            propsPaddingTop = 4,       -- 键值区上内距
+            propsPaddingBottom = 8,    -- 键值区下内距
+            propsRowHeight = 28,       -- 每行高
+            propsValueHeight = 26,     -- 值框高
+            propsKeyWidth = 38,        -- 第一项键名列宽
+            propsKeyInset = 6,         -- 第一项键名离列左缘
+            propsSecondKeyLeft = 10,   -- 第二项键名左留白
+            propsSecondKeyRight = 4,   -- 第二项键名右留白
+            propsGap = 4,              -- 键名、值框、按钮之间
+            propsShortWidth = 64,      -- size="short" 的值框宽（版本号）
+            propsMultilineHeight = 76, -- 多行项点进去后的框高（上限：文字超过这个高在框内滚动）
+            propsValueInset = 6,       -- 值框文字左右内距
+            propsButtonSize = 24,      -- 框后图标按钮边长
+            propsButtonIconSize = 14,  -- 框后图标按钮里的图标边长
             catalogCardMinWidth = 96,  -- 预览卡最窄（按它算每行几张，多出的宽平分）
             catalogPreviewHeight = 60, -- 预览卡里预览区高
             catalogIconSize = 32,      -- 预览区里的图标边长（没给绘制回调时）
             catalogLabelFont = 13,     -- 预览卡名字字号
             catalogPadding = 6,        -- 预览卡内距
             catalogLabelGap = 4,       -- 预览区与名字之间
+            catalogLabelLines = 1,     -- 预览卡名字最多几行（1 = 不换行；大于 1 时放不下换行，卡高按实际行数）
             catalogGap = 8,            -- 预览卡之间
+            entryHeight = 64,          -- 入口卡（catalog presentation="entry"）高
+            entryMinWidth = 150,       -- 入口卡最窄
+            entryGap = 12,             -- 入口卡之间
+            entryPaddingX = 16,        -- 入口卡左右内距
+            entryIconSize = 26,        -- 入口卡图标边长
+            entryIconGap = 10,         -- 图标与名字之间
+            entryLabelFont = 15,       -- 入口卡名字字号
             chipIconSize = 16,         -- 带图标芯片里的图标边长
             chipIconGap = 4,           -- 芯片图标与文字之间
             chipInputWidth = 140,      -- 芯片列表末尾输入框的宽
+            triFont = 13,              -- 三态小标签字号
+            triPaddingX = 12,          -- 三态小标签左右内距
+            triDotSize = 10,           -- 三态小标签文字前的色点直径
+            triDotGap = 7,             -- 色点与文字之间
             inlineButtonSize = 22,     -- 输入框内嵌图标按钮边长
             inlineButtonIconSize = 14, -- 内嵌图标按钮里的图标边长
             inlineButtonInset = 4,     -- 内嵌按钮离输入框右缘
@@ -100,6 +155,8 @@ ExwindTools.GUIMetrics = {
             quickPadding = 4,          -- 工具条内距
             quickButtonGap = 4,        -- 工具条按钮之间
             quickAnchorGap = 6,        -- 工具条与选中元素、小框与工具条的间距
+            quickCellHeight = 36,      -- 工具条每格高（格间竖线也这么高）
+            quickInlineGap = 6,        -- inline 格里图标与控件之间
             quickPopoverWidth = 300,   -- 工具条小框宽
             quickPopoverPadding = 2,   -- 小框外框内距（里面的页面自带页边距）
             quickStarSize = 14,        -- 完整面板行名字前的星号边长
@@ -167,6 +224,7 @@ ExwindTools.GUIMetrics = {
         -- 群组方向图示与每行个数选择（CreateFlowDirectionPicker / CreatePerLineSelector）。
         flowThumbGap = 6,              -- 方向图示选择格之间的间距
         flowCellGap = 2,               -- 方向图示缩略图里小方块之间的间距
+        flowCellInset = 4,             -- 方向图示缩略图里小方块离选择格边缘（三行排的图示不贴格边）
         perLineGap = 4,                -- 每行个数方块之间的间距
         toggleDropdownGap = 8,         -- 开关加下拉合一按钮：开关指示方框与文字的间距
         playIndicatorBarGap = 3,       -- 播放指示器相邻竖线的中心间距（AcquirePlayingIndicator）
@@ -193,6 +251,12 @@ ExwindTools.GUIMetrics = {
         statusDescGap = 4,             -- 标题到说明的间距
         toastScreenMargin = 20,        -- Toast 距屏幕右下的边距
         toastStackGap = 8,             -- 多个 Toast 之间的堆叠间距
+        inlineNoticeGap = 4,           -- 贴行提示（ShowInlineNotice）离控件下缘
+        inlineNoticePaddingX = 10,     -- 贴行提示左右内距
+        inlineNoticePaddingY = 7,      -- 贴行提示上下内距
+        inlineNoticeIconGap = 6,       -- 贴行提示图标与文字之间
+        inlineNoticeScreenMargin = 8,  -- 贴行提示离屏幕边最少留
+        dragThreshold = 4,             -- 空白处拖动（SetDragAnywhere）：按下后鼠标移过这么多屏幕像素才开始拖
 
         -- 对话框（ShowDialog / ShowConfirmDialog）。
         dialogPaddingX = 20,           -- 左右内边距
@@ -301,6 +365,7 @@ ExwindTools.GUIMetrics = {
         toastWidth = 320,                  -- 浮动 Toast 宽度
         toastCloseSize = 18,               -- Toast 关闭按钮边长
         toastCloseGlyphSize = 14,          -- Toast 关闭图标边长
+        inlineNoticeMinWidth = 160,        -- 贴行提示最窄（控件比它窄时按它）
 
         dialogCloseSize = 28,              -- 对话框关闭按钮边长（与 floatingCloseSize 同值，但各自独立）
         dialogCloseGlyphSize = 16,         -- 对话框关闭图标边长；比 Toast 的 14 大一档，对应更大的按钮
@@ -321,7 +386,8 @@ ExwindTools.GUIMetrics = {
         toggleDropdownBoxSize = 16,        -- 开关加下拉合一按钮：左侧开关指示方框边长
         iconGlyphSize = 18,                -- 图标按钮、只显示图标的分段里的图标边长（默认）
         flowThumbWidth = 58,               -- 群组方向图示选择格宽度
-        flowThumbHeight = 46,              -- 群组方向图示选择格高度
+        flowThumbHeight = 54,              -- 群组方向图示选择格高度（三行小方块 + 上下留边放得下）
+        perLineMinSquare = 22,             -- 每行个数只用方块（single）时方块最窄，再窄就换到下一行
         perLineInputWidth = 90,            -- 每行个数选择：数字输入框宽度
         treeRowHeight = CONTROL_HEIGHT,    -- 树行高度（默认，CreateTree 可用 options.rowHeight 覆盖）
         treeFoldSize = 12,                 -- 树折叠箭头边长
@@ -379,42 +445,91 @@ do
         return style
     end
 
-    -- 标题条分组 + 无框行（G3+H1）。
+    -- 分组照 6702（10-21 定案）：标题不带底、V 形细线箭头，行装在圆角带边卡里。
     styles.exaura = {
-        headerHeight = 36,              -- 标题条高
-        headerRadius = 6,               -- 标题条圆角
-        headerFill = GC.shell.borderSoft, -- 标题条底（bSubtle），不画边
-        headerPaddingLeft = 12,         -- 折叠号离标题条左缘
-        foldWidth = 12,                 -- 折叠号宽
-        foldNameGap = 9,                -- 折叠号与组名间距
+        catalogLabelLines = 2,          -- 预览卡名字放不下换行，最多两行
+        headerHeight = 18,              -- 标题行高
+        headerRadius = 6,               -- 标题条圆角（标题条透明，只占位）
+        headerFill = GC.transparent,    -- 标题不带底
+        headerPaddingLeft = 2,          -- 箭头离标题行左缘
+        foldGlyph = "chevron",          -- 折叠号画 V 形细线箭头（收起朝右、展开朝下）
+        foldWidth = 13,                 -- 箭头边长
+        foldNameGap = 8,                -- 箭头与组名间距
         headerFont = 18,                -- 组名字号
-        headerText = GC.white,          -- 组名颜色
-        noteFont = 13,                  -- 标题条右侧字字号
-        headerPaddingRight = 14,        -- 右侧字离标题条右缘
-        headerOutset = 10,              -- 标题条左右各比下面的行宽出（游戏实测：内容比标题宽，要条再宽一点）
-        groupGap = 20,                  -- 组与组之间（游戏实测 36 留白太大）
-        firstGroupTop = 16,             -- 第一组离页签
-        headerToFirstRow = 0,           -- 标题条到第一行
-        rowMinHeight = 44,              -- 最小行高
-        rowPaddingX = 0,                -- 行左右内距
-        rowPaddingY = 6,                -- 行上下内距（控件 30 高时一行正好 44）
+        headerText = GC.text,           -- 组名颜色（同标准页节标题）
+        noteFont = 13,                  -- 标题右侧字字号
+        countNote = false,              -- 没写 note 的标题不显示“N 项”（用户不要标题上的数字）
+        headerPaddingRight = 14,        -- 右侧字离标题行右缘
+        headerOutset = 0,               -- 标题与下面的卡同宽
+        collapsedPadding = 8,           -- 收起时标题下内距（下面再画一条细线）
+        cardFill = GC.card,             -- 行装在圆角带边卡里：卡底
+        cardBorder = GC.cardBorder,     -- 卡边（同标准页卡片边）
+        cardRadius = 10,                -- 卡圆角
+        surfaceGap = 8,                 -- 自带外框的件（句子卡、入口卡）之间
+        groupGap = 8,                   -- 组与组之间
+        firstGroupTop = 6,              -- 第一组离页签
+        headerToFirstRow = 6,           -- 标题到卡片
+        pagePadding = 6,                -- 页面左右内距（窗口内距 windowPadding 之外再留；用户 10-22 嫌太宽，左右多留一点）
+        windowPadding = 8,              -- 浮窗内容区左右下内距（CreateFloatingWindow padding）
+        rowMinHeight = 36,              -- 最小行高
+        rowPaddingX = 10,               -- 行左右内距
+        rowPaddingY = 5,                -- 行上下内距（控件 26 高时一行正好 36）
+        tallRowPaddingY = 6,            -- 没有行名、比一行控件高的件（排列图示）再上下各多留
         dividerInset = 0,               -- 行线不缩进（通栏）
         helpIconSize = 16,              -- 行尾小问号边长
+        cardHelp = true,                -- 卡片标题旁可以挂“?”说明（卡片写 help）
         settingAutoWidth = true,        -- setting 行（左标签 + 多个子控件）文字列按标签实际字宽；单控件标准行照原算法
-        iconButtonSize = 22,            -- 图标按钮（button 写 icon、text 为空）边长
-        iconButtonIconSize = 13,        -- 图标按钮里的图标边长
+        iconButtonSize = 28,            -- 图标按钮（button 写 icon、text 为空）边长
+        iconButtonIconSize = 16,        -- 图标按钮里的图标边长
         colorWidth = 46,                -- 不带 label 的颜色控件只画色块，宽 46
+        controlHeight = 26,             -- 输入框、下拉等单行控件高（用户 10-22：原 30 太高）
+        chipHeight = 26,                -- 芯片、三态小标签高
+        summaryPaddingX = 10,           -- 摘要卡 / 句子卡左右内距
+        summaryPaddingY = 8,            -- 摘要卡 / 句子卡上下内距
+        summaryTextFont = 15,           -- 摘要第二行 / 句子字号
+        summaryLineGap = 6,             -- 两行之间
+        summaryIconSize = 28,           -- 行首图标块边长
+        summaryButtonSize = 28,         -- 右上编辑 / 删除图标按钮边长
+        summaryButtonIconSize = 16,     -- 图标按钮里的图标边长
+        tabHeight = 34,                 -- 面板页签行高（浮窗 headerTabs 用）；蓝线在行底，行矮一点线就贴近文字
+        tabFont = 17,                   -- 页签字号
+        quickHeight = 52,               -- 快速工具条高
+        quickItemPadX = 10,             -- 工具条每格左右内距
+        quickDivider = GC.popupDivider, -- 工具条格间竖线（同弹出菜单分隔线）
+        quickButtonSize = 30,           -- 工具条按钮边长（含“⋯”）
+        quickIconSize = 16,             -- 工具条图标边长
+        quickAnchorGap = 12,            -- 工具条离元素
+        quickSelectWidth = 110,         -- 工具条 inline 格里的下拉宽
+        quickStarTrailing = true,       -- 完整面板星号紧跟 quick 行名字后面，不在行首留一列
+        multiSeparator = "、",          -- 多选下拉摘要里选中项之间的分隔
+        optionCardGap = 6,              -- 横排选择卡之间
+        optionCardPadX = 8,             -- 选择卡左右内距（三张一排时描述放得下两行）
+        optionCardPadY = 8,             -- 选择卡上下内距
+        unlabeledFill = true,           -- 没写 label 的设置行：控件区占满整行（只有按钮时仍靠右）
+        chipInputFill = true,           -- 法术芯片末尾的输入框占满所在行剩下的宽
+        tableEmptyCompact = true,       -- 表格没有记录时不画表头，只留新增按钮（靠右、普通行高）；有记录时表头列不窄于列名
+        tableAddLast = true,            -- 表格新增按钮排在所有记录行下面
+        tableHeaderCellAligned = true,  -- 表头列名与下面格子里的控件左缘对齐
+        perLineSingle = true,           -- 每行个数只用一种控件：上限不超过 10 只给方块，超过只给数字框
+        inputFitPlaceholder = true,     -- 输入框至少放得下整句占位字
+        -- 作者 / 版本 / 链接 / 说明（props）：行名、字号、行高同面板其他行，键名与其他行名左缘对齐，下面不多留。
+        propsKeyRole = "settingsLabel",
+        propsValueRole = "control",
+        propsRowHeight = 36,
+        propsValueHeight = 26,
+        propsPaddingX = 4,
+        propsPaddingTop = 0,
+        propsPaddingBottom = 2,
+        propsKeyWidth = 44,
     }
 
-    -- 紧凑行：触发页等控件密集的页面。
-    styles.exauraCompact = Derive(styles.exaura, {
-        rowMinHeight = 40,
-        controlHeight = 28,
-        controlWidth = 156,             -- 没写 size 的输入框、下拉、分段的宽
-        segmentEqualWidth = true,       -- 分段每段平分
-        iconButtonSize = 24,            -- 图标按钮边长（附加触发器块的上移、下移、删除）
-        iconButtonIconSize = 14,
-        iconButtonAppearance = "ghost", -- 图标按钮不画底和边
+    -- 元素面板（贴在光环旁的窄面板）：控件收窄，名字和控件放得进同一行。
+    styles.exauraPanel = Derive(styles.exaura, {
+        shortWidth = 84,                -- 数字框宽：放得下带负号、一位小数的 5 位数（-4000.5），两个数字框加名字仍放得下一行
+        prefixWidth = 16,               -- 数字框前缀占的宽（“X”“宽”）
+        prefixInset = 6,                -- 前缀离输入框左缘
+        switchWidth = ExwindTools.GUIMetrics.size.switchTrackWidth, -- 不带文字的开关只占轨道宽
+        sliderWidth = 176,              -- 不带文字的滑杆（数字框 48 + 轨道）
     })
 
     -- 载入页：文字列按标签实际字宽。
@@ -423,25 +538,4 @@ do
         controlWidth = 150,             -- 标准控件宽
         shortWidth = 60,                -- size="short" 的宽
     })
-
-    -- 跟随光环设置条：不画标题条，浮在画布上。
-    styles.exauraBar = {
-        showHeader = false,
-        rowMinHeight = 34,              -- 游戏实测：行距要小一点
-        rowPaddingX = 0,
-        rowPaddingY = 3,                -- 控件 28 高时一行正好 34
-        controlHeight = 28,
-        labelFont = 15,
-        labelText = GC.white,
-        labelOutline = true,            -- 标签加描边
-        dividerColor = GC.settingsBarDivider, -- 行线用设置条行线色
-        labelAutoWidth = true,          -- 文字列自适应（没有标签的行）
-        labelColumnWidth = 72,          -- 有标签的行共用定宽标签列，文字靠右；控件紧跟标签列右边。理由：哪种语言的标签都顶不到控件；
-                                        -- 72 放得下四个汉字加描边（如“混合模式”“水平对齐”），控件列仍够四段分段
-        labelColumnGap = 12,            -- 标签列与控件的间距
-        noWrap = true,                  -- 永不换行
-        controlFloorWidth = 32,         -- 永不换行时控件最窄压到（数字框宽）
-        overlayControls = true,         -- 控件用浮层外观
-        pagePadding = 0,                -- 页面四周不留白（设置条宿主自己留内距）
-    }
 end

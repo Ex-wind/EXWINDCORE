@@ -3,7 +3,7 @@
 -- declare `ref` keep their owner adapters, records and writes.
 local UI, Factory = _G.ExwindTools.UI, _G.ExwindFactory
 local Pages, Session = {}, {}
-UI.SettingsDeclarationSchemaRevision = 14 -- Static declaration rules; bump when accepted schema changes.
+UI.SettingsDeclarationSchemaRevision = 17 -- Static declaration rules; bump when accepted schema changes.
 local GM = _G.ExwindTools.GUIMetrics
 if not GM then error("ExwindGUIMetrics.lua must load before ExwindSettingsV2.lua") end
 local POOL, GAP, PAD = "EXUI.SettingsV2.Node", GM.space.settingsV2Gap, GM.space.settingsV2Padding
@@ -20,7 +20,9 @@ end
 local Fields = {
     -- note = 页面写了 style 时标题条右侧的灰字（texts 引用名）；不写时显示“N 项”。
     -- addButton = 页面写了 style 时标题条最右侧的小按钮 { text = "＋", action = actions 引用名 }，点击调用 actions[action](context, mouseButton)。
-    card = "title titleSource titlePosition titleAlign collapsible collapsed help note addButton children row column span gapBefore minBodyHeight bodyHeight overflow surface",
+    -- step = { done = predicates 引用名 }（只在样式页）：这张卡是步骤条的一步。Core 在卡左侧画序号、圆点和连到下一步的竖线，
+    -- 卡标题就是步骤名；done 返回真时圆点实心，页面里第一个没完成的步骤圆点描主色边。序号按页面里步骤卡的顺序数。
+    card = "title titleSource titlePosition titleAlign collapsible collapsed help note addButton children row column span gapBefore minBodyHeight bodyHeight overflow surface step",
     group = "title children", row = "children separator", cell = "children",
     actions = "children position align", columns = "columns children",
     -- 普通设置页的两种语义节点：setting = 左标签右控件；table = 列标题 + 每格控件。
@@ -30,38 +32,75 @@ local Fields = {
     -- quick = { icon = GUIIcons ID, popover = true | false }：这一行可以进快速工具条（UI:OpenQuickToolbarV2，见文件后部）。
     -- popover = true 点按钮弹小框（小框里只有这一行）；false 只给开关行（行里只有一个 switch / checkbox 的 path 控件），
     -- 点一下切换。没写 quick 的行不能进工具条；repeat 模板里不能写。owner 给了 quickbar 时完整面板在这类行名字前画星。
+    -- quick = { inline = true, icon = GUIIcons ID（可选） }：控件直接摊在工具条上（不写 popover）：行里只能是 1～3 个
+    -- number / switch / color / select 的 path 控件、不写 toggle；工具条上不写行名，悬停显示。
     setting = "label description toggle icon help helpSource quick children",
     -- table 可选记录操作：rowActions = 每行末尾按钮，addAction = 首行新增按钮（input 给出时，同一行首格放该输入框），
     -- selected = 高亮当前行的判断。
+    -- 按行绑定的列表（表格里只有一个写了 path 的 repeat 时）：rowActions 每项可写 op = "remove" | "up" | "down"
+    -- （代替 action；上移在首行、下移在末行自动变灰），addAction 可写 op = "add"（代替 action / clickKey，不写 input），
+    -- 新行复制 repeat.rowDefaults。都整份写回 repeat.path 的数组（一次 commit）。
+    -- 这种表格的新增行在最下面；样式页里 op 行操作画成图标按钮（text 进悬停提示）；没写 width/weight 的
+    -- 数字框列只占控件宽，其余列分剩余宽。columns 的 width/weight 照旧可写。
     table = "columns children rowActions addAction selected",
-    ["repeat"] = "source template",
+    -- repeat 二选一：source = sources 引用名（owner 给记录）；path = 存档里的数组路径，每个元素（表）是一行。
+    -- 写了 path 时模板里控件的 path / wrapPath、toggles 的 items[].path、preset 的 values 键、setting.toggle、
+    -- 嵌套 repeat 的 path 可写 "@.字段"（@ = 当前行），挂载时换成 "数组路径.行号.字段"，照常读写并通知。
+    -- rowDefaults = 新行的默认值（表格 addAction.op = "add" 用，只能和 path 一起写）。
+    ["repeat"] = "source template path rowDefaults",
     -- placeholder = 输入框（controlType="input"，path 控件或 owner 用 CreateSettingsV2Control 建的记录控件）的占位字，
     -- 输入框为空时显示、占位灰；不写时没有占位字。
     -- allowEmpty = true 只用在分段（controlType="segment"）：值为空或不在选项里时不高亮任何一项；不写时照旧选第一项。
     -- trailingIcon + trailingAction（成对，只用在 input / number）：输入框内右侧的图标按钮（GUIIcons ID，如 "crosshair" 选框体），
     -- 点击调用 actions[trailingAction](context, mouseButton, commit)，commit(value) 写回本控件的 path 并刷新整页。
     -- prefix（一两个字，如 "X"、"宽"）或 prefixIcon（GUIIcons ID），二选一，只用在 input / number：框内左侧的前缀。
-    control = "ref custom controlType mode path label description options optionsSource media multiple search min max step inputWidthPercent size items placeholder allowEmpty trailingIcon trailingAction prefix prefixIcon wrapPath noneText",
+    -- percent = true 只用在滑杆（controlType="slider"）：数字框按百分比显示（0.08 显示 8%），输入 8 或 8% 都写回 0.08；
+    -- min / max / step 仍写原始值。
+    -- columns（只用在 optionlist）：横排几列的选择卡（图标 + 名字 + 一行描述，选中高亮），选项可写 icon（GUIIcons ID 或材质文件 ID）。
+    control = "ref custom controlType mode path label description options optionsSource media multiple search min max step inputWidthPercent size items placeholder allowEmpty trailingIcon trailingAction prefix prefixIcon wrapPath noneText percent columns",
     component = "ref custom component path label opts optionsRef",
     text = "text textSource", hint = "text textSource",
     -- icon = 页面写了 style 时的图标按钮（GUIIcons ID，text 必须为空）：宽 = 高，不受按钮最小宽限制。
-    button = "text action clickKey presentation icon",
+    -- tip = 图标按钮（写了 icon）的悬停提示文字，按下即收起。
+    button = "text action clickKey presentation icon tip",
     -- chips = 页面写了 style 时的一排可点标签（放不下自动换行）。source = sources 引用名，返回记录数组，
     -- 每条 { text = 文字, selected = 是否高亮（可选） }；select / remove / add 都是 actions 引用名（可选）：
     -- 点标签调用 actions[select](context, 记录)，点标签上的 × 调用 actions[remove](context, 记录)，
     -- 写了 add 时末尾多一个“＋”标签，点击调用 actions[add](context)。
-    chips = "source select remove add",
+    -- tristate = true：三态小标签（过滤）。记录写 state = nil（不限）| "include"（只看，绿底）| "exclude"（排除，红底），
+    -- 可带 dot = { r, g, b }（文字前的色点）、tip = 悬停说明；点一下按 不限 → 只看 → 排除 → 不限 循环，
+    -- 调用 actions[select](context, 记录, 新状态)（select 必填，owner 写好后 context:RefreshPage()）；不能写 add / remove，记录不写 selected。
+    chips = "source select remove add tristate",
     -- summary = 可点摘要卡 / 列表行：一行标题（title 或 titleSource = texts 引用名）+ 可选摘要灰字（text 或 textSource），
     -- 可选 icon（行首图标：GUIIcons ID 或材质文件 ID）。action = 点整行调用 actions[action](context, mouseButton)；
     -- edit / remove = 尾部的编辑（铅笔）/ 删除（×）图标按钮，点击调用 actions[名](context, mouseButton)。
     -- 常作 repeat 的模板：context.scope.item 就是这一行的记录。
     summary = "title titleSource text textSource icon action edit remove",
+    -- sentence = 两行句子卡（触发预览、条件规则卡共用），自己画卡面（预设 cardFill / cardBorder / cardRadius）。
+    -- lineSource 必填、line2Source 可选：sources 引用名，sources[名](scope) 返回片段数组，每段二选一：
+    --   { text = 文字, icon = 文字前小图标（可选） }
+    --   { token = 词, action = actions 引用名（可选）, tips = { 悬停列表（可选） }, icon = 词前小图标（可选） }
+    -- 有 action 的词画成可点小块，点击调用 actions[action](context, 这一段, 词的框体)（框体可作小浮框的锚）；
+    -- 只有 tips 的词带下划线；都没有的词只换强调色。tips 每项是文字，或 { text, icon（可选）, dot = { r, g, b }（可选） }，
+    -- 悬停时用提示框逐行列出。数组本身可带 icon 键 = 这一行行首的图标块（GUIIcons ID 或材质文件 ID）。
+    -- icon 都是 GUIIcons ID 或材质文件 ID。edit / remove = 右上角编辑（铅笔）/ 删除（垃圾桶）图标按钮，
+    -- 点击调用 actions[名](context, mouseButton)；selected = predicates 引用名（可选），为真时卡边换主色。
+    -- 片段整句由 owner 按语言模板拼好；放不下时文字段按字（西文按词）换行，词不拆开。
+    sentence = "lineSource line2Source edit remove selected",
+    -- props = 小字键值区（作者、版本、链接、说明这类资料）：rows = { { 项, 项（可选） }, ... }，每行 1～2 项，
+    -- 项 = { label = 键名, path = 存档字段（字符串）, placeholder = 占位字（可选）, size = "short"（可选，窄框）,
+    --        multiline = true（可选：平时一行，点进去展开多行）, trailingIcon + trailingAction（可选，成对：框后的图标按钮，
+    --        点击调用 actions[trailingAction](context, mouseButton, 当前值)） }。
+    -- 值框平时无边框、悬停显框、点了直接改；回车或离开时写回（多行只在离开时写回）。需要 owner.binding。
+    props = "rows",
     -- catalog = 预览卡网格（样式卡、动画卡、新增面板共用）：source = sources 引用名，返回记录数组，
     -- 每条 { text = 名字, icon = 预览区图标（GUIIcons ID 或材质文件 ID，可选）, selected = 是否选中（可选） }；
     -- select = 点卡片调用 actions[select](context, 记录)（单选由 owner 写值后 context:RefreshPage()）；
     -- paint = owner.painters 引用名（可选）：painters[paint](预览区 Frame, 记录, context) 只画预览区内部
     -- （锚在这个 Frame 上），返回 nil 或清理函数（卡片重建 / 归还时调用）；写了 paint 时不画 icon。
-    catalog = "source select paint",
+    -- presentation = "entry"（可选，只在样式页）：入口卡（“添加音效”“添加动画”）——图标在左、名字在右的横条卡，
+    -- 一行能放几张就并排几张、平分宽度；selected 的卡描主色边。不能和 paint 一起写。
+    catalog = "source select paint presentation",
     -- chipinput = 带图标的芯片列表 + 输入框（法术列表）：source 同 chips，记录可多带 icon（GUIIcons ID、材质文件 ID 或材质路径）；
     -- add 必填 = 在末尾输入框里回车时调用 actions[add](context, 输入文字)（去掉首尾空白，空字串不调用），随后清空输入框；
     -- remove / select 同 chips；placeholder = 输入框占位字（可选）。
@@ -79,6 +118,9 @@ local Fields = {
 -- “更多 ›”（整页只有一行），点开在原位显示这些节点、再点收起。展开状态由 owner 记：
 -- page.advanced = { expanded = predicates 引用名（返回是否展开）, toggle = actions 引用名（toggle(context, 新状态)，
 -- 里面写下状态即可，Core 随后刷新整页） }。不能用在 layout="grid" 的页面。
+-- page.collapse = { state = predicates 引用名, toggle = actions 引用名 }（可选）：可折叠卡片（collapsible）的折叠状态交给 owner 记，
+-- 页面重建后照旧。挂载和每次刷新时调用 predicates[state](scope, 卡片 id) 取状态：true = 收起，false = 展开，nil = 用声明的 collapsed；
+-- 用户点标题折叠 / 展开时调用 actions[toggle](context, 卡片 id, 新状态)（true = 收起），里面写下即可，Core 随后刷新整页。
 local Common = "id kind visible enabled width weight height advanced"
 local ControlTypes = { input=true, multiline=true, checkbox=true, switch=true, card=true,
     choice=true, tristate=true, select=true, slider=true, color=true, field=true }
@@ -103,10 +145,10 @@ local SelectMedia = { font=true, sound=true, statusbar=true, border=true, backgr
 local StandardComponents = { fontgroup=true, icongroup=true, timerbargroup=true, anchorgroup=true,
     soundgroup=true, widgetlayout=true, modulecommonsettings=true, glow_settings=true, texturegroup=true,
     soundselector=true }
-local PathControlFields = "controlType label description options optionsSource media multiple search min max step inputWidthPercent size items placeholder allowEmpty trailingIcon trailingAction prefix prefixIcon wrapPath noneText"
+local PathControlFields = "controlType label description options optionsSource media multiple search min max step inputWidthPercent size items placeholder allowEmpty trailingIcon trailingAction prefix prefixIcon wrapPath noneText percent columns"
 local PathOnlyFields = { "label", "description", "options", "optionsSource", "media", "multiple", "search",
     "min", "max", "step", "inputWidthPercent", "size", "items", "component", "opts", "optionsRef", "placeholder", "allowEmpty",
-    "trailingIcon", "trailingAction", "prefix", "prefixIcon", "wrapPath", "noneText" }
+    "trailingIcon", "trailingAction", "prefix", "prefixIcon", "wrapPath", "noneText", "percent", "columns" }
 -- 控件宽度档位：页面不写像素，只能选档位（省略 = 标准宽）。
 local ControlSizes = { short=true, wide=true, tall=true }
 
@@ -128,16 +170,7 @@ local CustomParts = {
     ["EXBoss.AuraSoundList"] = true,        -- 副本通用光环声音列表（虚拟滚动）
     ["EXBoss.HomeBrand"] = true,            -- 首页品牌与联系资料（非设置项）
     ["EXBoss.HomePeople"] = true,           -- 首页感谢人物卡（非设置项）
-    ["EXAura.AuthorInfo"] = true,           -- 设置页顶部资料区
-    ["EXAura.GlowStyles"] = true,           -- 发光样式卡片
-    ["EXAura.AnimationCards"] = true,       -- 条件二级面板的动画卡片
-    ["EXAura.ExpressionEditor"] = true,     -- 附加触发器组合编辑
     ["EXAura.LuaEditor"] = true,            -- 代码编辑器
-    ["EXAura.ConditionList"] = true,        -- 条件页已有条件卡
-    ["EXAura.SpellList"] = true,            -- 触发页指定法术
-    ["EXAura.TopCell"] = true,              -- 右侧面板顶部格
-    ["EXAura.FilterCards"] = true,          -- 触发页过滤卡片
-    ["EXAura.AddCards"] = true,             -- 新增卡片
 }
 local StrictCardFields = { "titlePosition", "titleAlign", "help",
     "minBodyHeight", "bodyHeight", "overflow", "surface", "gapBefore" }
@@ -145,17 +178,18 @@ local StrictSizeFields = { "width", "weight", "height", "inputWidthPercent" }
 -- 普通页里每种位置能放的节点。
 -- group = 样式页里的“块”：一组行合成一块（常作 repeat 的 template，每条记录一块），块内行之间不画线、块与块之间一条线。
 local StrictChildren = {
-    card = { setting=true, control=true, component=true, table=true, ["repeat"]=true, group=true, chips=true, summary=true, catalog=true, chipinput=true, url=true, notice=true, picklist=true },
-    group = { setting=true, control=true, component=true, table=true, chips=true, summary=true, catalog=true, chipinput=true, url=true, notice=true, picklist=true },
+    card = { setting=true, control=true, component=true, table=true, ["repeat"]=true, group=true, chips=true, summary=true, catalog=true, chipinput=true, url=true, notice=true, picklist=true, sentence=true, props=true },
+    group = { setting=true, control=true, component=true, table=true, chips=true, summary=true, catalog=true, chipinput=true, url=true, notice=true, picklist=true, sentence=true, props=true },
     setting = { control=true, button=true, component=true, text=true, chips=true, chipinput=true, url=true },
     table = { row=true, ["repeat"]=true },
     row = { cell=true },
     cell = { control=true, button=true, text=true },
 }
 local MaxSettingControls = 3
+local QuickInlineControls = { number = true, switch = true, color = true, select = true }
 local AdapterMethods = { "mount", "update", "measure", "layout", "setEnabled", "setVisible", "release" }
 local ControlMethods = { "mount", "release" }
-local Build, MountNode, ReleaseNode, RefreshNode, LayoutNode
+local Build, MountNode, ReleaseNode, RefreshNode, LayoutNode, CollapseState
 local Mounted = setmetatable({}, { __mode = "k" }) -- parent -> 存活的 V2 会话
 
 local function Check(ok, message)
@@ -304,7 +338,11 @@ local function SchemaPathControl(spec, path, id)
     if kind ~= "slider" and kind ~= "number" and (spec.min ~= nil or (spec.max ~= nil and kind ~= "perline") or spec.step ~= nil) then return fail("min", "bounds require slider or number") end
     if (spec.wrapPath ~= nil) ~= (kind == "flow") or (kind == "flow" and not Name(spec.wrapPath)) then return fail("wrapPath", "flow requires wrapPath (and only flow takes it)") end
     if spec.noneText ~= nil and (kind ~= "perline" or not Name(spec.noneText)) then return fail("noneText", "noneText is a non-empty string on perline") end
+    if spec.percent ~= nil and (kind ~= "slider" or spec.percent ~= true) then return fail("percent", "percent = true only on slider") end
     if kind == "perline" and spec.max ~= nil and not (Number(spec.max) and spec.max % 1 == 0) then return fail("max", "perline max is a positive integer") end
+    if spec.columns ~= nil and (kind ~= "optionlist" or not (Number(spec.columns) and spec.columns % 1 == 0 and spec.columns <= 4)) then
+        return fail("columns", "columns is an integer 1..4 on optionlist")
+    end
     local textBox = kind == "input" or kind == "number"
     if (spec.trailingIcon ~= nil) ~= (spec.trailingAction ~= nil) then return fail("trailingIcon", "trailingIcon and trailingAction go together") end
     if spec.trailingIcon ~= nil then
@@ -362,10 +400,15 @@ local function SchemaPathControl(spec, path, id)
         if not ok then return false, issue end
         for i, option in ipairs(spec.options) do
             local at = path .. ".options[" .. i .. "]"
-            ok, issue = SchemaKeys(option, kind == "optionlist" and "value label description" or "value label", at, id)
+            ok, issue = SchemaKeys(option, kind == "optionlist" and "value label description icon" or "value label", at, id)
             if not ok then return false, issue end
             if type(option.label) ~= "string" then return Issue(at .. ".label", "expected string", id) end
             if option.description ~= nil and type(option.description) ~= "string" then return Issue(at .. ".description", "expected string", id) end
+            if option.icon ~= nil and spec.columns == nil then return Issue(at .. ".icon", "option icon requires columns", id) end
+            if option.icon ~= nil and not ((type(option.icon) == "string" and _G.ExwindTools.GUIIcons.ids[option.icon])
+                or (Number(option.icon) and option.icon % 1 == 0)) then
+                return Issue(at .. ".icon", "expected a registered GUIIcons id or a texture file id", id)
+            end
             if type(option.value) ~= "string" and type(option.value) ~= "boolean" and not Finite(option.value) then
                 return Issue(at .. ".value", "expected string, number or boolean", id)
             end
@@ -433,12 +476,15 @@ local function IconValue(value)
 end
 
 -- styled = 页面 style 对应的 GM.settings.styles 预设表（没写 style 为 nil）；note、help 只在样式页里允许。
-local function ValidateNode(node, owner, ids, depth, location, columnCount, path, styled)
+-- rowScope = 在写了 path 的 repeat 模板里（"@.字段" 只能写在这里）。
+local function ValidateNode(node, owner, ids, depth, location, columnCount, path, styled, rowScope)
     if type(node) ~= "table" or not Fields[node.kind] then return Issue(path, "unknown node kind") end
     local kind, id = node.kind, node.id
     local function fail(field, message) return Issue(path .. (field and "." .. field or ""), message, id) end
     local ok, issue = SchemaKeys(node, Common .. " " .. Fields[kind], path, id)
     if not ok then return false, issue end
+    local rowField, rowMessage = Session._rows.PathIssue(node, rowScope)
+    if rowField then return fail(rowField, rowMessage) end
     if not Name(id) or ids[id] then return fail("id", "missing/duplicate node id") end
     ids[id] = true
     if node.advanced ~= nil and node.advanced ~= true then return fail("advanced", "expected true") end
@@ -497,6 +543,13 @@ local function ValidateNode(node, owner, ids, depth, location, columnCount, path
                 if not styled then return fail("note", "note requires a page style") end
                 ok, issue = SchemaReference(owner, "texts", node.note, path .. ".note", id)
                 if not ok then return false, issue end
+            end
+            if node.step ~= nil then
+                if not styled then return fail("step", "step requires a page style") end
+                ok, issue = SchemaKeys(node.step, "done", path .. ".step", id)
+                if ok then ok, issue = SchemaReference(owner, "predicates", node.step.done, path .. ".step.done", id) end
+                if not ok then return false, issue end
+                if node.collapsible then return fail("step", "step cards are not collapsible") end
             end
             if node.addButton ~= nil then
                 if not styled then return fail("addButton", "addButton requires a page style") end
@@ -573,6 +626,7 @@ local function ValidateNode(node, owner, ids, depth, location, columnCount, path
         end
         if not ok then return false, issue end
         if node.presentation ~= nil and node.presentation ~= "primary" and node.presentation ~= "secondary" and node.presentation ~= "danger" then return fail("presentation", "invalid button presentation") end
+        if node.tip ~= nil and (type(node.tip) ~= "string" or node.icon == nil) then return fail("tip", "tip is a string on icon buttons") end
         if node.icon ~= nil then
             if not styled then return fail("icon", "icon requires a page style") end
             if not (type(node.icon) == "string" and _G.ExwindTools.GUIIcons.ids[node.icon]) then
@@ -585,6 +639,11 @@ local function ValidateNode(node, owner, ids, depth, location, columnCount, path
         if not styled then return fail("kind", "chips requires a page style") end
         ok, issue = SchemaReference(owner, "sources", node.source, path .. ".source", id)
         if not ok then return false, issue end
+        if node.tristate ~= nil then
+            if node.tristate ~= true then return fail("tristate", "expected true") end
+            if node.select == nil then return fail("select", "tristate chips require select (actions[select](context, record, nextState))") end
+            if node.add ~= nil or node.remove ~= nil then return fail("tristate", "tristate chips take no add / remove") end
+        end
         for _, field in ipairs({ "select", "remove", "add" }) do
             if node[field] ~= nil then
                 ok, issue = SchemaReference(owner, "actions", node[field], path .. "." .. field, id)
@@ -610,6 +669,11 @@ local function ValidateNode(node, owner, ids, depth, location, columnCount, path
         if not ok then return false, issue end
         if node.placeholder ~= nil and not Name(node.placeholder) then return fail("placeholder", "expected non-empty string") end
     elseif kind == "catalog" then
+        if node.presentation ~= nil then
+            if node.presentation ~= "entry" then return fail("presentation", "expected entry") end
+            if not styled then return fail("presentation", "entry cards require a page style") end
+            if node.paint ~= nil then return fail("paint", "entry cards take no painter") end
+        end
         ok, issue = SchemaReference(owner, "sources", node.source, path .. ".source", id)
         if ok and node.select ~= nil then ok, issue = SchemaReference(owner, "actions", node.select, path .. ".select", id) end
         if ok and node.paint ~= nil then ok, issue = SchemaReference(owner, "painters", node.paint, path .. ".paint", id) end
@@ -625,6 +689,49 @@ local function ValidateNode(node, owner, ids, depth, location, columnCount, path
             end
         end
         if node.icon ~= nil and not IconValue(node.icon) then return fail("icon", "expected a registered GUIIcons id or a texture file id") end
+    elseif kind == "props" then
+        if not styled then return fail("kind", "props requires a page style") end
+        ok, issue = SchemaArray(node.rows, path .. ".rows", id)
+        if not ok then return false, issue end
+        if issue == 0 then return fail("rows", "props requires rows") end
+        ok, issue = SchemaBinding(owner, path .. ".rows", id)
+        if not ok then return false, issue end
+        for i, row in ipairs(node.rows) do
+            local rowPath = path .. ".rows[" .. i .. "]"
+            ok, issue = SchemaArray(row, rowPath, id)
+            if not ok then return false, issue end
+            if issue < 1 or issue > 2 then return Issue(rowPath, "each props row holds 1 or 2 items", id) end
+            for j, item in ipairs(row) do
+                local at = rowPath .. "[" .. j .. "]"
+                ok, issue = SchemaKeys(item, "label path placeholder size multiline trailingIcon trailingAction", at, id)
+                if not ok then return false, issue end
+                if not Name(item.label) then return Issue(at .. ".label", "label required", id) end
+                if not Name(item.path) then return Issue(at .. ".path", "expected a non-empty path", id) end
+                if item.placeholder ~= nil and not Name(item.placeholder) then return Issue(at .. ".placeholder", "expected non-empty string", id) end
+                if item.size ~= nil and item.size ~= "short" then return Issue(at .. ".size", "expected short", id) end
+                if item.multiline ~= nil and item.multiline ~= true then return Issue(at .. ".multiline", "expected true", id) end
+                if (item.trailingIcon ~= nil) ~= (item.trailingAction ~= nil) then return Issue(at .. ".trailingIcon", "trailingIcon and trailingAction go together", id) end
+                if item.trailingIcon ~= nil then
+                    if not (type(item.trailingIcon) == "string" and _G.ExwindTools.GUIIcons.ids[item.trailingIcon]) then
+                        return Issue(at .. ".trailingIcon", "expected a registered GUIIcons id", id)
+                    end
+                    ok, issue = SchemaReference(owner, "actions", item.trailingAction, at .. ".trailingAction", id)
+                    if not ok then return false, issue end
+                end
+                if item.multiline and (item.size ~= nil or item.trailingIcon ~= nil or #row > 1) then
+                    return Issue(at .. ".multiline", "multiline items stand alone (no size, no trailing button)", id)
+                end
+            end
+        end
+    elseif kind == "sentence" then
+        if not styled then return fail("kind", "sentence requires a page style") end
+        ok, issue = SchemaReference(owner, "sources", node.lineSource, path .. ".lineSource", id)
+        if ok and node.line2Source ~= nil then ok, issue = SchemaReference(owner, "sources", node.line2Source, path .. ".line2Source", id) end
+        for _, field in ipairs({ "edit", "remove" }) do
+            if ok and node[field] ~= nil then ok, issue = SchemaReference(owner, "actions", node[field], path .. "." .. field, id) end
+        end
+        if ok and node.selected ~= nil then ok, issue = SchemaReference(owner, "predicates", node.selected, path .. ".selected", id) end
+        if not ok then return false, issue end
     elseif kind == "text" or kind == "hint" then
         if (node.text ~= nil) == (node.textSource ~= nil) then return fail("text", "use text or textSource") end
         if node.text ~= nil and type(node.text) ~= "string" then return fail("text", "expected string") end
@@ -638,7 +745,13 @@ local function ValidateNode(node, owner, ids, depth, location, columnCount, path
             if value ~= nil and value ~= "start" and value ~= "center" and value ~= "end" then return fail(field, "invalid alignment") end
         end
     elseif kind == "setting" then
-        if not Name(node.label) then return fail("label", "label required") end
+        -- 样式页（预设写了 unlabeledFill）的设置行可以不写 label：卡片标题已经说明这一行时不再重复行名。
+        -- 没有 label 的行不能带说明、问号、勾选框、图标，也不能进快速工具条（这些都挂在行名上）。
+        if node.label == nil and styled and styled.unlabeledFill then
+            for _, field in ipairs({ "description", "help", "helpSource", "toggle", "icon", "quick" }) do
+                if node[field] ~= nil then return fail(field, field .. " requires label") end
+            end
+        elseif not Name(node.label) then return fail("label", "label required") end
         if node.description ~= nil and type(node.description) ~= "string" then return fail("description", "expected string") end
         if node.toggle ~= nil and node.icon ~= nil then return fail("icon", "toggle and icon share the leading slot") end
         if node.help ~= nil then
@@ -663,12 +776,27 @@ local function ValidateNode(node, owner, ids, depth, location, columnCount, path
         if node.quick ~= nil then
             local at = path .. ".quick"
             if depth > 0 then return Issue(at, "repeat 模板里的行不能进快速工具条（quick 只写在固定的行上）", id) end
-            ok, issue = SchemaKeys(node.quick, "icon popover", at, id)
+            ok, issue = SchemaKeys(node.quick, "icon popover inline", at, id)
             if not ok then return false, issue end
-            if not (type(node.quick.icon) == "string" and _G.ExwindTools.GUIIcons.ids[node.quick.icon]) then
+            local inline = node.quick.inline
+            if inline ~= nil and inline ~= true then return Issue(at .. ".inline", "quick.inline 只写 true", id) end
+            if not ((inline and node.quick.icon == nil)
+                or (type(node.quick.icon) == "string" and _G.ExwindTools.GUIIcons.ids[node.quick.icon])) then
                 return Issue(at .. ".icon", "quick.icon 要写已登记的 GUIIcons 图标 ID", id)
             end
-            if type(node.quick.popover) ~= "boolean" then
+            if inline then
+                if node.quick.popover ~= nil then return Issue(at .. ".popover", "quick.inline 的行不写 popover", id) end
+                local children = type(node.children) == "table" and node.children or {}
+                local fine = node.toggle == nil and #children >= 1 and #children <= 3
+                for _, child in ipairs(children) do
+                    if not (type(child) == "table" and child.kind == "control" and child.path ~= nil
+                        and QuickInlineControls[child.controlType] and not child.multiple) then fine = false end
+                end
+                if not fine then
+                    return Issue(at .. ".inline", "quick.inline 的行里只能是 1～3 个 number / switch / color / select（单选）的 path 控件，"
+                        .. "不写 toggle", id)
+                end
+            elseif type(node.quick.popover) ~= "boolean" then
                 return Issue(at .. ".popover", "quick.popover 要写 true（点按钮弹小框）或 false（开关行，点一下切换）", id)
             end
             local only = type(node.children) == "table" and #node.children == 1 and node.children[1]
@@ -680,17 +808,24 @@ local function ValidateNode(node, owner, ids, depth, location, columnCount, path
         end
     elseif kind == "columns" or kind == "table" then
         if kind == "table" then
+            local usesOp, addsRow = false, false
             if node.rowActions ~= nil then
                 ok, issue = SchemaArray(node.rowActions, path .. ".rowActions", id)
                 if not ok then return false, issue end
                 for i, action in ipairs(node.rowActions) do
                     local at = path .. ".rowActions[" .. i .. "]"
-                    ok, issue = SchemaKeys(action, "id text action enabled presentation", at, id)
+                    ok, issue = SchemaKeys(action, "id text action op enabled presentation", at, id)
                     if not ok then return false, issue end
                     if not Name(action.id) or ids[action.id] then return Issue(at .. ".id", "missing/duplicate node id", id) end
                     ids[action.id] = true
                     if type(action.text) ~= "string" then return Issue(at .. ".text", "text required", id) end
-                    ok, issue = SchemaReference(owner, "actions", action.action, at .. ".action", id)
+                    if (action.action ~= nil) == (action.op ~= nil) then return Issue(at, "use action or op", id) end
+                    if action.op ~= nil then
+                        if action.op ~= "remove" and action.op ~= "up" and action.op ~= "down" then
+                            return Issue(at .. ".op", "expected remove/up/down", id)
+                        end
+                        usesOp = true
+                    else ok, issue = SchemaReference(owner, "actions", action.action, at .. ".action", id) end
                     if ok and action.enabled ~= nil then ok, issue = SchemaReference(owner, "predicates", action.enabled, at .. ".enabled", id) end
                     if not ok then return false, issue end
                     if action.presentation ~= nil and action.presentation ~= "danger" then return Issue(at .. ".presentation", "expected danger", id) end
@@ -698,14 +833,20 @@ local function ValidateNode(node, owner, ids, depth, location, columnCount, path
             end
             if node.addAction ~= nil then
                 local at = path .. ".addAction"
-                ok, issue = SchemaKeys(node.addAction, "id text action clickKey input", at, id)
+                ok, issue = SchemaKeys(node.addAction, "id text action clickKey op input", at, id)
                 if not ok then return false, issue end
                 local add = node.addAction
                 if not Name(add.id) or ids[add.id] then return Issue(at .. ".id", "missing/duplicate node id", id) end
                 ids[add.id] = true
                 if type(add.text) ~= "string" then return Issue(at .. ".text", "text required", id) end
-                if (add.action ~= nil) == (add.clickKey ~= nil) then return Issue(at, "use action or clickKey", id) end
-                if add.action ~= nil then ok, issue = SchemaReference(owner, "actions", add.action, at .. ".action", id)
+                if ((add.action ~= nil and 1 or 0) + (add.clickKey ~= nil and 1 or 0) + (add.op ~= nil and 1 or 0)) ~= 1 then
+                    return Issue(at, "use action, clickKey or op", id)
+                end
+                if add.op ~= nil then
+                    if add.op ~= "add" then return Issue(at .. ".op", "expected add", id) end
+                    if add.input ~= nil then return Issue(at .. ".input", "op = add does not take input", id) end
+                    usesOp, addsRow = true, true
+                elseif add.action ~= nil then ok, issue = SchemaReference(owner, "actions", add.action, at .. ".action", id)
                 else ok, issue = SchemaBinding(owner, at .. ".clickKey", id) end
                 if ok and add.input ~= nil and not (Name(add.input) and (owner == nil
                     or type(rawget(rawget(owner, "controls") or {}, add.input)) == "table")) then
@@ -716,6 +857,13 @@ local function ValidateNode(node, owner, ids, depth, location, columnCount, path
             if node.selected ~= nil then
                 ok, issue = SchemaReference(owner, "predicates", node.selected, path .. ".selected", id)
                 if not ok then return false, issue end
+            end
+            if usesOp then
+                local only = type(node.children) == "table" and #node.children == 1 and node.children[1]
+                if not (type(only) == "table" and only.kind == "repeat" and only.path ~= nil) then
+                    return fail("children", "op requires exactly one repeat child with path")
+                end
+                if addsRow and only.rowDefaults == nil then return fail("addAction", "op = add requires repeat.rowDefaults") end
             end
         end
         ok, issue = SchemaArray(node.columns, path .. ".columns", id)
@@ -732,12 +880,19 @@ local function ValidateNode(node, owner, ids, depth, location, columnCount, path
         end
     elseif kind == "repeat" then
         if depth >= 2 then return fail("template", "at most two nested repeats") end
-        ok, issue = SchemaReference(owner, "sources", node.source, path .. ".source", id)
+        if (node.source ~= nil) == (node.path ~= nil) then return fail("source", "use source or path") end
+        if node.path ~= nil then
+            if not Name(node.path) then return fail("path", "expected a non-empty path") end
+            ok, issue = SchemaBinding(owner, path .. ".path", id)
+            if ok and node.rowDefaults ~= nil and type(node.rowDefaults) ~= "table" then ok, issue = fail("rowDefaults", "expected a plain table") end
+        elseif node.rowDefaults ~= nil then ok, issue = fail("rowDefaults", "rowDefaults requires path")
+        else ok, issue = SchemaReference(owner, "sources", node.source, path .. ".source", id) end
         if not ok then return false, issue end
         if type(node.template) ~= "table" then return fail("template", "template required") end
         if top and node.template.kind ~= "card" then return fail("template", "page repeat template must be card") end
         if columnCount and node.template.kind ~= "row" then return fail("template", "column repeat template must be row") end
-        return ValidateNode(node.template, owner, ids, depth + 1, location, columnCount, path .. ".template", styled)
+        return ValidateNode(node.template, owner, ids, depth + 1, location, columnCount, path .. ".template", styled,
+            rowScope or node.path ~= nil)
     end
     if kind == "row" and node.separator ~= nil and type(node.separator) ~= "boolean" then return fail("separator", "expected boolean") end
     if node.children ~= nil then
@@ -756,7 +911,7 @@ local function ValidateNode(node, owner, ids, depth, location, columnCount, path
             end
             -- setting 右侧按横排处理：子节点与 row 内的流式项同规则。
             ok, issue = ValidateNode(child, owner, ids, depth, kind == "setting" and "row" or kind,
-                (kind == "columns" or kind == "table" or kind == "row") and columnCount or nil, childPath, styled)
+                (kind == "columns" or kind == "table" or kind == "row") and columnCount or nil, childPath, styled, rowScope)
             if not ok then return false, issue end
         end
     elseif kind == "card" or kind == "group" or kind == "row" or kind == "cell" or kind == "actions" or kind == "columns"
@@ -790,8 +945,11 @@ local function StrictNode(node, owner, parentKind, path, out, styled)
     end
     if kind == "card" then
         for _, field in ipairs(StrictCardFields) do
-            if node[field] ~= nil then fail(field, "普通页卡片只有一种外观（标题在上）"); break end
+            -- 预设写了 cardHelp 的样式页：卡片标题旁可以挂“?”说明（help），其余外观字段照旧不准写。
+            local allowedHelp = field == "help" and styled and styled.cardHelp
+            if node[field] ~= nil and not allowedHelp then fail(field, "普通页卡片只有一种外观（标题在上）"); break end
         end
+        if node.help ~= nil and styled and styled.cardHelp and not Name(node.help) then fail("help", "expected non-empty help") end
     elseif kind == "chips" then
         if not styled then return fail("kind", "标签排（chips）只用在写了 style 的普通页") end
     elseif kind == "group" then
@@ -851,7 +1009,7 @@ end
 local function Validate(declaration, owner)
     local ok, issue = Pure(declaration, "page", {})
     if not ok then return false, issue end
-    ok, issue = SchemaKeys(declaration, "version layout cards columns columnGap rowGap freeform style advanced", "page")
+    ok, issue = SchemaKeys(declaration, "version layout cards columns columnGap rowGap freeform style advanced collapse", "page")
     if not ok then return false, issue end
     if declaration.version ~= 2 then return Issue("page.version", "version must be 2") end
     -- style：可选页面样式，只能写 GM.settings.styles 登记的预设名；不写时一切照旧。
@@ -906,6 +1064,9 @@ local function Validate(declaration, owner)
             return Issue("owner.quickbar", "owner.quickbar 要写成 { selected = function(行 id) 返回这一行是否在工具条上, "
                 .. "toggle = function(行 id, 新状态) 记下选择, limit = 工具条最多几个按钮（正整数） }", nil, "INVALID_ARGUMENT")
         end
+        if rawget(quickbar, "rank") ~= nil and type(rawget(quickbar, "rank")) ~= "function" then
+            return Issue("owner.quickbar.rank", "owner.quickbar.rank 要写成 function(行 id) 返回这一行排第几格（数字）", nil, "INVALID_ARGUMENT")
+        end
     end
     ok, issue = SchemaArray(declaration.cards, "page.cards")
     if not ok then return false, issue end
@@ -945,6 +1106,12 @@ local function Validate(declaration, owner)
         if ok then ok, issue = SchemaReference(owner, "actions", declaration.advanced.toggle, "page.advanced.toggle") end
         if not ok then return false, issue end
     end
+    if declaration.collapse ~= nil then
+        ok, issue = SchemaKeys(declaration.collapse, "state toggle", "page.collapse")
+        if ok then ok, issue = SchemaReference(owner, "predicates", declaration.collapse.state, "page.collapse.state") end
+        if ok then ok, issue = SchemaReference(owner, "actions", declaration.collapse.toggle, "page.collapse.toggle") end
+        if not ok then return false, issue end
+    end
     local strict = {}
     if declaration.freeform == nil then
         if declaration.columnGap ~= nil or declaration.rowGap ~= nil then
@@ -952,7 +1119,9 @@ local function Validate(declaration, owner)
             strict[#strict + 1] = gapIssue
         end
         for i, node in ipairs(declaration.cards) do
-            StrictNode(node, owner, "page", "page.cards[" .. i .. "]", strict, declaration.style ~= nil)
+            -- 第六个参数：样式页传预设表（普通页规则按预设放开个别项，如 cardHelp），非样式页传 false。
+            StrictNode(node, owner, "page", "page.cards[" .. i .. "]", strict,
+                declaration.style ~= nil and GM.settings.styles[declaration.style])
         end
     end
     return true, nil, strict
@@ -1006,7 +1175,9 @@ local function Place(frame, parent, x, y, width, height)
 end
 
 local function Records(node)
-    local records = node.session.owner.sources[node.spec.source](node.scope)
+    local records
+    if node.spec.path then records = Session._rows.Records(node)
+    else records = node.session.owner.sources[node.spec.source](node.scope) end
     Array(records, node.spec.id .. " source")
     local seen = {}
     for _, record in ipairs(records) do
@@ -1211,6 +1382,28 @@ local function StyleAccessories(card)
     note:Hide()
     card._v2StyleNote = note
     -- 标题条最右侧的小按钮（addButton）：文字字形按钮，与 ? 同一做法；点击回调每次借出时重绑到 _v2OnClick。
+    -- 行外的圆角带边卡（预设 cardFill）：卡片的子 Frame，层级在正文下面，盖住正文区。
+    local surface = CreateFrame("Frame", nil, card)
+    surface:EnableMouse(false)
+    surface:Hide()
+    card._v2StyleCard = surface
+    -- V 形细线箭头（预设 foldGlyph = "chevron"）：画在折叠钮上，代替“+ / −”字形。
+    local chevron = card._exSettingsCardToggle:CreateTexture(nil, "ARTWORK")
+    chevron:SetPoint("CENTER")
+    chevron:Hide()
+    card._v2Chevron = chevron
+    -- 步骤条（card.step）：左栏的序号、圆点（外圈 + 内芯两个圆）和连到下一步的竖线。
+    local stepNumber = UI:CreateVisualFontString(card, _G.EXFONTFRAME, "GameFontHighlightSmall")
+    stepNumber:SetJustifyH("RIGHT")
+    stepNumber:Hide()
+    local stepDot = CreateFrame("Frame", nil, card)
+    stepDot:EnableMouse(false)
+    stepDot:Hide()
+    local stepCore = CreateFrame("Frame", nil, stepDot)
+    stepCore:EnableMouse(false)
+    local stepLine = card:CreateTexture(nil, "ARTWORK")
+    stepLine:Hide()
+    card._v2Step = { number = stepNumber, dot = stepDot, core = stepCore, line = stepLine }
     local add = CreateFrame("Button", nil, card._exSettingsCardHeader)
     add:RegisterForClicks("LeftButtonUp")
     add.glyph = UI:CreateVisualFontString(add, _G.EXFONTFRAME, "GameFontHighlight")
@@ -1291,6 +1484,98 @@ local function CreateBinding(moduleKey, root, path)
     Check(#segments > 0, "binding requires a path")
     return setmetatable({ moduleKey=moduleKey, root=root, path=path, segments=segments,
         parentPath=path:match("^(.*)%.[^%.]+$") }, Binding)
+end
+
+-- 按行绑定的数组（repeat.path，字段说明见文件头 Fields）。
+do
+    local Rows = {}
+    Session._rows = Rows
+
+    local function Relative(path) return type(path) == "string" and path:sub(1, 1) == "@" end
+
+    -- 校验用：返回出错的字段名和说明；没问题返回 nil。
+    function Rows.PathIssue(node, rowScope)
+        local checks = { { "path", node.path }, { "wrapPath", node.wrapPath } }
+        if node.kind == "setting" then checks[#checks + 1] = { "toggle", node.toggle } end
+        if node.controlType == "toggles" and type(node.items) == "table" then
+            for i, item in ipairs(node.items) do
+                if type(item) == "table" then checks[#checks + 1] = { "items[" .. i .. "].path", item.path } end
+            end
+        end
+        if node.controlType == "preset" and type(node.options) == "table" then
+            for i, option in ipairs(node.options) do
+                for key in pairs(type(option) == "table" and type(option.values) == "table" and option.values or {}) do
+                    checks[#checks + 1] = { "options[" .. i .. "].values", key }
+                end
+            end
+        end
+        for _, entry in ipairs(checks) do
+            local value = entry[2]
+            if Relative(value) then
+                if not rowScope then return entry[1], "\"@.\" paths only inside a repeat with path" end
+                if not (value:match("^@%.[^@]+$") and not value:find("..", 1, true) and value:sub(-1) ~= ".") then
+                    return entry[1], "expected \"@.field\""
+                end
+            end
+        end
+    end
+
+    local function RowScope(scope)
+        while scope and not scope._arrayPath do scope = scope.parent end
+        return scope
+    end
+
+    -- "@.字段" → "数组路径.行号.字段"；其他路径原样返回。
+    function Rows.Path(scope, path)
+        if not Relative(path) then return path end
+        local row = RowScope(scope)
+        Check(row ~= nil, path .. ": row path outside a repeat with path")
+        return row._arrayPath .. "." .. row.index .. path:sub(2)
+    end
+
+    local function ArrayBinding(session, path)
+        local binding = session.owner.binding
+        return CreateBinding(binding.moduleKey, binding.config, path)
+    end
+
+    function Rows.Records(node)
+        return ArrayBinding(node.session, Rows.Path(node.scope, node.spec.path)):Read() or {}
+    end
+
+    -- 表格行操作（Core 展开时给按钮标 _op）：复制数组、改动后整份写回，一次 commit。
+    function Rows.Run(node, op)
+        local path, index
+        if op == "add" then
+            path = Rows.Path(node.scope, node.spec._arrayPath)
+        else
+            local row = RowScope(node.scope)
+            path, index = row._arrayPath, row.index
+        end
+        local binding = ArrayBinding(node.session, path)
+        local rows = {}
+        for i, record in ipairs(binding:Read() or {}) do rows[i] = record end
+        if op == "add" then
+            rows[#rows + 1] = DeclarationCopy(node.spec._rowDefaults, {})
+        elseif op == "remove" then
+            if not rows[index] then return end
+            table.remove(rows, index)
+        else
+            local other = op == "up" and index - 1 or index + 1
+            if not (rows[index] and rows[other]) then return end
+            rows[index], rows[other] = rows[other], rows[index]
+        end
+        binding:Write(rows, "commit")
+        node.context:RefreshPage()
+    end
+
+    -- 上移在首行、下移在末行不可用；其他节点不受影响。
+    function Rows.Enabled(node)
+        local op = node.spec._op
+        if op ~= "up" and op ~= "down" then return true end
+        local row = RowScope(node.scope)
+        if op == "up" then return row.index > 1 end
+        return row.index < #Records(row._repeatNode)
+    end
 end
 
 local function ReleaseBoundWidget(widget)
@@ -1487,6 +1772,191 @@ end
 -- bindingFor(context) returns the binding of one mounted control.  A labelled
 -- switch/input/select/slider/color is presented as a settings row: label and
 -- description on the left, the control on the right, a divider between rows.
+-- 图标值写进材质：GUIIcons ID 换成图标路径，其余（材质文件 ID、路径）原样。
+local function SetIconTexture(texture, icon)
+    if type(icon) == "string" and _G.ExwindTools.GUIIcons.ids[icon] then texture:SetTexture(UI:GetIcon(icon))
+    else texture:SetTexture(icon) end
+end
+
+-- 横排选择卡（optionlist 写了 columns）：每张 = 图标 + 名字 + 描述（换行），选中描主色边、换选中底。
+-- 宿主提供 SetValue / SetDisabled，OnSizeChanged 时按宽排好并设好自己的高（与竖排单选卡片列表同一套用法）。
+local CreateOptionCards
+do
+local OPTION_CARDS_POOL = "EXUI.SettingsV2.OptionCards"
+Factory:InitCompositePool(OPTION_CARDS_POOL)
+
+local function PaintOptionCard(card)
+    local host = card._v2Host
+    if not host then return end
+    local selected = host._v2Value == card._v2Value
+    local hover = not host._v2Disabled and card:IsMouseOver()
+    -- 颜色照标准页的单选卡片（GUIStates.option），和竖排 optionlist 同一套。
+    local state = _G.ExwindTools.GUIStates.option[host._v2Disabled and "disabled"
+        or (selected and "selected" or (hover and "hover" or "normal"))]
+    UI:SetControlSurface(card, GM.radius.card, state.fill, state.border)
+    if type(card._v2Icon) == "string" then card.icon:SetVertexColor(unpack(state.text)) end
+    card.name:SetTextColor(unpack(state.text))
+    -- 选中卡是主色底，灰描述字看不清：选中时描述用选中字色，其余照旧灰字。
+    local GC = _G.ExwindTools.GUIColors
+    card.desc:SetTextColor(unpack(selected and not host._v2Disabled and state.text or GC.textDim))
+end
+
+local function LayoutOptionCards(host)
+    local style = host._v2Style
+    local columns, gap = host._v2Columns, Part(style, "optionCardGap")
+    local padX, padY = Part(style, "optionCardPadX"), Part(style, "optionCardPadY")
+    local iconSize, descGap = Part(style, "optionCardIconSize"), Part(style, "optionCardDescGap")
+    local width = math.max(1, host:GetWidth())
+    local cardWidth = math.max(1, (width - gap * (columns - 1)) / columns)
+    local y, rowHeight = 0, 0
+    local heights = {}
+    for i, card in ipairs(host._v2Cards) do
+        if card:IsShown() then
+            -- 描述按卡内宽换行，高度按换行后的实际行数给足（显式设高，不靠字串自适应），排在名字行下面。
+            local desc = card.desc
+            local room = math.max(1, cardWidth - padX * 2)
+            desc:SetWidth(room)
+            desc:SetHeight(0) -- 先回到自适应高再量，免得上次设的高把多出的行截掉
+            local headHeight = math.max(iconSize, math.ceil(card.name:GetStringHeight()))
+            local hasDesc = (desc:GetText() or "") ~= ""
+            local textHeight = hasDesc and math.ceil(desc:GetStringHeight()) or 0
+            -- 描述要换行时按行数均分宽度，免得最后一行只剩一两个字；均分后行数变多就退回整宽。
+            local unbounded = hasDesc and desc:GetUnboundedStringWidth() or 0
+            local lines = math.ceil(unbounded / room)
+            if lines > 1 then
+                local fontSize = select(2, desc:GetFont()) or 0
+                desc:SetWidth(math.min(room, math.ceil(unbounded / lines) + fontSize))
+                desc:SetHeight(0)
+                local balanced = math.ceil(desc:GetStringHeight())
+                if balanced > textHeight + 0.5 then
+                    desc:SetWidth(room)
+                    desc:SetHeight(0)
+                else
+                    textHeight = balanced
+                end
+            end
+            desc:SetHeight(math.max(1, textHeight))
+            desc:ClearAllPoints()
+            desc:SetPoint("TOPLEFT", card, "TOPLEFT", padX, -(padY + headHeight + descGap))
+            heights[i] = padY * 2 + headHeight + (hasDesc and (descGap + textHeight) or 0)
+        end
+    end
+    for i, card in ipairs(host._v2Cards) do
+        if card:IsShown() then
+            local column = (i - 1) % columns
+            if column == 0 then
+                y = y + (i > 1 and rowHeight + gap or 0)
+                rowHeight = 0
+                for j = i, math.min(i + columns - 1, #host._v2Cards) do
+                    if heights[j] then rowHeight = math.max(rowHeight, heights[j]) end
+                end
+            end
+            Place(card, host, column * (cardWidth + gap), y, cardWidth, rowHeight)
+            PaintOptionCard(card)
+        end
+    end
+    local total = #host._v2Items > 0 and (y + rowHeight) or 1
+    if math.abs(host:GetHeight() - total) > 0.5 then host:SetHeight(total) end
+    -- 圆角表面按画的那一刻的屏幕位置对齐像素；量高时宿主还没摆到最终位置，只改位置不会再触发重画，
+    -- 角块和中间块会错开，选中卡（主色底）上露出一条竖缝。下一帧按最终位置再画一次。
+    if not host._v2RepaintPending then
+        host._v2RepaintPending = true
+        C_Timer.After(0, function()
+            host._v2RepaintPending = nil
+            for _, card in ipairs(host._v2Cards or {}) do
+                if card:IsShown() and card._v2Host == host then PaintOptionCard(card) end
+            end
+        end)
+    end
+end
+
+CreateOptionCards = function(parent, options, style)
+    local host, isNew = Factory:AcquireCompositeHost(OPTION_CARDS_POOL, parent)
+    if isNew then host._v2Cards = {} end
+    host._v2Style, host._v2Columns, host._v2Items = style, options.columns, options.items
+    host._v2Value, host._v2Disabled, host._v2OnChange = options.value, false, options.onChange
+    local padX, padY = Part(style, "optionCardPadX"), Part(style, "optionCardPadY")
+    local iconSize, iconGap = Part(style, "optionCardIconSize"), Part(style, "optionCardIconGap")
+    for i, item in ipairs(options.items) do
+        local card = host._v2Cards[i]
+        if not card then
+            card = CreateFrame("Button", nil, host)
+            card:RegisterForClicks("LeftButtonUp")
+            card.icon = card:CreateTexture(nil, "ARTWORK")
+            card.name = UI:CreateVisualFontString(card, _G.EXFONTFRAME, "GameFontHighlight")
+            card.name:SetJustifyH("LEFT")
+            card.name:SetWordWrap(false)
+            card.desc = UI:CreateVisualFontString(card, _G.EXFONTFRAME, "GameFontHighlightSmall")
+            card.desc:SetJustifyH("LEFT")
+            card.desc:SetJustifyV("TOP")
+            card.desc:SetWordWrap(true)
+            card:SetScript("OnEnter", PaintOptionCard)
+            card:SetScript("OnLeave", PaintOptionCard)
+            card:SetScript("OnClick", function(self)
+                local owner = self._v2Host
+                if not owner or owner._v2Disabled or owner._v2Value == self._v2Value then return end
+                owner._v2Value = self._v2Value
+                for _, other in ipairs(owner._v2Cards) do PaintOptionCard(other) end
+                if owner._v2OnChange then owner._v2OnChange(self._v2Value) end
+            end)
+            host._v2Cards[i] = card
+        end
+        card._v2Host, card._v2Value, card._v2Icon = host, item.id, item.icon
+        UI.ControlAppearance.Font(card.name, Part(style, "optionCardNameFont"), UI.ControlAppearance.colors.text, "", "GameFontHighlight")
+        UI.ControlAppearance.Font(card.desc, Part(style, "optionCardDescFont"), _G.ExwindTools.GUIColors.textDim, "", "GameFontHighlightSmall")
+        card.name:SetText(item.label)
+        card.desc:SetText(item.description or "")
+        card.icon:ClearAllPoints()
+        card.name:ClearAllPoints()
+        if item.icon then
+            card.icon:SetSize(iconSize, iconSize)
+            card.icon:SetPoint("TOPLEFT", card, "TOPLEFT", padX, -padY)
+            SetIconTexture(card.icon, item.icon)
+            if type(item.icon) ~= "string" then card.icon:SetVertexColor(1, 1, 1, 1) end
+            card.icon:Show()
+            card.name:SetPoint("LEFT", card.icon, "RIGHT", iconGap, 0)
+        else
+            card.icon:Hide()
+            card.name:SetPoint("LEFT", card, "TOPLEFT", padX, -(padY + iconSize / 2))
+        end
+        card.name:SetPoint("RIGHT", card, "RIGHT", -padX, 0)
+        card:Show()
+    end
+    for i = #options.items + 1, #host._v2Cards do host._v2Cards[i]:Hide(); host._v2Cards[i]._v2Host = nil end
+    function host:SetValue(value)
+        self._v2Value = value
+        for _, card in ipairs(self._v2Cards) do PaintOptionCard(card) end
+    end
+    function host:SetDisabled(disabled)
+        self._v2Disabled = disabled == true
+        for _, card in ipairs(self._v2Cards) do
+            card:SetEnabled(not self._v2Disabled)
+            PaintOptionCard(card)
+        end
+    end
+    host:SetScript("OnSizeChanged", LayoutOptionCards)
+    Factory:AttachPoolRelease(host, function(frame)
+        frame:SetScript("OnSizeChanged", nil)
+        for _, card in ipairs(frame._v2Cards) do
+            card:Hide()
+            card:SetEnabled(true)
+            card._v2Host, card._v2Value, card._v2Icon = nil, nil, nil
+            card.icon:SetTexture(nil)
+            card.name:SetText("")
+            card.desc:SetText("")
+            UI:ClearControlSurface(card)
+        end
+        frame._v2Style, frame._v2Columns, frame._v2Items, frame._v2OnChange = nil, nil, nil, nil
+        frame.SetValue, frame.SetDisabled = nil, nil
+    end)
+    host:SetWidth(options.width or GM.settings.controlWideWidth)
+    host:Show()
+    LayoutOptionCards(host)
+    return host
+end
+
+end
+
 local function StandardControl(spec, bindingFor)
     local states = setmetatable({}, { __mode = "k" })
     local kind = spec.controlType
@@ -1543,9 +2013,14 @@ local function StandardControl(spec, bindingFor)
         elseif kind == "optionlist" then
             local items = {}
             for i, option in ipairs(spec.options) do
-                items[i] = { id = option.value, label = option.label, description = option.description }
+                items[i] = { id = option.value, label = option.label, description = option.description, icon = spec.columns and option.icon or nil }
             end
-            widget = UI:CreateOptionList(host, { items = items, value = value, width = width, onChange = Commit })
+            if spec.columns then
+                widget = CreateOptionCards(host, { items = items, value = value, width = width, columns = spec.columns,
+                    onChange = Commit }, style)
+            else
+                widget = UI:CreateOptionList(host, { items = items, value = value, width = width, onChange = Commit })
+            end
         elseif kind == "switch" or kind == "checkbox" or kind == "card" then
             widget = UI:CreateCheckbox(host, spec.label or "", value == true, function(checked) Commit(checked == true) end)
             if kind == "switch" and not spec.label then
@@ -1554,12 +2029,19 @@ local function StandardControl(spec, bindingFor)
                 widget:SetSize(GM.size.switchTrackWidth, styledHeight or GM.size.controlHeight)
             end
         elseif kind == "slider" then
+            -- percent：数字框显示百分比，输入的数（可带 %）除以 100 写回。
+            local formatter = spec.percent and function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end or nil
+            local parse = spec.percent and function(text)
+                local number = tonumber((text:gsub("%%$", "")))
+                return number and number / 100 or nil
+            end or nil
             widget = UI:CreateSlider(host, width, spec.label or "", spec.min or 0, spec.max or 100, value or 0,
-                spec.step or 1, nil, {
+                spec.step or 1, formatter, {
                     onLive = function(live)
                         if context:IsCurrent() then binding:Write(live, "live") end
                     end,
                     onCommit = Commit,
+                    parse = parse,
                 })
         elseif kind == "input" then
             -- 写了 placeholder 才有占位字（占位灰）；不写时与原来一样。
@@ -1579,7 +2061,8 @@ local function StandardControl(spec, bindingFor)
                     context:RefreshPage()
                 end, search)
         elseif kind == "flow" then
-            widget = UI:CreateFlowDirectionPicker(host, { direction = FlowValue(binding.direction:Read()),
+            -- 选择格随分到的宽变宽（没有行名、独占一行时占满整行）。
+            widget = UI:CreateFlowDirectionPicker(host, { direction = FlowValue(binding.direction:Read()), stretch = true,
                 wrap = FlowValue(binding.wrap:Read()), onChange = function(direction, wrap)
                     if not context:IsCurrent() then return end
                     binding.direction:Write(direction, "commit")
@@ -1587,7 +2070,9 @@ local function StandardControl(spec, bindingFor)
                     context:RefreshPage()
                 end })
         elseif kind == "perline" then
+            -- 预设 perLineSingle：同一个值只给一种控件（上限不超过 10 只给方块，超过只给数字框）。
             widget = UI:CreatePerLineSelector(host, { max = spec.max, value = PerLineValue(value), noneText = spec.noneText,
+                single = style and style.perLineSingle or nil,
                 onChange = function(count) Commit(count) end })
         elseif kind == "number" then
             -- 数字框：不带步进，提交时写数字（清空 = nil）。
@@ -1621,6 +2106,11 @@ local function StandardControl(spec, bindingFor)
                 binding:Notify("committed")
                 context:RefreshPage()
             end, search)
+            -- 预设写了 multiSeparator：摘要里选中项之间用它连接（默认“, ”）。
+            if style and style.multiSeparator then
+                widget._exMultiSeparator = style.multiSeparator
+                widget:RefreshSelectionDisplay()
+            end
         else
             widget = UI:CreateDropdown(host, width, spec.label, SelectItems(spec), value, Commit, search)
         end
@@ -1669,6 +2159,10 @@ local function StandardControl(spec, bindingFor)
                 valuePosition = state.valuePosition,
             })
             context._exSettingsRow = true
+        elseif kind == "slider" and style then
+            -- 样式页设置行里不带 label 的滑杆：轨道和数字框排成一行（与带 label 的滑杆同一种排法），高同普通控件。
+            state.valuePosition = "right"
+            UI:PrepareSettingsListControl(widget, { ordinaryControl = true, hideLabel = true, valuePosition = "right" })
         end
         states[widget] = state
         return widget
@@ -1682,7 +2176,9 @@ local function StandardControl(spec, bindingFor)
             widget:SetValue(selection)
             return
         end
-        local value = states[widget].binding:Read()
+        -- 预设、排列的绑定是一组（各自在下面的分支里读），不是单个绑定。
+        local value
+        if kind ~= "preset" and kind ~= "flow" then value = states[widget].binding:Read() end
         if kind == "multiline" then
             if not widget.editBox:HasFocus() then widget.editBox:SetText(value == nil and "" or tostring(value)) end
         elseif kind == "segment" then
@@ -1723,7 +2219,9 @@ local function StandardControl(spec, bindingFor)
             widget.editBox:GetParent():SetWidth(math.max(1, width - GM.settings.multilineScrollReserve))
         end
         if not row then
+            if state.valuePosition then return (UI:UpdateSettingsListControlLayout(widget, width)) end
             widget:SetWidth(width)
+            if kind == "flow" or kind == "perline" then widget:Relayout() end -- 按新宽摆选择格 / 方块
             if kind == "segment" then
                 local natural = ChoiceNaturalWidth(widget)
                 state.useFallback = natural ~= nil and width + 0.5 < natural
@@ -1785,6 +2283,12 @@ local function StandardControl(spec, bindingFor)
         if state.fallback then
             widget:SetShown(not state.useFallback)
             state.fallback:SetShown(state.useFallback == true)
+        end
+        if not state.row and state.valuePosition then
+            -- 轨道宽已在 measure 里按总宽扣掉数字框排好，这里只定位。
+            shown:ClearAllPoints()
+            PixelUtil.SetPoint(shown, "TOPLEFT", state.host, "TOPLEFT", 0, 0, 0, 0)
+            return
         end
         if not state.row then
             Place(shown, state.host, 0, 0, width, state.useFallback and (state.styledHeight or GM.size.controlHeight) or height)
@@ -1965,8 +2469,52 @@ end
 -- path 是字段前缀，读写 <path>Source / Label / LSM / Path / TtsText；挂载时不写任何默认值。
 -- opts.sources = 可选来源（pack/lsm/file/tts，按顺序）；opts.labelSource = 语音包条目的全局 provider 名；
 -- opts.test = ▶ 发出的 clickKey（<moduleKey>.ButtonClicked，播放仍由模块自己做）。
+-- opts.channel = true：同一行多一段音频通道下拉（来源 | 内容 | 通道 | ▶），写 <path>Channel
+-- （"Master" / "SFX" / "Music" / "Ambience" / "Dialog"，WoW PlaySoundFile 的通道名）；字段为空时显示主音量、不写存档。
+-- opts.testTip = ▶ 的悬停提示文字（可选），按下即收起。
+-- 只有一种来源时不显示来源段，内容段从左缘开始。
 local SoundSources = { pack = "语音包", lsm = "LSM音效", file = "自定义路径", tts = "TTS语音" }
 local SoundSuffix = { source = "Source", pack = "Label", lsm = "LSM", file = "Path", tts = "TtsText" }
+local SoundChannel = { order = { "Master", "SFX", "Music", "Ambience", "Dialog" } }
+SoundChannel.names = { Master = "MASTER_VOLUME", SFX = "FX_VOLUME", Music = "MUSIC_VOLUME",
+    Ambience = "AMBIENCE_VOLUME", Dialog = "DIALOG_VOLUME" }
+
+-- 拼接控件的圆角边（与 ExwindGUIComposite 的声音选择器同一标记）：first 左圆右直、middle 两边直、last 右圆左直。
+function SoundChannel.JoinEdge(control, edge)
+    if not control._exJoinedEdge then
+        local release = control._exPoolRelease
+        Factory:AttachPoolRelease(control, function(self)
+            self._exJoinedEdge = nil
+            if release then release(self) end
+        end)
+    end
+    control._exJoinedEdge = edge
+    UI:ApplyControlAppearance(control)
+    for _, skin in pairs(control._exModernSurfaces or {}) do skin.Layout() end
+end
+
+-- ▶ 的悬停提示：池化按钮只挂一次脚本，提示文字按租约写在 _exV2Tip，归还时清掉。
+function SoundChannel.PreviewTip(button, tip)
+    if not button._exV2TipHooked then
+        button._exV2TipHooked = true
+        button:HookScript("OnEnter", function(self)
+            if not self._exV2Tip then return end
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:AddLine(self._exV2Tip, 1, 1, 1, true)
+            GameTooltip:Show()
+        end)
+        button:HookScript("OnLeave", function(self) if GameTooltip:GetOwner() == self then GameTooltip:Hide() end end)
+        button:HookScript("OnMouseDown", function(self) if GameTooltip:GetOwner() == self then GameTooltip:Hide() end end)
+    end
+    if tip and not button._exV2Tip then
+        local release = button._exPoolRelease
+        Factory:AttachPoolRelease(button, function(self)
+            self._exV2Tip = nil
+            if release then release(self) end
+        end)
+    end
+    button._exV2Tip = tip
+end
 
 local function SoundSelectorComponent(spec, bindingFor, runtimeOpts)
     local opts = spec.opts or {}
@@ -1974,12 +2522,15 @@ local function SoundSelectorComponent(spec, bindingFor, runtimeOpts)
     for _, source in ipairs(opts.sources) do Check(SoundSources[source] ~= nil, "unknown sound source " .. tostring(source)) end
     Check(opts.labelSource == nil or type(opts.labelSource) == "string", "opts.labelSource must be a provider name")
     Check(opts.test == nil or Name(opts.test), "opts.test must be a clickKey")
+    Check(opts.channel == nil or opts.channel == true, "opts.channel must be true")
+    Check(opts.testTip == nil or type(opts.testTip) == "string", "opts.testTip must be a string")
     local states = setmetatable({}, { __mode = "k" })
     local adapter = { component = spec.component }
     function adapter.mount(host, context)
         local base = bindingFor(context)
         local fields = {}
         for name, suffix in pairs(SoundSuffix) do fields[name] = CreateBinding(base.moduleKey, base.root, base.path .. suffix) end
+        if opts.channel then fields.channel = CreateBinding(base.moduleKey, base.root, base.path .. "Channel") end
         local widget = Acquire(host)
         local height, L = GM.size.controlHeight, _G.ExwindTools.L
         local function Commit(name)
@@ -2005,6 +2556,14 @@ local function SoundSelectorComponent(spec, bindingFor, runtimeOpts)
                 fields.pack:Read(), Commit("pack"), { search = true })
         end
         local sourceNatural = parts.source:GetWidth()
+        local channel
+        if opts.channel then
+            local channelItems = {}
+            for i, name in ipairs(SoundChannel.order) do channelItems[i] = { _G[SoundChannel.names[name]] or name, name } end
+            channel = UI:CreateDropdown(widget, GM.size.controlDefaultWidth, nil, channelItems, fields.channel:Read() or "Master",
+                Commit("channel"))
+            UI:PrepareSettingsListControl(channel, { ordinaryControl = true, hideLabel = true })
+        end
         local preview
         preview = UI:CreateButton(widget, height, height, "", function()
             if not context:IsCurrent() then return end
@@ -2014,12 +2573,15 @@ local function SoundSelectorComponent(spec, bindingFor, runtimeOpts)
             _G.ExwindTools:UpdateState(base.moduleKey .. ".ButtonClicked", { key = opts.test, fullPath = base.path, ts = GetTime() })
         end, { compact = true })
         UI:ApplySoundPreviewAppearance(preview)
+        if opts.testTip then SoundChannel.PreviewTip(preview, opts.testTip) end
         for _, part in pairs(parts) do UI:PrepareSettingsListControl(part, { ordinaryControl = true, hideLabel = true }) end
         local contents = {}
         for _, source in ipairs(opts.sources) do contents[source] = parts[source] end
+        -- 不在可选来源里的内容件不参与排版和显隐切换，一直藏着，免得停在左上角压住别的控件。
+        for name, part in pairs(parts) do if name ~= "source" and not contents[name] then part:Hide() end end
         widget:SetSize(GM.settings.soundSelectorWidth, height)
         states[widget] = { host = host, fields = fields, parts = parts, preview = preview, contents = contents,
-            sourceNatural = sourceNatural, enabled = true }
+            sourceNatural = sourceNatural, enabled = true, channel = channel }
         return widget
     end
     -- 来源字段为空或不在可选来源里（例如只有一个来源、存档本来就没有来源字段）时按第一个来源显示，不写存档。
@@ -2038,6 +2600,7 @@ local function SoundSelectorComponent(spec, bindingFor, runtimeOpts)
         UI:SetDropdownValue(state.parts.source, SourceOf(state))
         UI:SetDropdownValue(state.parts.lsm, state.fields.lsm:Read())
         if state.parts.pack then UI:SetDropdownValue(state.parts.pack, state.fields.pack:Read()) end
+        if state.channel then UI:SetDropdownValue(state.channel, state.fields.channel:Read() or "Master") end
         for _, name in ipairs({ "file", "tts" }) do
             local box = state.parts[name]
             if not box:HasFocus() then box:SetText(state.fields[name]:Read() or "") end
@@ -2056,12 +2619,35 @@ local function SoundSelectorComponent(spec, bindingFor, runtimeOpts)
             previewWidth = GM.size.controlHeight,
             paintPreview = function(button) UI:ApplySoundPreviewAppearance(button) end })
         state.parts.source:SetShown(not single)
+        if single and context._exStyle then -- 样式页：内容段顶到左缘、左边圆角（普通页照旧）
+            for _, control in pairs(state.contents) do
+                control:ClearAllPoints()
+                control:SetPoint("TOPLEFT", widget, "TOPLEFT", 0, 0)
+                control:SetPoint("TOPRIGHT", state.preview, "TOPLEFT", 0, 0)
+                SoundChannel.JoinEdge(control, "first")
+            end
+        end
+        if state.channel then
+            -- 内容段与通道段平分来源段和 ▶ 之间的宽。
+            local left = (single and context._exStyle) and 0 or math.min(state.sourceNatural, width * GM.settings.soundSourceMaxRatio)
+            local channelWidth = math.max(1, (width - left - GM.size.controlHeight) / 2)
+            local channel = state.channel
+            channel._exGridFixedHeight = GM.size.controlHeight
+            channel:ClearAllPoints()
+            channel:SetPoint("TOPRIGHT", state.preview, "TOPLEFT", 0, 0)
+            channel:SetSize(channelWidth, GM.size.controlHeight)
+            SoundChannel.JoinEdge(channel, "middle")
+            for _, control in pairs(state.contents) do
+                control:SetPoint("TOPRIGHT", channel, "TOPLEFT", 0, 0)
+            end
+        end
         Refresh(widget)
     end
     function adapter.setEnabled(widget, context, enabled)
         local state = states[widget]
         state.enabled = enabled
         ControlDefaults.setEnabled(state.parts.source, context, enabled)
+        if state.channel then ControlDefaults.setEnabled(state.channel, context, enabled) end
         Refresh(widget)
     end
     adapter.setVisible = ControlDefaults.setVisible
@@ -2069,6 +2655,7 @@ local function SoundSelectorComponent(spec, bindingFor, runtimeOpts)
         local state = states[widget]
         states[widget] = nil
         for _, part in pairs(state.parts) do ReleaseBoundWidget(part) end
+        if state.channel then ReleaseBoundWidget(state.channel) end
         Factory:Release(state.preview._fromPool, state.preview)
         Factory:ReleaseCompositeHost(widget)
     end
@@ -2121,23 +2708,132 @@ local CHIP_GAP = GM.space.descriptionGap
 local CHIP_ICON_POOL = "EXUI.SettingsV2.ChipIcon"
 Factory:InitCompositePool(CHIP_ICON_POOL)
 
+
+-- 三态小标签（chips.tristate）：自己画的小块（池化），不限 = 控件底 + 输入框边；只看 = 绿底白字；排除 = 红底白字。
+local TriChip = {}
+do
+local TRI_CHIP_POOL = "EXUI.SettingsV2.TriChip"
+Factory:InitCompositePool(TRI_CHIP_POOL)
+local TriStates = { include = true, exclude = true }
+local TriNext = { include = "exclude", exclude = nil }
+
+local function PaintTriChip(chip)
+    local state = chip._v2State
+    if not state then return end
+    local GC, colors = _G.ExwindTools.GUIColors, UI.ControlAppearance.colors
+    local hover = state.enabled and chip:IsMouseOver()
+    local fill, border, text
+    if state.state == "include" then
+        fill = hover and GC.filterIncludeHover or GC.filterInclude
+        border, text = fill, GC.white
+    elseif state.state == "exclude" then
+        fill, border, text = GC.filterExclude, GC.filterExclude, GC.white
+    else
+        fill, border, text = GC.input, hover and GC.inputHoverBorder or GC.inputBorder, colors.text
+    end
+    UI:SetControlSurface(chip, GM.radius.control, fill, border)
+    chip.label:SetTextColor(unpack(state.enabled and text or colors.muted))
+    chip:SetAlpha(state.enabled and 1 or 0.6)
+end
+
+local function AcquireTriChip(parent, record, style, onClick)
+    local chip, isNew = Factory:AcquireCompositeHost(TRI_CHIP_POOL, parent)
+    if isNew then
+        chip.button = CreateFrame("Button", nil, chip)
+        chip.button:SetAllPoints(chip)
+        chip.button:RegisterForClicks("LeftButtonUp")
+        chip.label = UI:CreateVisualFontString(chip, _G.EXFONTFRAME, "GameFontHighlightSmall")
+        chip.label:SetWordWrap(false)
+        chip.dot = CreateFrame("Frame", nil, chip)
+        chip.dot:EnableMouse(false)
+        chip.button:SetScript("OnEnter", function(self)
+            PaintTriChip(chip)
+            local tip = chip._v2State and chip._v2State.tip
+            if tip then
+                GameTooltip:SetOwner(self, "ANCHOR_TOP")
+                GameTooltip:AddLine(tip, 1, 1, 1, true)
+                GameTooltip:Show()
+            end
+        end)
+        chip.button:SetScript("OnLeave", function(self)
+            PaintTriChip(chip)
+            if GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+        end)
+        chip.button:SetScript("OnMouseDown", function(self)
+            if GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+        end)
+        chip.button:SetScript("OnClick", function()
+            local state = chip._v2State
+            if state and state.onClick then state.onClick() end
+        end)
+    end
+    chip.button:SetFrameLevel(chip:GetFrameLevel() + 3)
+    UI.ControlAppearance.Font(chip.label, Part(style, "triFont"), UI.ControlAppearance.colors.text, "", "GameFontHighlightSmall")
+    chip.label:SetText(record.text)
+    local padX, dotSize = Part(style, "triPaddingX"), Part(style, "triDotSize")
+    chip.label:ClearAllPoints()
+    if record.dot then
+        chip.dot:SetSize(dotSize, dotSize)
+        chip.dot:ClearAllPoints()
+        chip.dot:SetPoint("LEFT", chip, "LEFT", padX, 0)
+        UI:SetControlSurface(chip.dot, dotSize / 2, { record.dot[1], record.dot[2], record.dot[3], 1 }, { 0, 0, 0, 0.35 })
+        chip.dot:Show()
+        chip.label:SetPoint("LEFT", chip.dot, "RIGHT", Part(style, "triDotGap"), 0)
+    else
+        chip.dot:Hide()
+        chip.label:SetPoint("LEFT", chip, "LEFT", padX, 0)
+    end
+    chip._v2State = { state = record.state, tip = record.tip, enabled = true, onClick = onClick }
+    chip._v2Width = math.ceil(chip.label:GetUnboundedStringWidth()) + padX * 2
+        + (record.dot and dotSize + Part(style, "triDotGap") or 0)
+    chip:Show()
+    PaintTriChip(chip)
+    return chip
+end
+
+local function ReleaseTriChip(chip)
+    if GameTooltip:GetOwner() == chip.button then GameTooltip:Hide() end
+    chip._v2State, chip._v2Width = nil, nil
+    chip.label:SetText("")
+    UI:ClearControlSurface(chip)
+    UI:ClearControlSurface(chip.dot)
+    chip:SetAlpha(1)
+    Factory:ReleaseCompositeHost(chip)
+end
+
+TriChip.Acquire, TriChip.Release, TriChip.Paint = AcquireTriChip, ReleaseTriChip, PaintTriChip
+TriChip.States, TriChip.Next = TriStates, TriNext
+end
+
 local function ChipsAdapter(node)
     local spec, session = node.spec, node.session
     local withInput = spec.kind == "chipinput"
     local states = {}
     local adapter = {}
-    local function Height() return StyledControlHeight(session.style) end
+    -- 样式预设 chipHeight（芯片、三态小标签高）；没写时取控件高。
+    local function Height() return session.style and session.style.chipHeight or StyledControlHeight(session.style) end
     local function RemoveSize() return math.max(1, Height() - GM.space.compactButtonPaddingX) end
     local function ReleaseChips(state)
         for _, chip in ipairs(state.chips) do
+            if chip.tri then TriChip.Release(chip.button) else
             if chip.remove then chip.remove:Release() end
             if chip.icon then
                 chip.icon.texture:SetTexture(nil)
                 Factory:ReleaseCompositeHost(chip.icon)
             end
             Factory:Release(chip.button._fromPool, chip.button)
+            end
         end
         state.chips = {}
+    end
+    local function SetChipEnabled(chip, enabled)
+        if chip.tri then
+            chip.button._v2State.enabled = enabled
+            chip.button.button:SetEnabled(enabled)
+            TriChip.Paint(chip.button)
+        else
+            chip.button:SetEnabled(enabled)
+        end
     end
     local function Rebuild(widget, context)
         local state = states[widget]
@@ -2147,13 +2843,24 @@ local function ChipsAdapter(node)
             Check(record.selected == nil or type(record.selected) == "boolean", spec.id .. ": chip selected must be boolean")
             Check(record.icon == nil or (withInput and (IconValue(record.icon) or Name(record.icon))),
                 spec.id .. ": chip icon (chipinput only) must be a GUIIcons id, file id or texture path")
+            if spec.tristate then
+                Check(record.selected == nil, spec.id .. ": tristate chips use state, not selected")
+                Check(record.state == nil or TriChip.States[record.state], spec.id .. ": chip state must be nil, \"include\" or \"exclude\"")
+                Check(record.tip == nil or type(record.tip) == "string", spec.id .. ": chip tip must be string")
+                Check(record.dot == nil or (type(record.dot) == "table" and Finite(record.dot[1]) and Finite(record.dot[2])
+                    and Finite(record.dot[3])), spec.id .. ": chip dot must be { r, g, b }")
+            else
+                Check(record.state == nil and record.dot == nil and record.tip == nil,
+                    spec.id .. ": state / dot / tip belong to tristate chips")
+            end
         end
         local same = state.records and #state.records == #records
         if same then
             for i, record in ipairs(records) do
                 local old = state.records[i]
                 if old.record ~= record or old.text ~= record.text or old.selected ~= (record.selected == true)
-                    or old.icon ~= record.icon then same = false; break end
+                    or old.icon ~= record.icon or old.state ~= record.state or old.tip ~= record.tip
+                    or old.dot ~= record.dot then same = false; break end
             end
         end
         if same then return end
@@ -2161,7 +2868,14 @@ local function ChipsAdapter(node)
         state.records = {}
         local height = Height()
         for i, record in ipairs(records) do
-            state.records[i] = { record = record, text = record.text, selected = record.selected == true, icon = record.icon }
+            state.records[i] = { record = record, text = record.text, selected = record.selected == true, icon = record.icon,
+                state = record.state, tip = record.tip, dot = record.dot }
+            if spec.tristate then
+                local chip = TriChip.Acquire(widget, record, session.style, context:Guard(function()
+                    session.owner.actions[spec.select](context, record, TriChip.Next[record.state] or (record.state == nil and "include" or nil))
+                end))
+                state.chips[#state.chips + 1] = { button = chip, tri = true }
+            else
             local onClick = spec.select and context:Guard(function()
                 session.owner.actions[spec.select](context, record)
             end) or nil
@@ -2202,6 +2916,7 @@ local function ChipsAdapter(node)
                 end
             end
             state.chips[#state.chips + 1] = chip
+            end
         end
         if spec.add and not withInput then
             local add = UI:CreateButton(widget, height, height, "＋", context:Guard(function()
@@ -2209,10 +2924,11 @@ local function ChipsAdapter(node)
             end), { compact = true })
             state.chips[#state.chips + 1] = { button = add, isAdd = true }
         end
-        for _, chip in ipairs(state.chips) do chip.button:SetEnabled(state.enabled) end
+        for _, chip in ipairs(state.chips) do SetChipEnabled(chip, state.enabled) end
     end
     local function ChipWidth(chip)
         if chip.isAdd then return Height() end
+        if chip.tri then return chip.button._v2Width end
         local label = chip.button:GetFontString()
         local text = math.ceil(label and label:GetUnboundedStringWidth() or 0)
         return text + GM.space.compactButtonPaddingX * 2 + (chip.remove and RemoveSize() + 2 or 0)
@@ -2233,6 +2949,8 @@ local function ChipsAdapter(node)
         if state.input then
             local inputWidth = math.min(width, Part(session.style, "chipInputWidth"))
             if x > 0 and x + inputWidth > width then x, y = 0, y + height + CHIP_GAP end
+            -- 预设 chipInputFill：输入框占满所在行剩下的宽。
+            if session.style and session.style.chipInputFill then inputWidth = math.max(inputWidth, width - x) end
             if place then Place(state.input, widget, x, y, inputWidth, height) end
             items = items + 1
         end
@@ -2249,7 +2967,15 @@ local function ChipsAdapter(node)
                 onEnter = context:Guard(function(text)
                     text = strtrim(tostring(text or ""))
                     input:SetText("")
-                    if text ~= "" then session.owner.actions[spec.add](context, text) end
+                    if text == "" then return end
+                    -- 加入后把焦点还给输入框，方便连续输入；这一格被页面刷新重建时由 layout 接手。
+                    session._v2ChipFocus = spec.id
+                    session.owner.actions[spec.add](context, text)
+                    local state = states[widget]
+                    if state and state.input == input and input:IsVisible() then
+                        session._v2ChipFocus = nil
+                        input:SetFocus()
+                    end
                 end),
             })
             if session.style and session.style.overlayControls then UI:SetControlOverlayAppearance(input, true) end
@@ -2265,13 +2991,18 @@ local function ChipsAdapter(node)
     function adapter.update(widget, context) Rebuild(widget, context) end
     function adapter.measure(widget, context, width) return Flow(widget, width, false) end
     function adapter.layout(widget, context, width, height)
-        Place(widget, states[widget].host, 0, 0, width, height)
+        local state = states[widget]
+        Place(widget, state.host, 0, 0, width, height)
         Flow(widget, width, true)
+        if state.input and session._v2ChipFocus == spec.id and state.input:IsVisible() then
+            session._v2ChipFocus = nil
+            state.input:SetFocus()
+        end
     end
     function adapter.setEnabled(widget, context, enabled)
         local state = states[widget]
         state.enabled = enabled
-        for _, chip in ipairs(state.chips) do chip.button:SetEnabled(enabled) end
+        for _, chip in ipairs(state.chips) do SetChipEnabled(chip, enabled) end
         if state.input then ControlDefaults.setEnabled(state.input, context, enabled) end
     end
     function adapter.setVisible(widget, context, visible)
@@ -2303,11 +3034,6 @@ local function NodeText(node, field, sourceField)
     if text == nil then return "" end
     Check(type(text) == "string", node.spec.id .. ": " .. sourceField .. " must return string")
     return text
-end
-
-local function SetIconTexture(texture, icon)
-    if type(icon) == "string" and _G.ExwindTools.GUIIcons.ids[icon] then texture:SetTexture(UI:GetIcon(icon))
-    else texture:SetTexture(icon) end
 end
 
 local function SummaryAdapter(node)
@@ -2455,8 +3181,716 @@ local function SummaryAdapter(node)
     return adapter
 end
 
+-- 句子卡（sentence）：两行，片段流式排开；文字段放不下时按字（西文按词）切开换行。
+-- 片段对象（文字、词块、小图标、行首图标块）挂在池化宿主上，按需新建、每次布局按序号复用，用不到的收起。
+local SentenceAdapter
+do
+local SENTENCE_POOL = "EXUI.SettingsV2.Sentence"
+Factory:InitCompositePool(SENTENCE_POOL)
+
+local function SentenceIcon(texture, icon, tint)
+    SetIconTexture(texture, icon)
+    if type(icon) == "string" then texture:SetVertexColor(unpack(tint)) else texture:SetVertexColor(1, 1, 1, 1) end
+end
+
+-- 一个 UTF-8 串切成字；西文连续字母算一个“词”单位交给上层按空格回退。
+local function Utf8Chars(text)
+    local chars = {}
+    for char in text:gmatch("[%z\1-\127\194-\244][\128-\191]*") do chars[#chars + 1] = char end
+    return chars
+end
+
+local function ValidateFragments(id, line, field, owner)
+    Check(type(line) == "table", id .. ": " .. field .. " must return an array of fragments")
+    for key in pairs(line) do
+        Check(key == "icon" or (type(key) == "number" and key >= 1 and key % 1 == 0), id .. ": " .. field .. " invalid key " .. tostring(key))
+    end
+    Check(line.icon == nil or IconValue(line.icon), id .. ": " .. field .. ".icon must be a GUIIcons id or file id")
+    for i, part in ipairs(line) do
+        local at = id .. ": " .. field .. "[" .. i .. "]"
+        Check(type(part) == "table", at .. " must be a table")
+        Check((part.text ~= nil) ~= (part.token ~= nil), at .. " needs text or token")
+        Check(type(part.text or part.token) == "string", at .. " text/token must be string")
+        Check(part.icon == nil or IconValue(part.icon), at .. ".icon must be a GUIIcons id or file id")
+        if part.text ~= nil then
+            Check(part.action == nil and part.tips == nil, at .. ": action / tips belong to token fragments")
+        else
+            Check(part.action == nil or (Name(part.action) and type(owner.actions and owner.actions[part.action]) == "function"),
+                at .. ".action must name an owner action")
+            if part.tips ~= nil then
+                Check(type(part.tips) == "table", at .. ".tips must be an array")
+                for j, tip in ipairs(part.tips) do
+                    local entry = type(tip) == "table" and tip or { text = tip }
+                    Check(type(entry.text) == "string", at .. ".tips[" .. j .. "] needs text")
+                    Check(entry.icon == nil or IconValue(entry.icon), at .. ".tips[" .. j .. "].icon must be a GUIIcons id or file id")
+                    Check(entry.dot == nil or (type(entry.dot) == "table" and Finite(entry.dot[1]) and Finite(entry.dot[2])
+                        and Finite(entry.dot[3])), at .. ".tips[" .. j .. "].dot must be { r, g, b }")
+                end
+            end
+        end
+    end
+end
+
+local function SentenceTips(owner, tips)
+    GameTooltip:SetOwner(owner, "ANCHOR_BOTTOM")
+    for _, tip in ipairs(tips) do
+        local entry = type(tip) == "table" and tip or { text = tip }
+        local prefix = ""
+        if entry.icon then
+            local path = type(entry.icon) == "string" and UI:GetIcon(entry.icon) or entry.icon
+            prefix = "|T" .. path .. ":16:16|t "
+        elseif entry.dot then
+            prefix = string.format("|cff%02x%02x%02x●|r ", entry.dot[1] * 255, entry.dot[2] * 255, entry.dot[3] * 255)
+        end
+        GameTooltip:AddLine(prefix .. entry.text, 1, 1, 1, true)
+    end
+    GameTooltip:Show()
+end
+
+local function PaintSentenceToken(token)
+    local state = token._v2State
+    if not state then return end
+    local GC = _G.ExwindTools.GUIColors
+    local hover = state.enabled and token:IsMouseOver()
+    token.label:SetTextColor(unpack(hover and GC.accentHover or (state.emphasis and GC.accentHover or GC.accent)))
+    if state.clickable then UI:SetControlSurface(token, 3, GC.checkCardSelected, GC.checkCardSelected) end
+end
+
+SentenceAdapter = function(node)
+    local spec, session = node.spec, node.session
+    local style = session.style
+    local states = {}
+    local adapter = {}
+    local function FontSize() return Part(style, "summaryTextFont") end
+    local function LineHeight() return Part(style, "sentenceLineHeight") end
+    -- 取第 index 个某类片段对象（没有就建）。
+    local function Piece(widget, kind, index)
+        local list = widget._v2Pieces[kind]
+        local piece = list[index]
+        if piece then return piece end
+        if kind == "text" then
+            piece = UI:CreateVisualFontString(widget, _G.EXFONTFRAME, "GameFontHighlight")
+            piece:SetWordWrap(false)
+        elseif kind == "icon" then
+            piece = widget:CreateTexture(nil, "ARTWORK")
+        elseif kind == "token" then
+            piece = CreateFrame("Button", nil, widget)
+            piece:RegisterForClicks("LeftButtonUp")
+            piece.label = UI:CreateVisualFontString(piece, _G.EXFONTFRAME, "GameFontHighlight")
+            piece.label:SetWordWrap(false)
+            piece.icon = piece:CreateTexture(nil, "ARTWORK")
+            piece.underline = piece:CreateTexture(nil, "ARTWORK")
+            piece.underline:SetHeight(1)
+            piece:SetScript("OnEnter", function(self)
+                PaintSentenceToken(self)
+                local state = self._v2State
+                if state and state.tips then SentenceTips(self, state.tips) end
+            end)
+            piece:SetScript("OnLeave", function(self)
+                PaintSentenceToken(self)
+                if GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+            end)
+            -- 按下就收起悬停提示（点词会弹小框，提示不能还盖着）。
+            piece:SetScript("OnMouseDown", function(self)
+                if GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+            end)
+            piece:SetScript("OnClick", function(self)
+                local state = self._v2State
+                if state and state.onClick then state.onClick(self) end
+            end)
+        elseif kind == "head" then
+            piece = CreateFrame("Frame", nil, widget)
+            piece:EnableMouse(false)
+            piece.icon = piece:CreateTexture(nil, "ARTWORK")
+            piece.icon:SetPoint("CENTER")
+        end
+        list[index] = piece
+        return piece
+    end
+    -- 文字最长能放进 room 的前缀（按字二分；西文优先退到空格）；返回 前缀, 剩余。
+    local function Fit(widget, text, room)
+        local measure = widget._v2Measure
+        measure:SetText(text)
+        if measure:GetUnboundedStringWidth() <= room then return text, "" end
+        local chars = Utf8Chars(text)
+        local low, high = 0, #chars
+        while low < high do
+            local mid = math.floor((low + high + 1) / 2)
+            measure:SetText(table.concat(chars, "", 1, mid))
+            if measure:GetUnboundedStringWidth() <= room then low = mid else high = mid - 1 end
+        end
+        if low > 0 and low < #chars and chars[low + 1] ~= " " then
+            for i = low, 1, -1 do
+                if chars[i] == " " then low = i; break end
+            end
+        end
+        return table.concat(chars, "", 1, low), table.concat(chars, "", low + 1)
+    end
+    -- 按宽度排一行片段；place 为真时同时摆放。返回这一行占了几行高。
+    local function FlowLine(widget, line, top, left, width, rightReserve, place, counters)
+        local fragmentIcon, gapIcon = Part(style, "sentenceFragmentIconSize"), Part(style, "sentenceIconGap")
+        local tokenPadX = Part(style, "sentenceTokenPadX")
+        local lineHeight = LineHeight()
+        local x, rows = left, 1
+        local function Room() return width - (rows == 1 and rightReserve or 0) - x end
+        local function NewRow() rows, x = rows + 1, left end
+        local function Y() return top + (rows - 1) * lineHeight end
+        for _, part in ipairs(line) do
+            if part.token then
+                local measure = widget._v2Measure
+                measure:SetText(part.token)
+                local w = math.ceil(measure:GetUnboundedStringWidth()) + (part.icon and fragmentIcon + gapIcon or 0)
+                local clickable = part.action ~= nil
+                if clickable then w = w + tokenPadX * 2 end
+                if x > left and w > Room() then NewRow() end
+                if place then
+                    counters.token = counters.token + 1
+                    local token = Piece(widget, "token", counters.token)
+                    local height = clickable and math.min(lineHeight, FontSize() + Part(style, "sentenceTokenPadY") * 2) or lineHeight
+                    Place(token, widget, x, Y() + (lineHeight - height) / 2, w, height)
+                    UI.ControlAppearance.Font(token.label, FontSize(), UI.ControlAppearance.colors.text, "", "GameFontHighlight")
+                    token.label:SetText(part.token)
+                    token.label:ClearAllPoints()
+                    local inner = clickable and tokenPadX or 0
+                    if part.icon then
+                        token.icon:SetSize(fragmentIcon, fragmentIcon)
+                        token.icon:ClearAllPoints()
+                        token.icon:SetPoint("LEFT", token, "LEFT", inner, 0)
+                        SentenceIcon(token.icon, part.icon, _G.ExwindTools.GUIColors.accent)
+                        token.icon:Show()
+                        token.label:SetPoint("LEFT", token.icon, "RIGHT", gapIcon, 0)
+                    else
+                        token.icon:Hide()
+                        token.label:SetPoint("LEFT", token, "LEFT", inner, 0)
+                    end
+                    local underline = part.tips ~= nil and not clickable
+                    token.underline:SetShown(underline)
+                    if underline then
+                        token.underline:SetColorTexture(unpack(_G.ExwindTools.GUIColors.accent))
+                        token.underline:ClearAllPoints()
+                        token.underline:SetPoint("TOPLEFT", token.label, "BOTTOMLEFT", 0, -Part(style, "sentenceUnderlineOffset") + 2)
+                        token.underline:SetPoint("TOPRIGHT", token.label, "BOTTOMRIGHT", 0, -Part(style, "sentenceUnderlineOffset") + 2)
+                    end
+                    if not clickable then UI:ClearControlSurface(token) end
+                    token._v2State = { clickable = clickable, emphasis = not clickable and part.tips == nil, tips = part.tips,
+                        enabled = states[widget].enabled,
+                        onClick = clickable and states[widget].context:Guard(function(frame)
+                            session.owner.actions[part.action](states[widget].context, part, frame)
+                        end) or nil }
+                    token:EnableMouse(clickable or part.tips ~= nil)
+                    token:SetFrameLevel(widget:GetFrameLevel() + 2)
+                    token:Show()
+                    PaintSentenceToken(token)
+                end
+                x = x + w
+            else
+                if part.icon then
+                    if x > left and fragmentIcon > Room() then NewRow() end
+                    if place then
+                        counters.icon = counters.icon + 1
+                        local icon = Piece(widget, "icon", counters.icon)
+                        icon:SetSize(fragmentIcon, fragmentIcon)
+                        icon:ClearAllPoints()
+                        icon:SetPoint("LEFT", widget, "TOPLEFT", x, -(Y() + lineHeight / 2))
+                        SentenceIcon(icon, part.icon, UI.ControlAppearance.colors.text)
+                        icon:Show()
+                    end
+                    x = x + fragmentIcon + gapIcon
+                end
+                local rest = part.text
+                while rest ~= "" do
+                    local head, tail = Fit(widget, rest, math.max(0, Room()))
+                    if head == "" then
+                        if x > left then NewRow() head, tail = Fit(widget, rest, math.max(0, Room())) end
+                        if head == "" then head = Utf8Chars(rest)[1]; tail = rest:sub(#head + 1) end -- 整行放不下一个字：放一个字
+                    end
+                    local measure = widget._v2Measure
+                    measure:SetText(head)
+                    local w = math.ceil(measure:GetUnboundedStringWidth())
+                    if place then
+                        counters.text = counters.text + 1
+                        local label = Piece(widget, "text", counters.text)
+                        UI.ControlAppearance.Font(label, FontSize(), UI.ControlAppearance.colors.text, "", "GameFontHighlight")
+                        label:SetTextColor(unpack(states[widget].enabled and UI.ControlAppearance.colors.text or UI.ControlAppearance.colors.muted))
+                        label:SetText(head)
+                        label:ClearAllPoints()
+                        label:SetPoint("LEFT", widget, "TOPLEFT", x, -(Y() + lineHeight / 2))
+                        label:Show()
+                    end
+                    x = x + w
+                    rest = tail
+                    if rest ~= "" then NewRow() end
+                end
+            end
+        end
+        return rows
+    end
+    -- 整张卡排一遍；返回总高。
+    local function Arrange(widget, width, place)
+        local state = states[widget]
+        local padX, padY, gap = Part(style, "summaryPaddingX"), Part(style, "summaryPaddingY"), Part(style, "summaryLineGap")
+        local lineHeight = LineHeight()
+        local counters = { text = 0, icon = 0, token = 0, head = 0 }
+        local inner = math.max(1, width - padX * 2)
+        local reserve = #state.buttons > 0 and (#state.buttons * Part(style, "summaryButtonSize") + Part(style, "summaryGap")) or 0
+        local y = padY
+        local lines = { state.line1, state.line2 }
+        for index, line in ipairs(lines) do
+            if line then
+                if index == 2 then y = y + gap end
+                local left = padX
+                if line.icon then
+                    local size = Part(style, "summaryIconSize")
+                    if place then
+                        counters.head = counters.head + 1
+                        local head = Piece(widget, "head", counters.head)
+                        Place(head, widget, padX, y + (lineHeight - size) / 2, size, size)
+                        UI:SetControlSurface(head, 6, _G.ExwindTools.GUIColors.checkCardSelected, _G.ExwindTools.GUIColors.checkCardSelected)
+                        local iconSize = Part(style, "summaryButtonIconSize")
+                        if type(line.icon) == "string" then head.icon:SetSize(iconSize, iconSize) else head.icon:SetSize(size, size) end
+                        SentenceIcon(head.icon, line.icon, _G.ExwindTools.GUIColors.accent)
+                        head:SetFrameLevel(widget:GetFrameLevel() + 1)
+                        head:Show()
+                    end
+                    left = padX + size + Part(style, "summaryGap")
+                end
+                local rows = FlowLine(widget, line, y, left, padX + inner, index == 1 and reserve or 0, place, counters)
+                y = y + rows * lineHeight
+            end
+        end
+        if place then
+            for kind, used in pairs(counters) do
+                local list = widget._v2Pieces[kind]
+                for i = used + 1, #list do
+                    local piece = list[i]
+                    piece:Hide()
+                    if kind == "token" then piece._v2State = nil end
+                end
+            end
+        end
+        return y + padY
+    end
+    local function Paint(widget)
+        local state = states[widget]
+        local GC = _G.ExwindTools.GUIColors
+        local border = state.selected and GC.inputFocusBorder or (style.cardBorder or GC.cardBorder)
+        UI:SetControlSurface(widget, style.cardRadius or GM.radius.card, style.cardFill or GC.card, border)
+    end
+    function adapter.mount(host, context)
+        local widget, isNew = Factory:AcquireCompositeHost(SENTENCE_POOL, host)
+        if isNew then
+            widget._v2Pieces = { text = {}, icon = {}, token = {}, head = {} }
+            widget._v2Measure = UI:CreateVisualFontString(widget, _G.EXFONTFRAME, "GameFontHighlight")
+            widget._v2Measure:Hide()
+        end
+        UI.ControlAppearance.Font(widget._v2Measure, FontSize(), UI.ControlAppearance.colors.text, "", "GameFontHighlight")
+        local state = { host = host, context = context, enabled = true, buttons = {} }
+        states[widget] = state
+        local size = Part(style, "summaryButtonSize")
+        for _, field in ipairs({ "edit", "remove" }) do
+            if spec[field] then
+                local button = UI:CreateIconButton(widget, size, size, { icon = field == "edit" and "pencil-line" or "trash-2",
+                    appearance = "ghost", iconSize = Part(style, "summaryButtonIconSize"),
+                    hoverIconColor = field == "remove" and _G.ExwindTools.GUIColors.dangerText or nil,
+                    onClick = context:Guard(function(_, mouseButton)
+                        if mouseButton == "LeftButton" then session.owner.actions[spec[field]](context, mouseButton) end
+                    end) })
+                button:SetFrameLevel(widget:GetFrameLevel() + 3)
+                button:Show()
+                state.buttons[#state.buttons + 1] = button
+            end
+        end
+        widget:SetWidth(GM.settings.controlWideWidth)
+        widget:Show()
+        adapter.update(widget, context)
+        return widget
+    end
+    function adapter.update(widget, context)
+        local state = states[widget]
+        state.line1 = session.owner.sources[spec.lineSource](node.scope)
+        ValidateFragments(spec.id, state.line1, "lineSource", session.owner)
+        state.line2 = nil
+        if spec.line2Source then
+            state.line2 = session.owner.sources[spec.line2Source](node.scope)
+            ValidateFragments(spec.id, state.line2, "line2Source", session.owner)
+        end
+        state.selected = false
+        if spec.selected then
+            state.selected = session.owner.predicates[spec.selected](node.scope)
+            Check(type(state.selected) == "boolean", spec.id .. ": predicate must return ordinary boolean")
+        end
+        Paint(widget)
+    end
+    function adapter.measure(widget, context, width) return Arrange(widget, width, false) end
+    function adapter.layout(widget, context, width, height)
+        local state = states[widget]
+        Place(widget, state.host, 0, 0, width, height)
+        Arrange(widget, width, true)
+        local inset, right = Part(style, "sentenceButtonInset"), 0
+        for i = #state.buttons, 1, -1 do
+            local button = state.buttons[i]
+            button:ClearAllPoints()
+            button:SetPoint("TOPRIGHT", widget, "TOPRIGHT", -(inset + right), -inset)
+            right = right + button:GetWidth() + 2
+        end
+        Paint(widget)
+    end
+    function adapter.setEnabled(widget, context, enabled)
+        local state = states[widget]
+        state.enabled = enabled
+        for _, button in ipairs(state.buttons) do button:SetEnabled(enabled) end
+        for _, token in ipairs(widget._v2Pieces.token) do
+            if token._v2State then token._v2State.enabled = enabled; PaintSentenceToken(token) end
+        end
+    end
+    adapter.setVisible = ControlDefaults.setVisible
+    function adapter.release(widget)
+        local state = states[widget]
+        states[widget] = nil
+        for _, button in ipairs(state.buttons) do button:Release() end
+        for kind, list in pairs(widget._v2Pieces) do
+            for _, piece in ipairs(list) do
+                piece:Hide()
+                if kind == "token" then
+                    if GameTooltip:GetOwner() == piece then GameTooltip:Hide() end
+                    piece._v2State = nil
+                    UI:ClearControlSurface(piece)
+                    piece.label:SetText("")
+                    piece.icon:SetTexture(nil)
+                elseif kind == "head" then
+                    UI:ClearControlSurface(piece)
+                    piece.icon:SetTexture(nil)
+                elseif kind == "text" then
+                    piece:SetText("")
+                else
+                    piece:SetTexture(nil)
+                end
+            end
+        end
+        UI:ClearControlSurface(widget)
+        Factory:ReleaseCompositeHost(widget)
+    end
+    return adapter
+end
+
+end
+
+-- 小字键值区（props）：每行 键名 + 无框值框（悬停显框、聚焦描主色边），可带框后图标按钮；多行项平时显示一行灰字，
+-- 点进去换成多行编辑框并把这一行撑高。值框是这里自己建的 EditBox（池化宿主上按项序号复用）。
+local PropsAdapter
+do
+local PROPS_POOL = "EXUI.SettingsV2.Props"
+Factory:InitCompositePool(PROPS_POOL)
+
+local function PaintPropsValue(value)
+    local GC = _G.ExwindTools.GUIColors
+    local box = value.box
+    local focused = box:HasFocus()
+    local hover = value._v2Enabled and value:IsMouseOver()
+    local border = focused and GC.inputFocusBorder or (hover and GC.inputBorder or GC.transparent)
+    UI:SetControlSurface(value, 3, focused and GC.input or GC.transparent, border)
+    value.placeholder:SetShown(not focused and (box:GetText() or "") == "" and not value.preview:IsShown())
+end
+
+PropsAdapter = function(node)
+    local spec, session = node.spec, node.session
+    local style = session.style
+    local states = {}
+    local adapter = {}
+    local function NewValue(widget)
+        local value = CreateFrame("Frame", nil, widget)
+        -- 值框装在滚动框里：单行项框与值框同大；多行项只定宽、高随文字，超过框高（propsMultilineHeight）时框内滚动。
+        value.scroll = CreateFrame("ScrollFrame", nil, value)
+        value.scroll:SetAllPoints(value)
+        value.scroll:EnableMouse(false)
+        value.scroll:EnableMouseWheel(false)
+        value.box = CreateFrame("EditBox", nil, value.scroll)
+        value.box:SetAutoFocus(false)
+        value.box:SetFontObject("GameFontHighlightSmall")
+        value.scroll:SetScrollChild(value.box)
+        value.scroll:SetScript("OnMouseDown", function() if value.box:IsShown() then value.box:SetFocus() end end)
+        value.scroll:SetScript("OnMouseWheel", function(self, delta)
+            local range = self:GetVerticalScrollRange()
+            if range <= 0 then UI:ForwardInputMouseWheel(value, delta) return end
+            self:SetVerticalScroll(math.max(0, math.min(range, self:GetVerticalScroll() - delta * Part(style, "propsValueHeight"))))
+        end)
+        value.box:SetScript("OnCursorChanged", function(self, _, y, _, height)
+            if not self:IsMultiLine() then return end
+            local scroll, top = value.scroll, -y
+            local visible = scroll:GetHeight()
+            if top < scroll:GetVerticalScroll() then
+                scroll:SetVerticalScroll(top)
+            elseif top + height > scroll:GetVerticalScroll() + visible then
+                scroll:SetVerticalScroll(top + height - visible)
+            end
+        end)
+        value.placeholder = UI:CreateVisualFontString(value, _G.EXFONTFRAME, "GameFontHighlightSmall")
+        value.placeholder:SetJustifyH("LEFT")
+        value.placeholder:SetWordWrap(false)
+        value.preview = CreateFrame("Button", nil, value)
+        value.preview:SetAllPoints(value)
+        value.preview.label = UI:CreateVisualFontString(value.preview, _G.EXFONTFRAME, "GameFontHighlightSmall")
+        value.preview.label:SetJustifyH("LEFT")
+        value.preview.label:SetWordWrap(false)
+        value.preview:Hide()
+        local function Repaint() PaintPropsValue(value) end
+        value.box:SetScript("OnEnter", Repaint)
+        value.box:SetScript("OnLeave", Repaint)
+        value.preview:SetScript("OnEnter", Repaint)
+        value.preview:SetScript("OnLeave", Repaint)
+        value.scroll:SetScript("OnEnter", Repaint)
+        value.scroll:SetScript("OnLeave", Repaint)
+        value.box:SetScript("OnEditFocusGained", function() Repaint(); if value._v2OnFocus then value._v2OnFocus(true) end end)
+        value.box:SetScript("OnEditFocusLost", function()
+            if value._v2OnFocus then value._v2OnFocus(false) end
+            Repaint()
+        end)
+        value.box:SetScript("OnEnterPressed", function(self)
+            if self:IsMultiLine() then self:Insert("\n") else self:ClearFocus() end
+        end)
+        value.box:SetScript("OnEscapePressed", function(self) self:ClearFocus() end)
+        value.box:SetScript("OnTextChanged", Repaint)
+        value.preview:SetScript("OnClick", function()
+            if value._v2OnOpen then value._v2OnOpen() end
+        end)
+        return value
+    end
+    -- 把每一项排进行里；place 为真时摆放。返回总高。
+    local function Arrange(widget, width, place)
+        local state = states[widget]
+        local padX, padTop, padBottom = Part(style, "propsPaddingX"), Part(style, "propsPaddingTop"), Part(style, "propsPaddingBottom")
+        local rowHeight, valueHeight = Part(style, "propsRowHeight"), Part(style, "propsValueHeight")
+        local keyWidth, gap = Part(style, "propsKeyWidth"), Part(style, "propsGap")
+        local measure = widget._v2Measure
+        local y = padTop
+        for _, row in ipairs(state.rows) do
+            local tall = row[1].item.multiline and row[1].expanded
+            local height = tall and math.max(rowHeight, Part(style, "propsMultilineHeight") + rowHeight - valueHeight) or rowHeight
+            if place then
+                -- 键名列：第一项固定宽，第二项按字宽（左右再留 propsSecondKeyLeft / Right）。
+                local x = padX
+                local fixed = 0
+                for j, entry in ipairs(row) do
+                    if entry.item.size == "short" then fixed = fixed + Part(style, "propsShortWidth") end
+                    if entry.trailing then fixed = fixed + entry.trailing:GetWidth() + gap end
+                    if j > 1 then
+                        measure:SetText(entry.item.label)
+                        entry.keyWidth = math.ceil(measure:GetUnboundedStringWidth()) + Part(style, "propsSecondKeyLeft") + Part(style, "propsSecondKeyRight")
+                    else
+                        entry.keyWidth, entry.first = keyWidth, true
+                    end
+                    fixed = fixed + entry.keyWidth + gap
+                end
+                local flexCount = 0
+                for _, entry in ipairs(row) do if entry.item.size ~= "short" then flexCount = flexCount + 1 end end
+                local flexWidth = math.max(1, (width - padX * 2 - fixed) / math.max(1, flexCount))
+                for _, entry in ipairs(row) do
+                    entry.key:ClearAllPoints()
+                    entry.key:SetPoint("TOPLEFT", widget, "TOPLEFT", x + (entry.first and Part(style, "propsKeyInset") or Part(style, "propsSecondKeyLeft")),
+                        -(y + (rowHeight - valueHeight) / 2))
+                    entry.key:SetHeight(valueHeight)
+                    x = x + entry.keyWidth + gap
+                    local valueWidth = entry.item.size == "short" and Part(style, "propsShortWidth") or flexWidth
+                    local boxHeight = (entry.item.multiline and entry.expanded) and Part(style, "propsMultilineHeight") or valueHeight
+                    Place(entry.value, widget, x, y + (rowHeight - valueHeight) / 2, valueWidth, boxHeight)
+                    if entry.item.multiline then
+                        entry.value.box:SetWidth(valueWidth) -- 高随文字，超出框高在滚动框里滚
+                    else
+                        entry.value.box:SetSize(valueWidth, boxHeight)
+                    end
+                    entry.value.box:SetTextInsets(Part(style, "propsValueInset"), Part(style, "propsValueInset"), 0, 0)
+                    entry.value.placeholder:ClearAllPoints()
+                    entry.value.placeholder:SetPoint("LEFT", entry.value, "LEFT", Part(style, "propsValueInset"), 0)
+                    entry.value.preview.label:ClearAllPoints()
+                    entry.value.preview.label:SetPoint("LEFT", entry.value, "LEFT", Part(style, "propsValueInset"), 0)
+                    entry.value.preview.label:SetPoint("RIGHT", entry.value, "RIGHT", -Part(style, "propsValueInset"), 0)
+                    x = x + valueWidth
+                    if entry.trailing then
+                        entry.trailing:ClearAllPoints()
+                        entry.trailing:SetPoint("LEFT", widget, "TOPLEFT", x + gap, -(y + rowHeight / 2))
+                        x = x + gap + entry.trailing:GetWidth()
+                    end
+                    x = x + gap
+                    PaintPropsValue(entry.value)
+                end
+            end
+            y = y + height
+        end
+        return y + padBottom
+    end
+    local function Sync(entry)
+        local text = entry.binding:Read()
+        text = text == nil and "" or tostring(text)
+        if not entry.value.box:HasFocus() then entry.value.box:SetText(text) end
+        if entry.item.multiline then
+            entry.value.preview.label:SetText((text:gsub("\n.*", "")))
+            entry.value.preview:SetShown(not entry.expanded)
+            entry.value.box:SetShown(entry.expanded == true)
+            entry.value.scroll:EnableMouse(entry.expanded == true)
+            entry.value.scroll:EnableMouseWheel(entry.expanded == true)
+            if not entry.expanded then entry.value.scroll:SetVerticalScroll(0) end
+        end
+        PaintPropsValue(entry.value)
+    end
+    function adapter.mount(host, context)
+        local widget, isNew = Factory:AcquireCompositeHost(PROPS_POOL, host)
+        if isNew then
+            widget._v2Values = {}
+            widget._v2Keys = {}
+            widget._v2Measure = UI:CreateVisualFontString(widget, _G.EXFONTFRAME, "GameFontHighlightSmall")
+            widget._v2Measure:Hide()
+        end
+        local GC, colors = _G.ExwindTools.GUIColors, UI.ControlAppearance.colors
+        local font = Part(style, "propsFont")
+        -- 预设 propsKeyRole / propsValueRole：键名、值框按标准文字角色（同面板其他行的行名、输入框字号与颜色），
+        -- 占位字用占位色；没写时照小字灰字。
+        local keyRole, valueRole = style.propsKeyRole, style.propsValueRole
+        local function KeyFont(region)
+            if keyRole then UI.ControlAppearance.ApplyTextRole(region, keyRole)
+            else UI.ControlAppearance.Font(region, font, GC.textPlaceholder, "", "GameFontHighlightSmall") end
+        end
+        local function ValueFont(region, color)
+            if valueRole then UI.ControlAppearance.ApplyTextRole(region, valueRole, color)
+            else UI.ControlAppearance.Font(region, font, color, "", "GameFontHighlightSmall") end
+        end
+        KeyFont(widget._v2Measure)
+        local binding = session.owner.binding
+        local state = { host = host, rows = {}, buttons = {}, context = context }
+        states[widget] = state
+        local index = 0
+        for r, row in ipairs(spec.rows) do
+            state.rows[r] = {}
+            for j, item in ipairs(row) do
+                index = index + 1
+                local key = widget._v2Keys[index]
+                if not key then
+                    key = UI:CreateVisualFontString(widget, _G.EXFONTFRAME, "GameFontHighlightSmall")
+                    key:SetJustifyH("LEFT")
+                    key:SetJustifyV("MIDDLE")
+                    key:SetWordWrap(false)
+                    widget._v2Keys[index] = key
+                end
+                KeyFont(key)
+                key:SetText(item.label)
+                key:Show()
+                local value = widget._v2Values[index] or NewValue(widget)
+                widget._v2Values[index] = value
+                value._v2Enabled = true
+                value.box:SetMultiLine(item.multiline == true)
+                value.scroll:EnableMouse(false)
+                value.scroll:EnableMouseWheel(false)
+                value.scroll:SetVerticalScroll(0)
+                ValueFont(value.box, colors.text)
+                ValueFont(value.placeholder, GC.textPlaceholder)
+                ValueFont(value.preview.label, valueRole and colors.text or GC.textDim)
+                value.placeholder:SetText(item.placeholder or "")
+                value.box:SetShown(not item.multiline)
+                value:Show()
+                local entry = { item = item, key = key, value = value,
+                    binding = CreateBinding(binding.moduleKey, binding.config, item.path) }
+                local function Commit()
+                    if not context:IsCurrent() then return end
+                    local text = value.box:GetText() or ""
+                    local old = entry.binding:Read()
+                    if (old == nil and text == "") or old == text then return end
+                    entry.binding:Write(text, "commit")
+                    context:RefreshPage()
+                end
+                value._v2OnFocus = function(gained)
+                    if gained then return end
+                    Commit()
+                    if item.multiline and entry.expanded then
+                        entry.expanded = false
+                        Sync(entry)
+                        context:Invalidate()
+                    end
+                end
+                value._v2OnOpen = item.multiline and context:Guard(function()
+                    entry.expanded = true
+                    Sync(entry)
+                    value.box:SetFocus()
+                    value.box:SetCursorPosition(#(value.box:GetText() or ""))
+                    context:Invalidate()
+                end) or nil
+                if item.trailingIcon then
+                    local size = Part(style, "propsButtonSize")
+                    entry.trailing = UI:CreateIconButton(widget, size, size, { icon = item.trailingIcon, appearance = "ghost",
+                        iconSize = Part(style, "propsButtonIconSize"), iconColor = GC.accent, hoverIconColor = GC.accentHover,
+                        onClick = context:Guard(function(_, mouseButton)
+                            session.owner.actions[item.trailingAction](context, mouseButton, value.box:GetText() or "")
+                        end) })
+                    entry.trailing:SetFrameLevel(widget:GetFrameLevel() + 2)
+                    entry.trailing:Show()
+                    state.buttons[#state.buttons + 1] = entry.trailing
+                end
+                state.rows[r][j] = entry
+                Sync(entry)
+            end
+        end
+        state.used = index
+        widget:SetWidth(GM.settings.controlWideWidth)
+        widget:Show()
+        return widget
+    end
+    function adapter.update(widget)
+        for _, row in ipairs(states[widget].rows) do
+            for _, entry in ipairs(row) do Sync(entry) end
+        end
+    end
+    function adapter.measure(widget, context, width) return Arrange(widget, width, false) end
+    function adapter.layout(widget, context, width, height)
+        Place(widget, states[widget].host, 0, 0, width, height)
+        Arrange(widget, width, true)
+    end
+    function adapter.setEnabled(widget, context, enabled)
+        local state = states[widget]
+        for _, row in ipairs(state.rows) do
+            for _, entry in ipairs(row) do
+                entry.value._v2Enabled = enabled
+                entry.value.box:SetEnabled(enabled)
+                entry.value.preview:SetEnabled(enabled)
+                if not enabled then entry.value.box:ClearFocus() end
+                PaintPropsValue(entry.value)
+            end
+        end
+        for _, button in ipairs(state.buttons) do button:SetEnabled(enabled) end
+    end
+    function adapter.setVisible(widget, context, visible)
+        if not visible then
+            for _, row in ipairs(states[widget].rows) do
+                for _, entry in ipairs(row) do entry.value.box:ClearFocus() end
+            end
+        end
+        widget:SetShown(visible)
+    end
+    function adapter.release(widget)
+        local state = states[widget]
+        states[widget] = nil
+        for _, button in ipairs(state.buttons) do button:Release() end
+        for i, value in ipairs(widget._v2Values) do
+            value._v2OnFocus, value._v2OnOpen, value._v2Enabled = nil, nil, nil
+            value.box:ClearFocus()
+            value.box:SetText("")
+            value.box:SetEnabled(true)
+            value.preview:SetEnabled(true)
+            value.preview:Hide()
+            value.preview.label:SetText("")
+            value.placeholder:SetText("")
+            UI:ClearControlSurface(value)
+            value:Hide()
+            widget._v2Keys[i]:SetText("")
+            widget._v2Keys[i]:Hide()
+        end
+        Factory:ReleaseCompositeHost(widget)
+    end
+    return adapter
+end
+
+end
+
 -- 预览卡网格（catalog）：一组可选卡片，每张 = 预览区（图标，或 owner 绘制回调画的缩略预览）+ 名字。
 -- 每行张数按宽度算（不小于 catalogCardMinWidth，多出的宽平分），卡片位置由 Core 排，绘制回调只画预览区内部。
+-- catalogLabelLines（预设可覆盖，默认 1）> 1 时名字放不下换行、最多这么多行，每排卡高按这一排名字最多的行数算。
 local CATALOG_POOL, CATALOG_CARD_POOL = "EXUI.SettingsV2.Catalog", "EXUI.SettingsV2.CatalogCard"
 Factory:InitCompositePool(CATALOG_POOL)
 Factory:InitCompositePool(CATALOG_CARD_POOL)
@@ -2466,9 +3900,18 @@ local function PaintCatalogCard(card)
     if not state then return end
     local colors = _G.ExwindTools.GUIColors
     local hover = state.enabled and card.button:IsMouseOver()
+    local text = UI.ControlAppearance.colors
+    if state.entry then
+        -- 入口卡：卡底 + 细边，悬停边变亮，选中描主色边、换选中底；图标主色。
+        local border = state.selected and colors.inputFocusBorder or (hover and colors.cardHoverBorder or colors.cardBorder)
+        UI:SetControlSurface(card, GM.radius.card, state.selected and colors.checkCardSelected or colors.card, border)
+        card.label:SetTextColor(unpack(state.enabled and text.text or text.muted))
+        if state.tintIcon then card.icon:SetVertexColor(unpack(colors.accent)) end
+        card:SetAlpha(state.enabled and 1 or 0.6)
+        return
+    end
     local border = state.selected and colors.accent or (hover and colors.cardHoverBorder or colors.cardBorder)
     UI:SetControlSurface(card, GM.radius.control, state.selected and colors.segmentSelected or colors.panel, border)
-    local text = UI.ControlAppearance.colors
     card.label:SetTextColor(unpack(state.enabled and text.text or text.muted))
     card:SetAlpha(state.enabled and 1 or 0.6)
 end
@@ -2476,6 +3919,8 @@ end
 local function CatalogAdapter(node)
     local spec, session = node.spec, node.session
     local style = session.style
+    local entry = spec.presentation == "entry"
+    local labelLines = entry and 1 or Part(style, "catalogLabelLines")
     local states = {}
     local adapter = {}
     local function ReleaseCards(state)
@@ -2483,6 +3928,11 @@ local function CatalogAdapter(node)
             if card._v2State.cleanup then card._v2State.cleanup() end
             card._v2State = nil
             card.icon:SetTexture(nil)
+            card.icon:SetVertexColor(1, 1, 1, 1)
+            card.icon:SetParent(card.canvas)
+            card.icon:ClearAllPoints()
+            card.icon:SetPoint("CENTER")
+            card.canvas:Show()
             card.label:SetText("")
             UI:ClearControlSurface(card)
             card:SetAlpha(1)
@@ -2530,13 +3980,27 @@ local function CatalogAdapter(node)
                 end)
             end
             card.button:SetFrameLevel(card:GetFrameLevel() + 3)
-            UI.ControlAppearance.Font(card.label, Part(style, "catalogLabelFont"), UI.ControlAppearance.colors.text, "", "GameFontHighlightSmall")
+            UI.ControlAppearance.Font(card.label, Part(style, entry and "entryLabelFont" or "catalogLabelFont"),
+                UI.ControlAppearance.colors.text, "", "GameFontHighlightSmall")
             card.label:SetText(record.text)
-            local iconSize = Part(style, "catalogIconSize")
+            card.label:SetWordWrap(labelLines > 1)
+            if labelLines > 1 then card.label:SetMaxLines(labelLines) end
+            local iconSize = Part(style, entry and "entryIconSize" or "catalogIconSize")
             card.icon:SetSize(iconSize, iconSize)
             card.icon:SetShown(record.icon ~= nil and not spec.paint)
             if record.icon and not spec.paint then SetIconTexture(card.icon, record.icon) end
-            local cardState = { selected = record.selected == true, enabled = state.enabled }
+            if entry then
+                -- 入口卡不用预览区：图标直接挂在卡上靠左，名字跟在图标右边。
+                card.canvas:Hide()
+                card.icon:SetParent(card)
+                card.icon:ClearAllPoints()
+                card.icon:SetPoint("LEFT", card, "LEFT", Part(style, "entryPaddingX"), 0)
+                card.label:SetJustifyH("LEFT")
+            else
+                card.label:SetJustifyH("CENTER")
+            end
+            local cardState = { selected = record.selected == true, enabled = state.enabled, entry = entry,
+                tintIcon = entry and type(record.icon) == "string" }
             cardState.onClick = spec.select and context:Guard(function()
                 session.owner.actions[spec.select](context, record)
             end) or nil
@@ -2553,14 +4017,41 @@ local function CatalogAdapter(node)
         end
     end
     -- 每行张数与卡宽：至少一张，卡宽不小于 catalogCardMinWidth（行太窄时一张占满）。
-    local function Grid(width)
-        local minWidth, gap = Part(style, "catalogCardMinWidth"), Part(style, "catalogGap")
+    local function Grid(width, count)
+        local minWidth, gap = Part(style, entry and "entryMinWidth" or "catalogCardMinWidth"), Part(style, entry and "entryGap" or "catalogGap")
         local columns = math.max(1, math.floor((width + gap) / (minWidth + gap)))
+        -- 入口卡：卡片少于能放的列数时平分整行（两张就各占一半）。
+        if entry then columns = math.max(1, math.min(columns, count)) end
         return columns, (width - gap * (columns - 1)) / columns, gap
     end
     local function CardHeight(widget)
+        if entry then return Part(style, "entryHeight") end
         local lineHeight = select(2, widget._v2LabelFont:GetFont()) or Part(style, "catalogLabelFont")
         return Part(style, "catalogPadding") * 2 + Part(style, "catalogPreviewHeight") + Part(style, "catalogLabelGap") + math.ceil(lineHeight)
+    end
+    -- 每排卡高：名字只占一行时都是 CardHeight；可换行时按这一排名字最多占几行（用隐藏的量字串按卡内宽量）。
+    local function RowHeights(widget, width)
+        local state = states[widget]
+        local count = #state.cards
+        local columns, cardWidth, gap = Grid(width, count)
+        local base, heights = CardHeight(widget), {}
+        local lineHeight = select(2, widget._v2LabelFont:GetFont()) or Part(style, "catalogLabelFont")
+        local font = widget._v2LabelFont
+        if labelLines > 1 then
+            font:SetWordWrap(true)
+            font:SetWidth(math.max(1, cardWidth - Part(style, "catalogPadding") * 2))
+        end
+        for i = 1, count do
+            local row = math.floor((i - 1) / columns) + 1
+            local height = base
+            if labelLines > 1 then
+                font:SetText(state.records[i].text)
+                local lines = math.min(labelLines, math.max(1, math.floor(font:GetStringHeight() / lineHeight + 0.5)))
+                height = base + math.ceil(lineHeight * lines) - math.ceil(lineHeight)
+            end
+            heights[row] = math.max(heights[row] or 0, height)
+        end
+        return heights, columns, cardWidth, gap
     end
     function adapter.mount(host, context)
         local widget, isNew = Factory:AcquireCompositeHost(CATALOG_POOL, host)
@@ -2576,25 +4067,34 @@ local function CatalogAdapter(node)
     end
     function adapter.update(widget, context) Rebuild(widget, context) end
     function adapter.measure(widget, context, width)
-        local count = #states[widget].cards
-        if count == 0 then return 0 end
-        local columns, _, gap = Grid(width)
-        local rows = math.ceil(count / columns)
-        return rows * CardHeight(widget) + (rows - 1) * gap
+        if #states[widget].cards == 0 then return 0 end
+        local heights, _, _, gap = RowHeights(widget, width)
+        local total = (#heights - 1) * gap
+        for _, height in ipairs(heights) do total = total + height end
+        return total
     end
     function adapter.layout(widget, context, width, height)
         local state = states[widget]
         Place(widget, state.host, 0, 0, width, height)
-        local columns, cardWidth, gap = Grid(width)
-        local cardHeight, pad = CardHeight(widget), Part(style, "catalogPadding")
+        local heights, columns, cardWidth, gap = RowHeights(widget, width)
+        local pad = Part(style, "catalogPadding")
         local previewHeight = Part(style, "catalogPreviewHeight")
+        local tops, top = {}, 0
+        for row, rowHeight in ipairs(heights) do tops[row] = top; top = top + rowHeight + gap end
         for i, card in ipairs(state.cards) do
-            local column, row = (i - 1) % columns, math.floor((i - 1) / columns)
-            Place(card, widget, column * (cardWidth + gap), row * (cardHeight + gap), cardWidth, cardHeight)
-            Place(card.canvas, card, pad, pad, cardWidth - pad * 2, previewHeight)
+            local column, row = (i - 1) % columns, math.floor((i - 1) / columns) + 1
+            Place(card, widget, column * (cardWidth + gap), tops[row], cardWidth, heights[row])
             card.label:ClearAllPoints()
-            card.label:SetPoint("TOPLEFT", card, "TOPLEFT", pad, -(pad + previewHeight + Part(style, "catalogLabelGap")))
-            card.label:SetPoint("TOPRIGHT", card, "TOPRIGHT", -pad, -(pad + previewHeight + Part(style, "catalogLabelGap")))
+            if entry then
+                local padX = Part(style, "entryPaddingX")
+                local left = card.icon:IsShown() and (padX + Part(style, "entryIconSize") + Part(style, "entryIconGap")) or padX
+                card.label:SetPoint("LEFT", card, "LEFT", left, 0)
+                card.label:SetPoint("RIGHT", card, "RIGHT", -padX, 0)
+            else
+                Place(card.canvas, card, pad, pad, cardWidth - pad * 2, previewHeight)
+                card.label:SetPoint("TOPLEFT", card, "TOPLEFT", pad, -(pad + previewHeight + Part(style, "catalogLabelGap")))
+                card.label:SetPoint("TOPRIGHT", card, "TOPRIGHT", -pad, -(pad + previewHeight + Part(style, "catalogLabelGap")))
+            end
             PaintCatalogCard(card)
         end
     end
@@ -2901,7 +4401,7 @@ end
 
 -- 内容自己画的种类：节点种类 → 适配器工厂（mount/update/measure/layout/setEnabled/setVisible/release）。
 local PartAdapters = { chips = ChipsAdapter, chipinput = ChipsAdapter, summary = SummaryAdapter, catalog = CatalogAdapter,
-    url = UrlAdapter, notice = NoticeAdapter, picklist = PickListAdapter }
+    url = UrlAdapter, notice = NoticeAdapter, picklist = PickListAdapter, sentence = SentenceAdapter, props = PropsAdapter }
 
 Build = function(session, spec, parentFrame, scope, parent)
     local node = { session=session, spec=spec, scope=scope, parent=parent, alive=true, generation=1, children={} }
@@ -2990,22 +4490,37 @@ MountNode = function(node, parentFrame)
         node.frame:SetLayoutInvalidationHandler(function(card)
             if spec.collapsible then
                 card._exSettingsCardToggle._exGlyph:SetText(card._exSettingsCardCollapsed and "+" or "−")
+                -- page.collapse：用户点了标题，新状态交给 owner 记。
+                if session.collapse and node.context and node.context:IsCurrent() then
+                    session.owner.actions[session.collapse.toggle](node.context, spec.id, card._exSettingsCardCollapsed == true)
+                end
             end
             session:Refresh()
         end)
+        if spec.collapsible and session.collapse then
+            local collapsed = CollapseState(node)
+            if collapsed ~= nil then node.frame:SetCollapsed(collapsed, true) end
+        end
     else
         node.frame = Acquire(parentFrame)
         node.body = node.frame
-        if spec.kind == "setting" then
+        if spec.kind == "setting" and session.quick ~= "inline" then
             -- 标签、说明与分隔线由共享设置行画；右侧子节点挂在独立的控件区里。
             local style = session.style
-            -- 快速工具条的星号：owner 给了 quickbar 时，quick 行名字前（勾选框 / 图标之前）留一格。
-            local starred = spec.quick ~= nil and session.owner.quickbar ~= nil
+            -- 快速工具条的星号：owner 给了 quickbar 时，每个设置行名字前（勾选框 / 图标之前）都留一格（各行名字对齐），
+            -- 只有 quick 行在这格里画星。预设 quickStarTrailing：不留这一格，星号紧跟 quick 行名字后面，其他行没有。
+            local starColumn = session.owner.quickbar ~= nil
+            local starred = spec.quick ~= nil and starColumn
+            local starTrailing = style and style.quickStarTrailing
+            local trailingWidth = (spec.help or spec.helpSource) and (style.helpIconSize + STYLE_HELP_GAP) or 0
+            if starred and starTrailing then
+                trailingWidth = trailingWidth + Part(style, "quickStarGap") + Part(style, "quickStarSize")
+            end
             node.settingRow = UI:CreateSettingsRow(node.frame, { label = spec.label, description = spec.description,
                 lead = spec.toggle and "checkbox" or (spec.icon and "icon") or nil, icon = spec.icon, style = style,
                 autoWidth = style and style.settingAutoWidth or nil, -- 预设 settingAutoWidth：setting 行文字列自适应
-                trailingWidth = (spec.help or spec.helpSource) and (style.helpIconSize + STYLE_HELP_GAP) or nil,
-                leadExtra = starred and (Part(style, "quickStarSize") + Part(style, "quickStarGap")) or nil })
+                trailingWidth = trailingWidth > 0 and trailingWidth or nil,
+                leadExtra = (starColumn and not starTrailing) and (Part(style, "quickStarSize") + Part(style, "quickStarGap")) or nil })
             if starred then
                 if not node.frame._v2QuickStar then node.frame._v2QuickStar = QuickStar(node.frame) end
                 node.quickStar = node.frame._v2QuickStar
@@ -3030,7 +4545,7 @@ MountNode = function(node, parentFrame)
             if spec.toggle then
                 -- 勾选框写原有 enabled 字段；没勾时右侧控件由 RefreshNode 统一变灰。
                 local binding = session.owner.binding
-                node.toggleBinding = CreateBinding(binding.moduleKey, binding.config, spec.toggle)
+                node.toggleBinding = CreateBinding(binding.moduleKey, binding.config, Session._rows.Path(scope, spec.toggle))
                 node.toggleBox = UI:CreateCheckbox(node.frame, "", node.toggleBinding:Read() == true, function(checked)
                     if not (node.context and node.context:IsCurrent()) then return end
                     node.toggleBinding:Write(checked == true, "commit")
@@ -3054,7 +4569,8 @@ MountNode = function(node, parentFrame)
         end)
     end
     -- 设置行与表格同属“设置列表”：铺满卡宽、相邻时不加间距，由行自己的分隔线隔开。
-    if spec.kind == "setting" or spec.kind == "table" then node.context._exSettingsRow = true end
+    -- 小字键值区（props）也算：紧贴上一行，中间那条线由上一行画。
+    if spec.kind == "setting" or spec.kind == "table" or spec.kind == "props" then node.context._exSettingsRow = true end
     -- 样式页的块（group）和每条记录一块的 repeat 也算设置列表：与相邻行之间不留间距，用行线隔开（见 Stack）。
     if session.style and (spec.kind == "group" or (spec.kind == "repeat" and spec.template.kind == "group")) then
         node.context._exSettingsRow = true
@@ -3070,23 +4586,23 @@ MountNode = function(node, parentFrame)
         if spec.path or spec.controlType == "toggles" or spec.controlType == "preset" then
             local binding = session.owner.binding
             local function BindingFor()
+                local function At(fieldPath) return CreateBinding(binding.moduleKey, binding.config, Session._rows.Path(scope, fieldPath)) end
                 if spec.controlType == "preset" then
                     -- 预设：每个出现过的字段路径一个绑定。
                     local map = {}
                     for _, option in ipairs(spec.options) do
                         for fieldPath in pairs(option.values) do
-                            map[fieldPath] = map[fieldPath] or CreateBinding(binding.moduleKey, binding.config, fieldPath)
+                            map[fieldPath] = map[fieldPath] or At(fieldPath)
                         end
                     end
                     return map
                 end
                 if spec.controlType == "flow" then
-                    return { direction = CreateBinding(binding.moduleKey, binding.config, spec.path),
-                        wrap = CreateBinding(binding.moduleKey, binding.config, spec.wrapPath) }
+                    return { direction = At(spec.path), wrap = At(spec.wrapPath) }
                 end
-                if spec.controlType ~= "toggles" then return CreateBinding(binding.moduleKey, binding.config, spec.path) end
+                if spec.controlType ~= "toggles" then return At(spec.path) end
                 local list = {}
-                for i, item in ipairs(spec.items) do list[i] = CreateBinding(binding.moduleKey, binding.config, item.path) end
+                for i, item in ipairs(spec.items) do list[i] = At(item.path) end
                 return list
             end
             if spec.kind == "control" then node.adapter = StandardControl(spec, BindingFor)
@@ -3117,7 +4633,9 @@ MountNode = function(node, parentFrame)
         end
     elseif spec.kind == "button" then
         local onClick
-        if spec.clickKey then
+        if spec._op then
+            onClick = function() Session._rows.Run(node, spec._op) end
+        elseif spec.clickKey then
             -- Same State contract the settings-section buttons published.
             local moduleKey = session.owner.binding.moduleKey
             onClick = function()
@@ -3134,7 +4652,7 @@ MountNode = function(node, parentFrame)
             local style = session.style
             local size = IconButtonSize(style)
             node.button = UI:CreateIconButton(node.frame, size, size, { icon = spec.icon,
-                iconSize = style.iconButtonIconSize, appearance = style.iconButtonAppearance,
+                iconSize = style.iconButtonIconSize, appearance = style.iconButtonAppearance, tooltip = spec.tip,
                 onClick = function(button, mouseButton)
                     if mouseButton == "LeftButton" then guarded(button, mouseButton) end
                 end })
@@ -3271,6 +4789,19 @@ ReleaseNode = function(node, failures)
                     card._v2Help:Hide()
                     card._v2Help._v2Text = nil
                     card._v2CollapsedDivider:Hide()
+                    card._v2CollapsedDivider:SetColorTexture(unpack(UI.ControlAppearance.DungeonAura.line))
+                end
+                if card._v2Step then
+                    card._v2Step.number:Hide()
+                    card._v2Step.number:SetText("")
+                    card._v2Step.dot:Hide()
+                    card._v2Step.line:Hide()
+                end
+                if card._v2StyleCard then
+                    card._v2StyleCard:Hide()
+                    UI:ClearControlSurface(card._v2StyleCard)
+                    card._v2Chevron:Hide()
+                    card._exSettingsCardToggle._exGlyph:Show()
                 end
                 if node.toggleFont then
                     card._exSettingsCardToggle._exGlyph:SetFont(unpack(node.toggleFont))
@@ -3316,7 +4847,8 @@ local function SyncRepeat(node)
     -- 旧成员清理出错：区域保持为空（下次 Refresh 会重建），先报告原错，不在脏状态上继续建新成员。
     Rethrow(failures)
     for i, record in ipairs(records) do
-        local scope = { item=record, index=i, parent=node.scope, _repeatNode=node }
+        local scope = { item=record, index=i, parent=node.scope, _repeatNode=node,
+            _arrayPath=node.spec.path and Session._rows.Path(node.scope, node.spec.path) or nil }
         Build(node.session, node.spec.template, node.body, scope, node)
     end
 end
@@ -3329,17 +4861,26 @@ local function Predicate(node, field)
     return result
 end
 
+-- page.collapse.state：owner 记的折叠状态（true 收起 / false 展开 / nil 用声明的 collapsed）。
+CollapseState = function(node)
+    local result = node.session.owner.predicates[node.session.collapse.state](node.scope, node.spec.id)
+    Check(result == nil or type(result) == "boolean", node.spec.id .. ": page.collapse.state must return boolean or nil")
+    return result
+end
+
 -- 渐进披露：advanced 节点只在展开时显示；visible 判断照旧。
 local function Shown(node)
     if node.spec.advanced and not node.session.expanded then return false end
     return Predicate(node, "visible")
 end
 
--- 样式标题条右侧灰字：写了 note 显示 owner.texts[note]()；没写显示“N 项”
+-- 样式标题条右侧灰字：写了 note 显示 owner.texts[note]()；没写显示“N 项”（预设 countNote = false 时不显示）
 -- （可见的直接子节点数，repeat 按展开后的成员计，折叠不影响计数）。空字串不显示。
 local function StyleNote(node)
     local text
-    if node.spec.note then
+    if node.spec.note == nil and node.session.style.countNote == false then
+        text = "" -- 预设 countNote = false：没写 note 的标题条不显示“N 项”
+    elseif node.spec.note then
         text = node.session.owner.texts[node.spec.note](node.scope)
         Check(type(text) == "string", node.spec.id .. ": note text must return string")
     else
@@ -3364,7 +4905,7 @@ end
 
 RefreshNode = function(node, parentVisible, parentEnabled)
     node.visible = parentVisible and Shown(node)
-    node.enabled = parentEnabled and Predicate(node, "enabled")
+    node.enabled = parentEnabled and Predicate(node, "enabled") and Session._rows.Enabled(node)
     node.managesEnabled = node.spec.enabled ~= nil or (node.parent and node.parent.managesEnabled)
     node.frame:SetShown(node.visible)
     if node.spec.kind == "repeat" then SyncRepeat(node) end
@@ -3394,6 +4935,15 @@ RefreshNode = function(node, parentVisible, parentEnabled)
     end
     if node.spec.kind == "card" and node.spec.titleSource then
         node.frame._exSettingsCardTitle:SetText(node.session.owner.texts[node.spec.titleSource](node.scope))
+    end
+    if node.spec.kind == "card" and node.spec.step then
+        local done = node.session.owner.predicates[node.spec.step.done](node.scope)
+        Check(type(done) == "boolean", node.spec.id .. ": step.done must return ordinary boolean")
+        node.stepDone = done
+    end
+    if node.spec.kind == "card" and node.spec.collapsible and node.session.collapse then
+        local collapsed = CollapseState(node)
+        if collapsed ~= nil and collapsed ~= node.frame:IsCollapsed() then node.frame:SetCollapsed(collapsed, true) end
     end
     local childrenVisible = node.visible and not (node.spec.kind == "card" and node.frame._exSettingsCardCollapsed)
     for _, child in ipairs(node.children) do RefreshNode(child, childrenVisible, childrenEnabled) end
@@ -3445,7 +4995,21 @@ local function Natural(node)
         local width = ChoiceNaturalWidth(node.instance)
         if width then return width end
     end
+    -- 预设写了 quickSelectWidth：快速工具条 inline 格里没写 size 的下拉用这个宽。
+    if style and style.quickSelectWidth and node.session.quick == "inline" and controlType == "select"
+        and not node.spec.size then
+        return style.quickSelectWidth
+    end
+    -- 预设 inputFitPlaceholder：没写 size 的输入框至少放得下整句占位字（放不下整行时照常收窄）。
+    if style and style.inputFitPlaceholder and controlType == "input" and not node.spec.size and node.spec.placeholder
+        and node.instance and node.instance.placeholder then
+        local fit = math.ceil(node.instance.placeholder:GetUnboundedStringWidth()) + GM.space.inputTextPadX * 2
+        return math.max(SizeWidth(node.spec, style) or node.naturalWidth or 0, fit)
+    end
     if kind == "control" and SizeWidth(node.spec, style) then return SizeWidth(node.spec, style) end
+    -- 预设写了 switchWidth / sliderWidth：不带 label 的开关、滑杆按预设宽（不受按钮最小宽限制）。
+    if style and style.switchWidth and controlType == "switch" and not node.spec.label then return style.switchWidth end
+    if style and style.sliderWidth and controlType == "slider" and not node.spec.label then return style.sliderWidth end
     -- 预设写了 colorWidth：不带 label 的颜色控件（path 或记录控件）只画色块，宽取 colorWidth。
     if style and style.colorWidth and controlType == "color" then
         local colorSpec = node.adapter and node.adapter._exSpec or node.spec
@@ -3535,6 +5099,28 @@ local function IsSettingsCard(node)
     return node.spec.kind == "card" and not node.spec.bodyHeight
 end
 
+-- 自带外框的种类（句子卡、入口卡、横排选择卡、法术芯片输入、只有按钮的无行名行）：
+-- 样式页卡片里只有它们（或什么都没显示）时不再画外卡，免得框里再套一层框、底部按钮外面多一条空长框。
+local function SelfSurfaced(spec)
+    if spec.kind == "repeat" then return SelfSurfaced(spec.template) end
+    if spec.kind == "setting" and spec.label == nil and spec.children and #spec.children > 0 then
+        for _, child in ipairs(spec.children) do
+            if child.kind ~= "button" then return false end
+        end
+        return true
+    end
+    return spec.kind == "sentence" or (spec.kind == "catalog" and spec.presentation == "entry")
+        or (spec.kind == "control" and spec.controlType == "optionlist" and spec.columns ~= nil)
+        or spec.kind == "chipinput"
+end
+
+local function SelfSurfacedOnly(node)
+    for _, child in ipairs(node.children) do
+        if child.visible and not SelfSurfaced(child.spec) then return false end
+    end
+    return true
+end
+
 local function Bleeds(node)
     return IsSettingsRow(node) or (node.spec.kind == "component" and BleedComponents[node.spec.component] == true)
 end
@@ -3543,6 +5129,7 @@ end
 local function CardPadding(node)
     -- 样式页：行左右不留白、行线通栏，标题条到第一行取预设（G3 为 0），卡片底不留白。
     local style = node.session.style
+    if style and node.session.quick == "inline" then return 0, 0, 0 end
     if style then return 0, style.headerToFirstRow or 0, 0 end
     if not IsSettingsCard(node) then return PAD, PAD, PAD end
     local first, last
@@ -3586,8 +5173,11 @@ local function Stack(node, width, columns, offset)
         if previous and not (row and IsSettingsRow(previous)) then
             -- 卡片与卡片之间按 SettingsCardSpacing；其余节点保持原间距。
             -- 样式页：组与组之间取预设 groupGap。
+            -- 样式页里两个自带外框的件（句子卡、入口卡……）之间取预设 surfaceGap。
             y = y + ((child.spec.kind == "card" and previous.spec.kind == "card")
-                and (style and style.groupGap or SETTINGS.cardGap) or GAP)
+                and (style and style.groupGap or SETTINGS.cardGap)
+                or (style and style.surfaceGap and SelfSurfaced(child.spec) and SelfSurfaced(previous.spec) and style.surfaceGap)
+                or GAP)
         end
         local inset = Bleeds(child) and bleed or 0
         local height = LayoutNode(child, width + inset * 2, columns)
@@ -3637,6 +5227,7 @@ local function Flow(node, width)
                 local shrink = Flexible(child)
                     or (spec.kind == "control" and SHRINKABLE_CONTROLS[spec.controlType] and not spec.size)
                 minimum = shrink and math.min(wanted, GM.settings.controlMinWidth) or wanted
+                if child.instance and child.instance._exMinWidth then minimum = math.min(wanted, child.instance._exMinWidth) end
             end
             -- 0.01 容差：自然宽（逐项相加）与这里的累计宽浮点舍入顺序不同，刚好排满的一行不能因 1ulp 误差而换行。
             if #line > 0 and used + GAP + minimum > width + 0.01 then
@@ -3724,6 +5315,10 @@ local function TableColumns(node)
             local controlType = leaf and leaf.spec.controlType
             if kind == "control" and (controlType == "switch" or controlType == "checkbox" or controlType == "card") then
                 resolved.width = TABLE_SWITCH_WIDTH
+            elseif node.spec._rowsBound and kind == "control" and SizeWidth(leaf.spec, node.session.style)
+                and (controlType == "number" or leaf.spec.size == "short") then
+                -- 按行绑定的列表：数字框、short 档控件列只占控件自身宽（加格内边距），剩余宽留给输入框列。
+                resolved.width = Natural(leaf) + 8 + GM.settings.tableCellPadX * 2
             elseif kind == "button" then
                 resolved.width = math.max(TABLE_BUTTON_WIDTH, Natural(leaf) + 8)
             else
@@ -3766,15 +5361,77 @@ local function LayoutTableRow(row, width, rects, isLast)
     return height
 end
 
-local function LayoutTable(node, width)
-    node.tableHeader._exSettingsTableColumns = TableColumns(node)
+-- 预设 tableEmptyCompact：表格没有记录、只剩新增行时不画表头，新增按钮靠右、行高同普通设置行。
+-- （本文件顶层局部变量快到上限，和 LayoutTable 包在一个 do 块里。）
+local LayoutTable
+do
+local function LayoutEmptyAddRow(node, row, width)
+    local style = node.session.style
+    local padX, padY = style.rowPaddingX or GM.settings.rowPaddingX, style.rowPaddingY or 0
+    local addCell = row.children[#row.children]
+    local cellWidth = math.max(1, Natural(addCell))
+    local cellHeight = LayoutNode(addCell, cellWidth)
+    local height = math.max(style.rowMinHeight or 0, cellHeight + padY * 2)
+    for _, cell in ipairs(row.children) do
+        if cell ~= addCell and cell.visible then Place(cell.frame, row.body, 0, 0, 1, LayoutNode(cell, 1)) end
+    end
+    Place(addCell.frame, row.body, width - padX - cellWidth, (height - cellHeight) / 2, cellWidth, cellHeight)
+    row.tableRow:SetSize(math.max(1, width), height)
+    row.tableRow:ClearAllPoints()
+    row.tableRow:SetPoint("TOPLEFT", row.frame, "TOPLEFT", 0, 0)
+    row.tableRow._exSettingsTableDivider:Hide()
+    if row.separator then row.separator:Hide() end
+    UI:ClearControlSurface(row.frame)
+    row.frame:SetSize(math.max(1, width), height)
+    Place(row.frame, node.body, 0, 0, width, height)
+    return height
+end
+
+LayoutTable = function(node, width)
+    local style = node.session.style
+    local compact = style and style.tableEmptyCompact
+    local visible = {}
+    local addRow, records = nil, 0
+    for _, row in ipairs(TableRows(node)) do
+        if row.visible then
+            visible[#visible + 1] = row
+            if row.spec.id == node.spec.id .. ".add.row" then addRow = row else records = records + 1 end
+        end
+    end
+    node.tableHeader:SetShown(not (compact and addRow and records == 0))
+    if compact and addRow and records == 0 then
+        for _, child in ipairs(node.children) do
+            if child.visible and child.spec.kind == "repeat" then Place(child.frame, node.body, 0, 0, width, 1) end
+        end
+        return LayoutEmptyAddRow(node, addRow, width)
+    end
+    local columns = TableColumns(node)
+    node.tableHeader._exSettingsTableColumns = columns
     local headerHeight, rects = UI:UpdateSettingsTableHeaderLayout(node.tableHeader, width)
+    if compact then
+        -- 列名不换行：分到的宽比列名窄的列改成按列名定宽，再排一次。
+        local widened = false
+        for i, column in ipairs(columns) do
+            local label = node.tableHeader._exSettingsTableLabels[i]
+            local need = label and math.ceil(label:GetUnboundedStringWidth()) + 1 or 0
+            if rects[i] and rects[i].width < need then column.width, column.weight, widened = need, nil, true end
+        end
+        if widened then headerHeight, rects = UI:UpdateSettingsTableHeaderLayout(node.tableHeader, width) end
+    end
+    if style and style.tableHeaderCellAligned then
+        -- 列名和下面格子里的控件左缘对齐（格子左右各缩 tableCellPadX）。
+        local cellPad = GM.settings.tableCellPadX
+        for i, rect in ipairs(rects) do
+            local label = node.tableHeader._exSettingsTableLabels[i]
+            if label then
+                label:ClearAllPoints()
+                label:SetPoint("LEFT", node.tableHeader, "LEFT", rect.x + cellPad, 0)
+                label:SetWidth(math.max(1, rect.width - cellPad * 2))
+            end
+        end
+    end
     node.tableHeader:ClearAllPoints()
     node.tableHeader:SetPoint("TOPLEFT", node.frame, "TOPLEFT", 0, 0)
-    local visible = {}
-    for _, row in ipairs(TableRows(node)) do
-        if row.visible then visible[#visible + 1] = row end
-    end
     local last = visible[#visible]
     local y = headerHeight
     for _, child in ipairs(node.children) do
@@ -3799,6 +5456,7 @@ local function LayoutTable(node, width)
     end
     return y
 end
+end
 
 -- 设置行：左标签（可带说明）右控件区；控件区按子节点自然宽占位，放不下时设置行自己转为上下排列。
 local function SettingMinWidth(node)
@@ -3810,22 +5468,64 @@ local function SettingMinWidth(node)
             if spec.kind == "control" and SHRINKABLE_CONTROLS[spec.controlType] and not spec.size then
                 childWidth = math.min(childWidth, GM.settings.controlMinWidth)
             end
+            -- 自己能收窄的原生选择器（每行个数一排方块）报了最窄宽。
+            if child.instance and child.instance._exMinWidth then childWidth = math.min(childWidth, child.instance._exMinWidth) end
             width, count = width + childWidth + (count > 0 and GAP or 0), count + 1
         end
     end
     return math.max(1, width)
 end
 
-local function LayoutSetting(node, width)
+-- 没有行名的设置行：只放按钮时按钮照旧靠右（底栏“确定”这类）；只显示着一个控件时返回它。
+-- （本文件顶层局部变量快到上限，这两个小函数和 LayoutSetting 包在一个 do 块里。）
+local LayoutSetting
+do
+local function ButtonsOnly(node)
+    for _, child in ipairs(node.children) do
+        if child.visible and child.spec.kind ~= "button" then return false end
+    end
+    return true
+end
+
+local function SoleChild(node)
+    local sole
+    for _, child in ipairs(node.children) do
+        if child.visible then
+            if sole then return nil end
+            sole = child
+        end
+    end
+    return sole
+end
+
+LayoutSetting = function(node, width)
     local row = node.settingRow
     UI:SetSettingsRowLast(row, node.context._exRowLast ~= false)
     -- 控件区按自然宽请求；放不下时先收窄标签列（不小于窄版文字宽），再把输入框/下拉收窄到最小宽，
     -- 仍放不下才上标签、下控件。
-    row._exSettingsRowControlWidth = math.max(1, Natural(node))
-    row._exSettingsRowMinControlWidth = SettingMinWidth(node)
-    local _, _, _, controlWidth = UI:UpdateSettingsRowLayout(row, width, StyledControlHeight(node.session.style))
-    local controlHeight = math.max(1, Flow(node, controlWidth))
-    local height, x, y, _, _, leadX, leadTop = UI:UpdateSettingsRowLayout(row, width, controlHeight)
+    local style = node.session.style
+    local _, height, x, y, controlWidth, controlHeight, leadX, leadTop
+    if node.spec.label == nil and not ButtonsOnly(node) then
+        -- 没有行名的设置行（预设 unlabeledFill）：控件区占满整行，左右只留行内距；只有一个控件时它占满整行。
+        local padX = style.rowPaddingX or GM.settings.rowPaddingX
+        controlWidth = math.max(1, width - padX * 2)
+        local sole = SoleChild(node)
+        controlHeight = math.max(1, sole and LayoutNode(sole, controlWidth) or Flow(node, controlWidth))
+        if sole then Place(sole.frame, node.body, 0, 0, controlWidth, controlHeight) end
+        -- 行只用来画分隔线、定行高：控件宽报 1，行不会转上下排。
+        row._exSettingsRowControlWidth, row._exSettingsRowMinControlWidth = 1, 1
+        -- 预设 tallRowPaddingY：比一行控件高的件（排列图示）上下多留这么多，边框不贴着行线。
+        local tall = style.tallRowPaddingY and controlHeight > StyledControlHeight(style) + .5 and style.tallRowPaddingY or 0
+        height, _, y, _, _, leadX, leadTop = UI:UpdateSettingsRowLayout(row, width, controlHeight + tall * 2)
+        y = y + tall
+        x = padX
+    else
+        row._exSettingsRowControlWidth = math.max(1, Natural(node))
+        row._exSettingsRowMinControlWidth = SettingMinWidth(node)
+        _, _, _, controlWidth = UI:UpdateSettingsRowLayout(row, width, StyledControlHeight(style))
+        controlHeight = math.max(1, Flow(node, controlWidth))
+        height, x, y, _, _, leadX, leadTop = UI:UpdateSettingsRowLayout(row, width, controlHeight)
+    end
     row:ClearAllPoints()
     row:SetPoint("TOPLEFT", node.frame, "TOPLEFT", 0, 0)
     if node.rowHelp then
@@ -3840,13 +5540,23 @@ local function LayoutSetting(node, width)
     end
     Place(node.body, node.frame, x, y, controlWidth, controlHeight)
     if node.quickStar then
-        -- 星号在勾选框 / 图标位左边（行为它留了 leadExtra），与标签第一行垂直居中。
         local style = node.session.style
         local size, gap = Part(style, "quickStarSize"), Part(style, "quickStarGap")
-        local leadSize = node.toggleBox and GM.size.checkboxBoxSize or (node.spec.icon and GM.settings.leadIconSize) or 0
         node.quickStar:SetSize(size, size)
         node.quickStar:ClearAllPoints()
-        node.quickStar:SetPoint("LEFT", node.frame, "TOPLEFT", leadX - gap - size, -(leadTop + leadSize / 2))
+        if style and style.quickStarTrailing then
+            -- 星号紧跟标签文字第一行（有小问号时在问号后面）；行已为它在文字列里留出位置（trailingWidth）。
+            local title = row._exSettingsRowTitle
+            local lineHeight = select(2, title:GetFont()) or size
+            local textWidth = math.min(math.ceil(title:GetUnboundedStringWidth()), title:GetWidth())
+            if title:GetJustifyH() == "RIGHT" then textWidth = title:GetWidth() end
+            if node.rowHelp then textWidth = textWidth + STYLE_HELP_GAP + style.helpIconSize end
+            node.quickStar:SetPoint("LEFT", title, "TOPLEFT", textWidth + gap, -lineHeight / 2)
+        else
+            -- 星号在勾选框 / 图标位左边（行为它留了 leadExtra），与标签第一行垂直居中。
+            local leadSize = node.toggleBox and GM.size.checkboxBoxSize or (node.spec.icon and GM.settings.leadIconSize) or 0
+            node.quickStar:SetPoint("LEFT", node.frame, "TOPLEFT", leadX - gap - size, -(leadTop + leadSize / 2))
+        end
     end
     if node.toggleBox then
         -- 勾选框容器比方框大一圈，方框居中；让方框左上角落在行给出的位置。
@@ -3856,12 +5566,68 @@ local function LayoutSetting(node, width)
     end
     return height
 end
+end
+
+-- 步骤卡在页面里的位置：第几步、是不是最后一步、是不是第一个没完成的步骤（只数显示着的顶层步骤卡）。
+local function StepPosition(node)
+    local index, count, current, first = 0, 0, nil, nil
+    for _, other in ipairs(node.session.nodes) do
+        if other.visible and other.spec.kind == "card" and other.spec.step then
+            count = count + 1
+            if other == node then index = count end
+            if not first and not other.stepDone then first = other end
+        end
+    end
+    return index, index == count, first == node
+end
+
+-- 步骤条左栏：序号（完成时主色）、圆点（完成实心、当前描主色边、其余深灰边）、到下一步的竖线（完成后变深主色）。
+local function LayoutStep(node, cardHeight)
+    local style, card = node.session.style, node.frame
+    local parts = card._v2Step
+    local GC = _G.ExwindTools.GUIColors
+    local index, last, current = StepPosition(node)
+    local done = node.stepDone == true
+    local titleHeight, dotSize = Part(style, "stepTitleHeight"), Part(style, "stepDotSize")
+    local dotX, border = Part(style, "stepDotX"), Part(style, "stepDotBorder")
+    UI.ControlAppearance.Font(parts.number, Part(style, "stepNumberFont"), GC.textPlaceholder, "", "GameFontHighlightSmall")
+    parts.number:SetTextColor(unpack(done and GC.accent or GC.textPlaceholder))
+    parts.number:SetText(tostring(index))
+    parts.number:ClearAllPoints()
+    parts.number:SetPoint("RIGHT", card, "TOPLEFT", dotX - Part(style, "stepNumberGap"), -titleHeight / 2)
+    parts.number:Show()
+    local top = (titleHeight - dotSize) / 2
+    Place(parts.dot, card, dotX, top, dotSize, dotSize)
+    local ring = done and GC.inputFocusBorder or (current and GC.accent or GC.checkboxHoverBorder)
+    UI:SetControlSurface(parts.dot, dotSize / 2, ring, ring)
+    local coreSize = dotSize - border * 2
+    Place(parts.core, parts.dot, border, border, coreSize, coreSize)
+    local fill = done and GC.inputFocusBorder or GC.panel
+    UI:SetControlSurface(parts.core, coreSize / 2, fill, fill)
+    parts.dot:SetFrameLevel(card:GetFrameLevel() + 2)
+    parts.dot:Show()
+    parts.line:SetShown(not last)
+    if not last then
+        local lineWidth, lineGap = Part(style, "stepLineWidth"), Part(style, "stepLineGap")
+        parts.line:SetColorTexture(unpack(done and GC.primaryFillActive or GC.cardBorder))
+        parts.line:ClearAllPoints()
+        local x = dotX + dotSize / 2 - lineWidth / 2
+        parts.line:SetPoint("TOPLEFT", card, "TOPLEFT", x, -(top + dotSize + lineGap))
+        -- 竖线伸过组间距，停在下一步圆点上方 lineGap 处。
+        parts.line:SetPoint("BOTTOMRIGHT", card, "TOPLEFT", x + lineWidth,
+            -(cardHeight + (style.groupGap or GAP) + top - lineGap))
+    end
+end
 
 -- 样式页的卡片（G3+H1）：整条圆角标题条，左折叠号、组名，最右灰字；条和第一行之间不留白；
 -- 标题条（连同点击区）左右各外伸预设 headerOutset，比下面的行宽；预设 showHeader=false 时不画标题条。原有卡片算法（节标题上移、sectionHeaderBottom）不经过这里。
 local function LayoutStyledCard(node, width)
     local style, card = node.session.style, node.frame
     local padX, padTop, padBottom = CardPadding(node)
+    local step = node.spec.step ~= nil
+    local rail = step and Part(style, "stepRailWidth") or 0
+    if step then padTop, padBottom = Part(style, "stepTitleGap"), Part(style, "stepBottom") end
+    width = width - rail
     local scrollInset = node.scrollFrame and node.scrollFrame:GetVerticalScrollInset() or 0
     local innerWidth = math.max(1, width - padX * 2 - scrollInset)
     local height = math.max(node.spec.minBodyHeight or 0, Stack(node, innerWidth))
@@ -3875,7 +5641,11 @@ local function LayoutStyledCard(node, width)
     local bar, note, help, add = card._v2StyleBar, card._v2StyleNote, card._v2Help, card._v2StyleAdd
     local collapsible = node.spec.collapsible == true
     local showHeader = style.showHeader ~= false and ((title:GetText() or "") ~= "" or collapsible)
+    local collapsed = collapsible and card._exSettingsCardCollapsed == true
     card._v2CollapsedDivider:Hide()
+    local chevron = style.foldGlyph == "chevron"
+    card._v2Chevron:SetShown(showHeader and collapsible and chevron)
+    toggle._exGlyph:SetShown(not chevron)
     help:SetShown(showHeader and node.spec.help ~= nil)
     local headerHeight, outset = 0, showHeader and style.headerOutset or 0
     if showHeader then
@@ -3887,9 +5657,17 @@ local function LayoutStyledCard(node, width)
             toggle:SetSize(style.foldWidth, style.headerHeight)
             UI.ControlAppearance.Font(toggle._exGlyph, style.headerFont, colors.text, "", "GameFontHighlight")
             toggle._exGlyph:SetText(card._exSettingsCardCollapsed and "+" or "−")
+            if chevron then
+                -- 收起朝右、展开朝下（灰色）。
+                card._v2Chevron:SetTexture(UI:GetIcon(collapsed and "chevron-right" or "chevron-down"))
+                card._v2Chevron:SetSize(style.foldWidth, style.foldWidth)
+                card._v2Chevron:SetVertexColor(unpack(colors.muted))
+            end
             x = x + style.foldWidth + style.foldNameGap
         end
-        UI.ControlAppearance.Font(title, style.headerFont, style.headerText or colors.text, "", "GameFontHighlight")
+        local headerFont = step and Part(style, "stepTitleFont") or style.headerFont
+        local headerLine = step and Part(style, "stepTitleHeight") or style.headerHeight
+        UI.ControlAppearance.Font(title, headerFont, style.headerText or colors.text, "", "GameFontHighlight")
         UI.ControlAppearance.Font(note, style.noteFont, colors.muted, "", "GameFontHighlightSmall")
         local noteWidth = note:IsShown() and math.ceil(note:GetUnboundedStringWidth()) or 0
         local helpWidth = node.spec.help and (help:GetWidth() + STYLE_HELP_GAP) or 0
@@ -3901,8 +5679,7 @@ local function LayoutStyledCard(node, width)
         title:SetJustifyH("LEFT")
         title:SetJustifyV("MIDDLE")
         title:SetWidth(math.max(1, math.min(math.ceil(title:GetUnboundedStringWidth()) + 1, room)))
-        headerHeight = math.max(style.headerHeight,
-            math.ceil(title:GetStringHeight()) + style.headerHeight - style.headerFont)
+        headerHeight = math.max(headerLine, math.ceil(title:GetStringHeight()) + headerLine - headerFont)
         title:ClearAllPoints()
         title:SetPoint("LEFT", header, "LEFT", x, 0)
         note:ClearAllPoints()
@@ -3924,14 +5701,37 @@ local function LayoutStyledCard(node, width)
     end
     bar:SetShown(showHeader)
     add:SetShown(showHeader and node.spec.addButton ~= nil)
+    -- 预设 collapsedPadding：收起时标题下留白，底边画一条细线（卡边色）。
+    local collapsedPad = (showHeader and collapsed and style.collapsedPadding) or 0
+    if collapsedPad > 0 then
+        local divider = card._v2CollapsedDivider
+        divider:SetColorTexture(unpack(UI.ControlAppearance.DungeonAura.line)) -- 与标准页收起细线同色
+        divider:ClearAllPoints()
+        divider:SetPoint("TOPLEFT", header, "BOTTOMLEFT", 0, -(collapsedPad - 1))
+        divider:SetPoint("TOPRIGHT", header, "BOTTOMRIGHT", 0, -(collapsedPad - 1))
+        divider:SetHeight(1)
+        divider:Show()
+    end
+    -- 预设 cardFill：行装在圆角带边卡里；卡里只有自带外框的种类（句子卡、入口卡、横排选择卡）时不画。
+    local surface = card._v2StyleCard
+    local drawCard = style.cardFill ~= nil and not collapsed and not node.session.quick and not SelfSurfacedOnly(node)
+    if drawCard then
+        UI:SetControlSurface(surface, style.cardRadius, style.cardFill, style.cardBorder)
+        surface:ClearAllPoints()
+        surface:SetPoint("TOPLEFT", node.body, "TOPLEFT")
+        surface:SetPoint("BOTTOMRIGHT", node.body, "BOTTOMRIGHT")
+        surface:SetFrameLevel(card:GetFrameLevel())
+    end
+    surface:SetShown(drawCard)
+    headerHeight = headerHeight + collapsedPad
     card._exSettingsListExternalHeader.height = headerHeight
     header:ClearAllPoints()
-    header:SetPoint("TOPLEFT", card, "TOPLEFT", -outset, 0)
+    header:SetPoint("TOPLEFT", card, "TOPLEFT", rail - outset, 0)
     header:SetPoint("TOPRIGHT", card, "TOPRIGHT", outset, 0)
-    header:SetHeight(math.max(1, headerHeight))
+    header:SetHeight(math.max(1, headerHeight - collapsedPad))
     header:SetShown(showHeader)
     card:GetBody():ClearAllPoints()
-    PixelUtil.SetPoint(card:GetBody(), "TOPLEFT", card, "TOPLEFT", 0, -headerHeight, 0, 0)
+    PixelUtil.SetPoint(card:GetBody(), "TOPLEFT", card, "TOPLEFT", rail, -headerHeight, 0, 0)
     PixelUtil.SetPoint(card:GetBody(), "TOPRIGHT", card, "TOPRIGHT", 0, -headerHeight, 0, 0)
     card:SetContentHeight((node.spec.bodyHeight or height) + padTop + padBottom)
     if node.scrollFrame then
@@ -3943,7 +5743,9 @@ local function LayoutStyledCard(node, width)
             scrollFrame:GetVerticalScrollRange())))
         scrollFrame:SetShown(not card._exSettingsCardCollapsed)
     end
-    return card:GetPreferredHeight()
+    local cardHeight = card:GetPreferredHeight()
+    if step then LayoutStep(node, cardHeight) end
+    return cardHeight
 end
 
 LayoutNode = function(node, width, columns)
@@ -3992,8 +5794,23 @@ LayoutNode = function(node, width, columns)
         more.label:ClearAllPoints()
         more.label:SetPoint("LEFT", more, "LEFT", inset, 0)
         more.label:SetPoint("RIGHT", more, "RIGHT", 0, 0)
-    elseif kind == "setting" then
+    elseif kind == "setting" and node.settingRow then
         height = LayoutSetting(node, width)
+    elseif kind == "setting" then
+        -- 工具条格（inline）里的行没有设置行外壳：控件按自然宽排成一行、竖直居中，不换行（工具条只有一行高）。
+        local x, placed = 0, {}
+        for _, child in ipairs(node.children) do
+            if child.visible then
+                local childWidth = math.max(1, Natural(child))
+                local childHeight = LayoutNode(child, childWidth)
+                placed[#placed + 1] = { child, x, childWidth, childHeight }
+                height = math.max(height, childHeight)
+                x = x + childWidth + GAP
+            end
+        end
+        for _, entry in ipairs(placed) do
+            Place(entry[1].frame, node.body, entry[2], (height - entry[4]) / 2, entry[3], entry[4])
+        end
     elseif kind == "table" then
         height = LayoutTable(node, width)
     elseif kind == "row" and columns then
@@ -4239,8 +6056,10 @@ function Session:Layout()
     -- 样式页：页面四周留白取 pagePadding，第一组离顶取 firstGroupTop，组间取 groupGap（预设没写的项用原值）。
     local style, pageGap, pad = self.style, GAP, PAD
     if style then pad = style.pagePadding or PAD end
+    if self.quick == "inline" then pad = 0 end -- 工具条格：不留页边
     local width, y = math.max(1, self.root:GetWidth() - pad * 2), pad
     if style then y, pageGap = style.firstGroupTop or pad, style.groupGap or GAP end
+    if self.quick == "inline" then y = 0 end
     local function Arrange(node)
         if node.visible then
             local height = LayoutNode(node, width)
@@ -4312,20 +6131,30 @@ end
 -- 记录表格：把 rowActions / addAction 展开成普通的格与按钮（校验已在展开前做完）。
 -- 操作列由 Core 追加在最后，宽度按按钮文字算；新增按钮放在首行的最后一格，
 -- addAction.input 给出时，同一行第一格放这个输入框（输入和添加在同一行）。
+-- 按行绑定的列表（写了 op）：样式页里 op 行操作画成图标按钮（上移 / 下移 / 删除，文字进悬停提示），
+-- op = add 的新增行放在表格最下面；表格标 _rowsBound，列宽按控件分（见 TableColumns）。
 local function ActionCell(id, buttons)
     return { kind = "cell", id = id, children = { { kind = "row", id = id .. ".line", children = buttons } } }
 end
 
-local function ExpandTables(node)
+local function ExpandTables(node, styled)
     if type(node) ~= "table" then return end
     if node.kind == "table" and (node.rowActions or node.addAction) then
         local hasActions = node.rowActions ~= nil
         if hasActions then node.columns[#node.columns + 1] = { title = _G.ExwindTools.L["操作"], actions = true } end
+        local bound = node.children[1]
+        node._rowsBound = #node.children == 1 and type(bound) == "table" and bound.kind == "repeat" and bound.path ~= nil or nil
         local function Extend(row)
             local buttons = {}
             for i, action in ipairs(node.rowActions) do
-                buttons[i] = { kind = "button", id = action.id, text = action.text, action = action.action,
-                    enabled = action.enabled, presentation = action.presentation, _compact = true }
+                if styled and action.op then
+                    local icon = ({ up = "arrow-up", down = "arrow-down", remove = "trash-2" })[action.op]
+                    buttons[i] = { kind = "button", id = action.id, text = "", icon = icon, tip = action.text,
+                        _op = action.op, enabled = action.enabled }
+                else
+                    buttons[i] = { kind = "button", id = action.id, text = action.text, action = action.action, _op = action.op,
+                        enabled = action.enabled, presentation = action.presentation, _compact = true }
+                end
             end
             row.children[#row.children + 1] = ActionCell(node.id .. ".actions", buttons)
         end
@@ -4334,6 +6163,7 @@ local function ExpandTables(node)
         end
         if node.addAction then
             local add = node.addAction
+            local rows = add.op and node.children[1] -- op = add：校验保证只有一个写了 path 的 repeat
             local cells = {}
             for i = 1, #node.columns - 1 do
                 cells[i] = { kind = "cell", id = node.id .. ".add." .. i, children = { { kind = "text", id = node.id .. ".add." .. i .. ".text", text = "" } } }
@@ -4342,15 +6172,18 @@ local function ExpandTables(node)
                 cells[1].children[1] = { kind = "control", id = add.id .. ".input", controlType = "input", ref = add.input }
             end
             cells[#node.columns] = ActionCell(node.id .. ".add", { { kind = "button", id = add.id, text = add.text,
-                action = add.action, clickKey = add.clickKey, presentation = "primary", _compact = true } })
-            table.insert(node.children, 1, { kind = "row", id = node.id .. ".add.row", children = cells })
+                action = add.action, clickKey = add.clickKey, presentation = "primary", _compact = true,
+                _op = add.op, _arrayPath = rows and rows.path, _rowDefaults = rows and rows.rowDefaults } })
+            -- 预设 tableAddLast：新增按钮一律排在所有记录行下面（表头、记录、新增依次往下）。
+            local last = add.op or (type(styled) == "table" and styled.tableAddLast)
+            table.insert(node.children, last and #node.children + 1 or 1, { kind = "row", id = node.id .. ".add.row", children = cells })
         end
         node.rowActions, node.addAction = nil, nil
     end
     for _, field in ipairs({ "children", "cards" }) do
-        for _, child in ipairs(type(node[field]) == "table" and node[field] or {}) do ExpandTables(child) end
+        for _, child in ipairs(type(node[field]) == "table" and node[field] or {}) do ExpandTables(child, styled) end
     end
-    if node.template then ExpandTables(node.template) end
+    if node.template then ExpandTables(node.template, styled) end
 end
 
 function UI:MountSettingsDeclarationV2(parent, declaration, owner)
@@ -4366,10 +6199,13 @@ function UI:MountSettingsDeclarationV2(parent, declaration, owner)
         return nil, invalid
     end
     declaration = DeclarationCopy(declaration, {})
-    ExpandTables(declaration)
+    ExpandTables(declaration, declaration.style ~= nil and GM.settings.styles[declaration.style])
     local session = setmetatable({ alive=true, owner=owner, nodes={}, layout=declaration.layout, parent=parent,
         columns=declaration.columns, columnGap=declaration.columnGap, rowGap=declaration.rowGap,
         style=declaration.style and GM.settings.styles[declaration.style], advanced=declaration.advanced,
+        collapse=declaration.collapse,
+        -- 快速工具条内部挂的页：owner._exQuick = "popover"（小框）| "inline"（摊在条上的格，不画行名、不留页边）。
+        quick=rawget(owner, "_exQuick"),
         quickRows=owner.quickbar and QuickRows(declaration) or nil }, { __index=Session })
     session.root = Acquire(parent)
     Mounted[parent] = session
@@ -4409,22 +6245,33 @@ end
 -- 二级面板外壳：所有二级面板只用这一种浮窗。
 -- UI:OpenSettingsPanelV2(spec, owner, anchor)
 --   spec（纯数据）:
---     size     = "small" | "large"（只有档位，像素在 GM.settings.parts.panelSmall*/panelLarge*）
+--     size     = "small" | "large" | "fit"（只有档位，像素在 GM.settings.parts.panelSmall*/panelLarge*）；
+--                fit = 宽同 large，高随内容，最高不超过 maxHeight（不写取 large 的高）和屏幕高，再高就滚动
+--     maxHeight = fit 面板的最高高度（可选，数字，只给 fit 用）
 --     title    = 标题栏文字（可选）
 --     page     = 已登记的页面 ID，或 declaration = V2 页面声明（二选一），内容照普通页挂载，超高时滚动
 --     buttons  = 底栏动作按钮（可选，靠右从左到右排）：{ { id, text, action = actions 引用名,
 --                presentation = "primary" | "secondary" | "danger"（可选） }, ... }；点击调用 actions[action](panel, mouseButton)
 --     close    = actions 引用名（可选）：点 × 时调用 actions[close](panel)，由 owner 收尾后 panel:Release()；不写时 × 直接关掉
+--     window   = 浮窗外观（可选）：{ background = "panel", padding = 数字, dragAnywhere, clampToScreen,
+--                onDragStop = function(panel, x, y) }，同 CreateFloatingWindow 的同名选项（onDragStop 第一个参数换成 panel）
 --   owner：同页面 owner（predicates / actions / binding ...）。
 --   anchor（可选框体）：面板贴在它旁边，右边放不下换左、上、下，最后夹在屏幕内；不写时屏幕居中。
 -- 返回 panel：panel.window、panel.session、panel:Refresh()、panel:SetTitle(text)、panel:SetAnchor(frame)、panel:Release()。
 -- =========================================================
-local PanelSizes = { small = true, large = true }
+local PanelSizes = { small = true, large = true, fit = true }
 local PanelPresentations = { primary = true, secondary = true, danger = true }
 
 local function ValidatePanel(spec, owner)
-    Keys(spec, "size title page declaration buttons close", "panel")
-    Check(PanelSizes[spec.size], "panel.size must be small or large")
+    Keys(spec, "size title page declaration buttons close maxHeight window", "panel")
+    Check(spec.window == nil or type(spec.window) == "table", "panel.window must be a table")
+    if spec.window then
+        Keys(spec.window, "background padding dragAnywhere clampToScreen onDragStop", "panel.window")
+        Check(spec.window.onDragStop == nil or type(spec.window.onDragStop) == "function", "panel.window.onDragStop must be a function")
+    end
+    Check(PanelSizes[spec.size], "panel.size must be small, large or fit")
+    Check(spec.maxHeight == nil or (spec.size == "fit" and type(spec.maxHeight) == "number" and spec.maxHeight > 0),
+        "panel.maxHeight must be a positive number and only for size=fit")
     Check(spec.title == nil or type(spec.title) == "string", "panel.title must be a string")
     Check((spec.page ~= nil) ~= (spec.declaration ~= nil), "panel requires page or declaration")
     Check(spec.page == nil or Pages[spec.page] ~= nil, "panel.page is not a registered page")
@@ -4463,12 +6310,16 @@ end
 function UI:OpenSettingsPanelV2(spec, owner, anchor)
     ValidatePanel(spec, owner)
     Check(anchor == nil or (type(anchor) == "table" and type(anchor.GetRect) == "function"), "panel anchor must be a frame")
-    local large = spec.size == "large"
+    local fit = spec.size == "fit"
+    local large = spec.size == "large" or fit
     local panel = { alive = true }
     local window = UI:CreateFloatingWindow({
         width = Part(nil, large and "panelLargeWidth" or "panelSmallWidth"),
         height = Part(nil, large and "panelLargeHeight" or "panelSmallHeight"),
-        title = spec.title, closable = true,
+        title = spec.title, closable = true, background = spec.window and spec.window.background,
+        padding = spec.window and spec.window.padding,
+        dragAnywhere = spec.window and spec.window.dragAnywhere, clampToScreen = spec.window and spec.window.clampToScreen,
+        onDragStop = spec.window and spec.window.onDragStop and function(_, x, y) spec.window.onDragStop(panel, x, y) end,
         onCloseRequested = function()
             if not panel.alive then return end
             if spec.close then owner.actions[spec.close](panel) else panel:Release() end
@@ -4491,9 +6342,19 @@ function UI:OpenSettingsPanelV2(spec, owner, anchor)
     local content = scrollFrame._v2Content
     local panelOwner = {}
     for key, value in pairs(owner) do panelOwner[key] = value end
+    -- fit：高随内容——标题栏 + 内容 + 底栏 + 底边距，最高不超过 maxHeight（不写取 large 的高）和屏幕高；不看贴靠目标的高。
+    local function FitHeight(height)
+        if not fit then return end
+        local screen = UIParent:GetHeight() * UIParent:GetEffectiveScale() / window:GetEffectiveScale()
+        local most = math.min(spec.maxHeight or Part(nil, "panelLargeHeight"), screen)
+        local chrome = GM.size.floatingHeaderHeight + footerHeight + window.contentPadding
+        window:SetHeight(math.max(1, math.min(most, chrome + height)))
+        if window._exFloatAnchor then window:SetAnchor(window._exFloatAnchor) end
+    end
     panelOwner.onHeightChanged = function(height)
         content:SetHeight(math.max(1, height))
         scrollFrame:UpdateScrollChildRect()
+        FitHeight(height)
         if owner.onHeightChanged then owner.onHeightChanged(height) end
     end
     content:SetWidth(math.max(1, (scrollFrame:GetWidth() or 1) - scrollFrame:GetVerticalScrollInset()))
@@ -4526,9 +6387,15 @@ function UI:OpenSettingsPanelV2(spec, owner, anchor)
     end
     function panel:Refresh() if self.alive then self.session:Refresh() end end
     function panel:SetTitle(text) if self.alive then self.window:SetTitle(text) end end
-    function panel:SetAnchor(frame)
+    -- align = "center"（可选）：面板竖直中心线对齐目标中心（默认顶对齐）。
+    function panel:SetAnchor(frame, align)
         if not self.alive then return end
-        self.window:SetAnchor(frame and { frame = frame, gap = Part(nil, "panelAnchorGap") } or nil)
+        self.window:SetAnchor(frame and { frame = frame, gap = Part(nil, "panelAnchorGap"), align = align } or nil)
+        if fit then FitHeight(self.session:GetHeight()) end
+    end
+    -- fit 面板：调用方自己用 window:SetAnchor 换了贴靠目标后调一次，重算高并按新目标重新贴靠。
+    function panel:Fit()
+        if self.alive and fit then FitHeight(self.session:GetHeight()) end
     end
     function panel:Release()
         if not self.alive then return end
@@ -4553,16 +6420,24 @@ end
 --   declaration：V2 页面声明（完整面板用的那一份）。写了 quick 的 setting 行才能进工具条（字段见 Fields.setting）。
 --   owner：同页面 owner，必须带 owner.quickbar = { selected = function(行 id) -> 是否在工具条上,
 --          toggle = function(行 id, 新状态)（owner 记下即可）, limit = 工具条最多几个按钮 }。
+--          可选 rank = function(行 id) -> 第几格（数字）：给了就按它排，没给（或返回 nil 的行排最后）按声明顺序。
 --          选了哪些行只由 owner 记，Core 不存；同一个 owner 挂完整面板时 quick 行名字前出星号（点星走 toggle，满了点不动）。
 --   anchor：贴靠的框体（选中的元素）。工具条在它上方，上方放不下放下方，并夹在屏幕内；锚在它身上，元素移动会跟着走。
---   options = { onMore = function(toolbar) }：点最右固定的“⋯”时调用（调用方打开完整面板、关掉工具条）。
--- 按钮按声明里的行顺序，只排 selected 的行、最多 limit 个；最右再加“⋯”。
+--   options = { onMore = function(toolbar), center = 框体（可选） }：onMore 在点最右固定的“⋯”时调用（调用方打开完整面板、关掉工具条）；
+--   options.dragAnywhere = true（可选）：工具条空白处可拖；拖过后留在拖到的位置（重排、SetAnchor 不再挪它），
+--   options.dragFromButtons = true（可选，配 dragAnywhere）：按在条上的按钮上也能拖（移动超过阈值改拖整条、取消这次点击）；
+--   options.clampToScreen = false（可选）可拖出屏幕；options.onDragStop = function(toolbar, x, y)（可选）拖完的位置
+--   （TOPLEFT 贴 UIParent 左下角的偏移）。
+--   center 给了时工具条水平居中到它的中心线（例如光环图标），竖直仍贴 anchor 上方。
+--   quick.inline = true 的行：控件直接摊在条上（图标可选、不写行名，悬停显示行名），每格挂一个 _quick 会话。
+--   页面样式写了 quickItemPadX 时按“格”排：每格左右留白、格间一条 quickDivider 竖线，条高取 quickHeight。
+-- 按钮按 quickbar.rank（没有就按声明里的行顺序），只排 selected 的行、最多 limit 个；最右再加“⋯”。
 --   quick.popover = true：点按钮弹小框，小框里只有这一行（照普通页挂载，写值、通知照旧）；再点按钮、
 --                         或点小框和工具条以外的地方（小框里的下拉、取色器除外）自动关。
 --   quick.popover = false：开关行，按钮显示开关状态，点一下切换这一行唯一的 switch / checkbox。
 --   工具条不看行的 visible / enabled（小框里照常看）。
--- 返回 toolbar：toolbar.frame、toolbar:Refresh()（选择变了、值被别处改了之后重排）、toolbar:SetAnchor(frame)、
--- toolbar:ClosePopover()、toolbar:Release()。尺寸全在 GM.settings.parts.quick*（页面样式预设可覆盖）。
+-- 返回 toolbar：toolbar.frame、toolbar:Refresh()（选择变了才重排；没变只刷新 inline 格、开关和小框里的值）、toolbar:SetAnchor(frame, center)、
+-- toolbar:ClosePopover()、toolbar:IsPopoverOpen()、toolbar:Release()。尺寸全在 GM.settings.parts.quick*（页面样式预设可覆盖）。
 -- =========================================================
 local STRATA_ORDER = { BACKGROUND = 1, LOW = 2, MEDIUM = 3, HIGH = 4, DIALOG = 5, FULLSCREEN = 6, FULLSCREEN_DIALOG = 7, TOOLTIP = 8 }
 local QuickFrames = {} -- 空闲的工具条 / 小框外框（只复用框体，不存任何选择）
@@ -4572,10 +6447,10 @@ local function AcquireQuickFrame()
     if not frame then
         frame = CreateFrame("Frame", nil, UIParent)
         frame:SetFrameStrata("DIALOG")
-        frame:SetClampedToScreen(true)
         frame:EnableMouse(true)
         frame._v2Content = CreateFrame("Frame", nil, frame)
     end
+    frame:SetClampedToScreen(true)
     frame:SetSize(1, 1)
     frame:Show()
     return frame
@@ -4584,6 +6459,8 @@ end
 local function RecycleQuickFrame(frame)
     frame:UnregisterAllEvents()
     frame:SetScript("OnEvent", nil)
+    UI:SetDragAnywhere(frame, nil)
+    frame._v2Dragged = nil
     frame:Hide()
     frame:ClearAllPoints()
     UI:ClearControlSurface(frame)
@@ -4591,11 +6468,20 @@ local function RecycleQuickFrame(frame)
 end
 
 -- 贴在 target 上方（左缘偏 x），上方放不下改到下方；屏幕夹取交给 SetClampedToScreen。
-local function PlaceQuickFrame(frame, target, x, gap)
+-- center（可选框体）：水平改成居中到 center 的中心线（x 不再用）。
+local function PlaceQuickFrame(frame, target, x, gap, center)
     frame:ClearAllPoints()
     local top = target:GetTop()
     local scale = target:GetEffectiveScale() / UIParent:GetEffectiveScale()
-    if top and top * scale + gap + frame:GetHeight() > UIParent:GetHeight() then
+    local below = top and top * scale + gap + frame:GetHeight() > UIParent:GetHeight()
+    local centerX = center and center:GetCenter()
+    local targetX = center and target:GetCenter()
+    if centerX and targetX then
+        -- 两个中心线的差换算到本框的坐标单位。
+        local dx = (centerX * center:GetEffectiveScale() - targetX * target:GetEffectiveScale()) / frame:GetEffectiveScale()
+        if below then frame:SetPoint("TOP", target, "BOTTOM", dx, -gap)
+        else frame:SetPoint("BOTTOM", target, "TOP", dx, gap) end
+    elseif below then
         frame:SetPoint("TOPLEFT", target, "BOTTOMLEFT", x, -gap)
     else
         frame:SetPoint("BOTTOMLEFT", target, "TOPLEFT", x, gap)
@@ -4637,6 +6523,10 @@ local function QuickTip(button, text)
         GameTooltip:Show()
     end)
     hit:HookScript("OnLeave", function(self) if GameTooltip:GetOwner() == self then GameTooltip:Hide() end end)
+    -- 按下就收起提示（点了会弹小框或换面板，提示不能还贴在按钮旁）。
+    hit:HookScript("OnMouseDown", function(self) if GameTooltip:GetOwner() == self then GameTooltip:Hide() end end)
+    -- 按钮在鼠标下被隐藏（工具条收走、换成完整面板等）时收不到 OnLeave，提示跟着关。
+    hit:HookScript("OnHide", function(self) if GameTooltip:GetOwner() == self then GameTooltip:Hide() end end)
 end
 
 function UI:OpenQuickToolbarV2(declaration, owner, anchor, options)
@@ -4645,16 +6535,31 @@ function UI:OpenQuickToolbarV2(declaration, owner, anchor, options)
     Check(type(owner) == "table" and rawget(owner, "quickbar") ~= nil,
         "快速工具条需要 owner.quickbar { selected, toggle, limit }（选了哪些行由 owner 记）")
     Check(type(anchor) == "table" and type(anchor.GetRect) == "function", "快速工具条的 anchor 必须是框体（选中的元素）")
-    Keys(options, "onMore", "quick toolbar options")
+    Keys(options, "onMore center dragAnywhere dragFromButtons clampToScreen onDragStop", "quick toolbar options")
+    Check(options.onDragStop == nil or type(options.onDragStop) == "function", "快速工具条 options.onDragStop 要写函数")
     Check(type(options.onMore) == "function", "快速工具条 options.onMore 必填：点“⋯”时调用，调用方去开完整面板")
+    Check(options.center == nil or (type(options.center) == "table" and type(options.center.GetRect) == "function"),
+        "快速工具条 options.center 要写框体（工具条水平居中到它）")
+    local center = options.center
     local rows = QuickRows(declaration)
     local style = declaration.style and GM.settings.styles[declaration.style]
     local GC, L = _G.ExwindTools.GUIColors, _G.ExwindTools.L
     local quickbar, binding = owner.quickbar, owner.binding
-    local toolbar = { alive = true, buttons = {} }
+    local toolbar = { alive = true, buttons = {}, cells = {} }
     local bar = AcquireQuickFrame()
     toolbar.frame = bar
     UI:SetControlSurface(bar, GM.radius.popup, GC.popup, GC.popupBorder)
+    if options.clampToScreen == false then bar:SetClampedToScreen(false) end
+    -- 空白处拖动：拖过之后不再贴回元素（重排、SetAnchor 都只记目标不挪位置），小框跟着工具条走。
+    if options.dragAnywhere then
+        UI:SetDragAnywhere(bar, {
+            fromButtons = options.dragFromButtons == true or nil,
+            onDragStart = function() bar._v2Dragged = true end,
+            onDragStop = function(_, x, y)
+                if toolbar.alive and options.onDragStop and x then options.onDragStop(toolbar, x, y) end
+            end,
+        })
+    end
 
     local function ClosePopover()
         local popover = toolbar.popover
@@ -4667,6 +6572,7 @@ function UI:OpenQuickToolbarV2(declaration, owner, anchor, options)
 
     local function OpenPopover(row, button)
         ClosePopover()
+        GameTooltip:Hide()
         local frame = AcquireQuickFrame()
         UI:SetControlSurface(frame, GM.radius.popup, GC.popup, GC.popupBorder)
         local pad, gap = Part(style, "quickPopoverPadding"), Part(style, "quickAnchorGap")
@@ -4684,6 +6590,7 @@ function UI:OpenQuickToolbarV2(declaration, owner, anchor, options)
         local popoverOwner = {}
         for key, value in pairs(owner) do popoverOwner[key] = value end
         popoverOwner.quickbar, popoverOwner.onContentWidthChanged = nil, nil
+        popoverOwner._exQuick = "popover"
         popoverOwner.onHeightChanged = function(height)
             frame:SetHeight(math.max(1, height) + pad * 2)
             PlaceQuickFrame(frame, bar, button._v2QuickX, gap)
@@ -4702,35 +6609,182 @@ function UI:OpenQuickToolbarV2(declaration, owner, anchor, options)
         end)
     end
 
+    -- 工具条上的格：按钮、inline 格（图标 + 摊开的控件，挂一个 _quick 会话）与格间竖线。
     local function ReleaseButtons()
+        if bar._v2QuickHover then
+            if GameTooltip:GetOwner() == bar._v2QuickHover then GameTooltip:Hide() end
+            bar._v2QuickHover = nil
+        end
+        bar:SetScript("OnUpdate", nil)
         for _, button in ipairs(toolbar.buttons) do
-            button._v2QuickTip, button._v2QuickX = nil, nil
+            -- 按钮在鼠标下被收走时不会再收到 OnLeave，悬停提示要在这里关掉。
+            if GameTooltip:GetOwner() == button.button then GameTooltip:Hide() end
+            button._v2QuickTip, button._v2QuickX, button._v2QuickSwitch = nil, nil, nil
             button:Release()
         end
         toolbar.buttons = {}
+        for _, cell in ipairs(toolbar.cells or {}) do
+            cell.session:Release()
+            Factory:ReleaseCompositeHost(cell.content)
+            Factory:ReleaseCompositeHost(cell.frame)
+        end
+        toolbar.cells = {}
+        for _, texture in ipairs(bar._v2QuickIcons or {}) do texture:Hide() end
+        for _, texture in ipairs(bar._v2QuickDividers or {}) do texture:Hide() end
+    end
+
+    -- 选中的行：有 quickbar.rank 按它排（没名次的按声明顺序放后面），没有按声明顺序；最多 limit 个。
+    local function SelectedRows()
+        local picked = {}
+        for index, row in ipairs(rows) do
+            if quickbar.selected(row.id) == true then
+                local rank = quickbar.rank and quickbar.rank(row.id)
+                Check(rank == nil or Number(rank), "quickbar.rank 要返回数字（第几格）或 nil")
+                picked[#picked + 1] = { row = row, index = index, rank = rank }
+            end
+        end
+        if quickbar.rank then
+            table.sort(picked, function(a, b)
+                if a.rank and b.rank and a.rank ~= b.rank then return a.rank < b.rank end
+                if (a.rank ~= nil) ~= (b.rank ~= nil) then return a.rank ~= nil end
+                return a.index < b.index
+            end)
+        end
+        local list = {}
+        for i = 1, math.min(#picked, quickbar.limit) do list[i] = picked[i].row end
+        return list
+    end
+
+    -- 当前选中行的 id 串（含顺序）；用来判断要不要重排。
+    local function Selection()
+        local ids = {}
+        for i, row in ipairs(SelectedRows()) do ids[i] = row.id end
+        return table.concat(ids, "\001")
+    end
+
+    local function Texture(list, index, layer)
+        bar[list] = bar[list] or {}
+        local texture = bar[list][index]
+        if not texture then
+            texture = bar:CreateTexture(nil, layer)
+            bar[list][index] = texture
+        end
+        return texture
+    end
+
+    -- inline 格：把这一行（去掉 quick）挂成只有控件的小页，宽按控件自然宽。
+    local function MountInline(row, parent)
+        local frame = Acquire(parent)
+        frame:EnableMouse(false)
+        local content = Acquire(frame)
+        local copy = DeclarationCopy(row, {})
+        copy.quick, copy.advanced = nil, nil
+        local inlineOwner = {}
+        for key, value in pairs(owner) do inlineOwner[key] = value end
+        inlineOwner.quickbar, inlineOwner.onContentWidthChanged, inlineOwner.onHeightChanged = nil, nil, nil
+        inlineOwner._exQuick = "inline"
+        content:SetSize(GM.settings.controlWideWidth, StyledControlHeight(style))
+        local session, failure = UI:MountSettingsDeclarationV2(content, { version = 2, style = declaration.style,
+            cards = { { kind = "card", id = "_quick", title = "", children = { copy } } } }, inlineOwner)
+        if not session then
+            Factory:ReleaseCompositeHost(content)
+            Factory:ReleaseCompositeHost(frame)
+            Check(false, failure and (failure.path .. ": " .. failure.message) or "quick inline mount failed")
+        end
+        local node = session:FindNode(row.id)
+        local width = math.max(1, Natural(node))
+        content:SetWidth(width)
+        session:Layout()
+        return { frame = frame, content = content, session = session, row = row, width = width,
+            height = math.max(1, session:GetHeight()) }
+    end
+
+    -- 鼠标停在哪个 inline 格上就显示那一行的名字（控件自己吃掉鼠标，所以按位置找）。
+    local function HoverCells()
+        local hovered
+        for _, cell in ipairs(toolbar.cells) do
+            if cell.frame:IsMouseOver() then hovered = cell; break end
+        end
+        local current = bar._v2QuickHover
+        if hovered and hovered.frame == current then
+            -- 在格上按下鼠标就收起提示，移开再移回才重新显示。
+            if IsMouseButtonDown() and GameTooltip:GetOwner() == current then GameTooltip:Hide() end
+            return
+        end
+        if current and GameTooltip:GetOwner() == current then GameTooltip:Hide() end
+        bar._v2QuickHover = hovered and hovered.frame or nil
+        if hovered then
+            GameTooltip:SetOwner(hovered.frame, "ANCHOR_TOP")
+            GameTooltip:AddLine(hovered.row.label, 1, 1, 1, true)
+            GameTooltip:Show()
+        end
     end
 
     local function Build()
         ClosePopover()
         ReleaseButtons()
+        toolbar.selection = Selection()
         local size, gap, pad = Part(style, "quickButtonSize"), Part(style, "quickButtonGap"), Part(style, "quickPadding")
-        local x, count = pad, 0
+        -- 预设写了 quickItemPadX：按“格”排——每格左右留白、格与格之间一条竖线（预设 quickDivider）；没写时照旧按钮挨着排。
+        local itemPad = style and style.quickItemPadX
+        local barHeight = style and style.quickHeight or (size + pad * 2)
+        local cellHeight = Part(style, "quickCellHeight")
+        local x, items, icons, dividers = pad, 0, 0, 0
+        local function Begin()
+            items = items + 1
+            if not itemPad then return end
+            if items > 1 and style.quickDivider then
+                dividers = dividers + 1
+                local line = Texture("_v2QuickDividers", dividers, "ARTWORK")
+                line:SetColorTexture(unpack(style.quickDivider))
+                line:ClearAllPoints()
+                line:SetPoint("TOPLEFT", bar, "TOPLEFT", x, -(barHeight - cellHeight) / 2)
+                line:SetSize(1, cellHeight)
+                line:Show()
+                x = x + 1
+            end
+            x = x + itemPad
+        end
+        local function Finish(width)
+            if itemPad then x = x + width + itemPad else x = x + width + gap end
+        end
         local function Add(icon, tip, checked, callback)
+            Begin()
             local button = UI:CreateIconButton(bar, size, size, { icon = icon, iconSize = Part(style, "quickIconSize"),
                 checked = checked, onToggle = checked ~= nil and callback or nil, onClick = checked == nil and callback or nil })
             button:ClearAllPoints()
-            button:SetPoint("TOPLEFT", bar, "TOPLEFT", x, -pad)
+            button:SetPoint("TOPLEFT", bar, "TOPLEFT", x, -(barHeight - size) / 2)
             button:Show()
             QuickTip(button, tip)
             button._v2QuickX = x
             toolbar.buttons[#toolbar.buttons + 1] = button
-            x = x + size + gap
+            Finish(size)
             return button
         end
-        for _, row in ipairs(rows) do
-            if count < quickbar.limit and quickbar.selected(row.id) == true then
-                count = count + 1
-                if row.quick.popover then
+        for _, row in ipairs(SelectedRows()) do
+            do
+                if row.quick.inline then
+                    Begin()
+                    local left = x
+                    if row.quick.icon then
+                        icons = icons + 1
+                        local iconSize = Part(style, "quickIconSize")
+                        local texture = Texture("_v2QuickIcons", icons, "ARTWORK")
+                        texture:SetTexture(UI:GetIcon(row.quick.icon))
+                        texture:SetVertexColor(unpack(_G.ExwindTools.GUIColors.textDim))
+                        texture:SetSize(iconSize, iconSize)
+                        texture:ClearAllPoints()
+                        texture:SetPoint("LEFT", bar, "TOPLEFT", x, -barHeight / 2)
+                        texture:Show()
+                        x = x + iconSize + Part(style, "quickInlineGap")
+                    end
+                    local cell = MountInline(row, bar)
+                    Place(cell.content, cell.frame, x - left, (cellHeight - cell.height) / 2, cell.width, cell.height)
+                    Place(cell.frame, bar, left, (barHeight - cellHeight) / 2, x - left + cell.width, cellHeight)
+                    cell.frame:SetFrameLevel(bar:GetFrameLevel() + 1)
+                    toolbar.cells[#toolbar.cells + 1] = cell
+                    x = x + cell.width + (itemPad or gap)
+                elseif row.quick.popover then
                     local button
                     button = Add(row.quick.icon, row.label, false, function(checked)
                         if not toolbar.alive then return end
@@ -4738,9 +6792,10 @@ function UI:OpenQuickToolbarV2(declaration, owner, anchor, options)
                     end)
                 else
                     local switch = CreateBinding(binding.moduleKey, binding.config, row.children[1].path)
-                    Add(row.quick.icon, row.label, switch:Read() == true, function(checked)
+                    local button = Add(row.quick.icon, row.label, switch:Read() == true, function(checked)
                         if toolbar.alive then switch:Write(checked, "commit") end
                     end)
+                    button._v2QuickSwitch = switch
                 end
             end
         end
@@ -4749,19 +6804,33 @@ function UI:OpenQuickToolbarV2(declaration, owner, anchor, options)
             ClosePopover()
             options.onMore(toolbar)
         end)
-        bar:SetSize(x - gap + pad, size + pad * 2)
-        PlaceQuickFrame(bar, anchor, 0, Part(style, "quickAnchorGap"))
+        bar:SetSize((itemPad and x or x - gap) + pad, barHeight)
+        if #toolbar.cells > 0 then bar:SetScript("OnUpdate", HoverCells) end
+        if not bar._v2Dragged then PlaceQuickFrame(bar, anchor, 0, Part(style, "quickAnchorGap"), center) end
     end
 
-    function toolbar:Refresh() if self.alive then Build() end end
-    function toolbar:SetAnchor(frame)
+    -- 选择没变时只刷新值（inline 格、开关按钮、开着的小框），不重排、不打断正在改的控件；选择变了才重排。
+    function toolbar:Refresh()
+        if not self.alive then return end
+        if Selection() ~= self.selection then Build(); return end
+        for _, cell in ipairs(self.cells) do cell.session:Refresh() end
+        for _, button in ipairs(self.buttons) do
+            if button._v2QuickSwitch then button:SetChecked(button._v2QuickSwitch:Read() == true) end
+        end
+        if self.popover then self.popover.session:Refresh() end
+    end
+    -- center（可选框体）：工具条水平居中到它（例如光环图标），竖直仍贴 frame 上方。
+    function toolbar:SetAnchor(frame, centerFrame)
         if not self.alive then return end
         Check(type(frame) == "table" and type(frame.GetRect) == "function", "快速工具条的 anchor 必须是框体（选中的元素）")
-        anchor = frame
-        PlaceQuickFrame(bar, anchor, 0, Part(style, "quickAnchorGap"))
+        Check(centerFrame == nil or (type(centerFrame) == "table" and type(centerFrame.GetRect) == "function"), "center 必须是框体")
+        anchor, center = frame, centerFrame
+        if not bar._v2Dragged then PlaceQuickFrame(bar, anchor, 0, Part(style, "quickAnchorGap"), center) end
         if self.popover then PlaceQuickFrame(self.popover.frame, bar, self.popover.button._v2QuickX, Part(style, "quickAnchorGap")) end
     end
     function toolbar:ClosePopover() if self.alive then ClosePopover() end end
+    -- 工具条上有没有开着的小框（调用方据此决定点别处时要不要先收小框）。
+    function toolbar:IsPopoverOpen() return self.alive and self.popover ~= nil end
     function toolbar:Release()
         if not self.alive then return end
         ClosePopover()
@@ -4772,6 +6841,143 @@ function UI:OpenQuickToolbarV2(declaration, owner, anchor, options)
     end
     Build()
     return toolbar
+end
+
+-- =========================================================
+-- 贴词小浮框：句子卡里点了词块（或任何小框体）后，贴着它弹一个无标题栏的小框，放一两个控件。
+-- UI:OpenWordPopoverV2(anchor, content, owner, options)
+--   anchor：贴靠的框体（例如句子卡 token action 收到的 frame）。小框在它下方，下方放不下放上方，并夹在屏幕内。
+--   content：V2 页面声明（带 cards），或一组行（setting / control ... 数组，包进一张无标题卡）。照普通页挂载，写值、通知照旧。
+--   owner：同页面 owner（binding / predicates / actions / sources ...）。
+--   options（可选）= { style = 页面样式预设名（content 是行数组时用）, onClose = function(popover)（任何原因关掉时调一次） }。
+--   options.dragAnywhere / clampToScreen / onDragStop(popover, x, y)：同快速工具条，拖过后改高、SetAnchor 都不挪它。
+-- 点小框和 anchor 以外的地方（小框里的下拉、取色器除外）、按 Esc、anchor 不再可见时自动关；
+-- 页面刷新不关它（它不挂在页面里），调用方值变了想同步小框里的值就调 popover:Refresh()。同一时间只开一个，再开会先关旧的。
+-- 返回 popover：popover.frame、popover.session、popover:Refresh()、popover:SetAnchor(frame)、popover:Close()。
+-- 尺寸用 GM.settings.parts.quickPopoverWidth / quickPopoverPadding / quickAnchorGap（页面样式预设可覆盖）。
+-- =========================================================
+do
+    local current -- 当前开着的贴词小框
+
+    -- 贴在 anchor 下方，下方放不下改到上方；水平夹取交给 SetClampedToScreen。
+    local function PlaceWordPopover(frame, anchor, gap)
+        frame:ClearAllPoints()
+        local bottom = anchor:GetBottom()
+        local scale = anchor:GetEffectiveScale() / UIParent:GetEffectiveScale()
+        if bottom and bottom * scale - gap - frame:GetHeight() < 0 then
+            frame:SetPoint("BOTTOMLEFT", anchor, "TOPLEFT", 0, gap)
+        else
+            frame:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -gap)
+        end
+    end
+
+    function UI:OpenWordPopoverV2(anchor, content, owner, options)
+        Check(type(anchor) == "table" and type(anchor.GetRect) == "function", "贴词小框的 anchor 必须是框体")
+        Check(type(content) == "table", "贴词小框的 content 要写 V2 页面声明或一组行")
+        Check(type(owner) == "table", "贴词小框需要 owner")
+        options = options or {}
+        Keys(options, "style onClose dragAnywhere clampToScreen onDragStop", "word popover options")
+        Check(options.onDragStop == nil or type(options.onDragStop) == "function", "贴词小框 options.onDragStop 要写函数")
+        Check(options.onClose == nil or type(options.onClose) == "function", "贴词小框 options.onClose 要写函数")
+        local declaration = content
+        if content.cards == nil then
+            declaration = { version = 2, style = options.style,
+                cards = { { kind = "card", id = "_popover", title = "", children = content } } }
+        end
+        Check(declaration.style == nil or GM.settings.styles[declaration.style] ~= nil, "贴词小框的 style 不是已登记的页面样式")
+        local style = declaration.style and GM.settings.styles[declaration.style]
+        if current then current:Close() end
+        -- 弹出小框时收起当前悬停提示。
+        GameTooltip:Hide()
+
+        local GC = _G.ExwindTools.GUIColors
+        local pad, gap = Part(style, "quickPopoverPadding"), Part(style, "quickAnchorGap")
+        local popover = { alive = true }
+        local frame = AcquireQuickFrame()
+        popover.frame = frame
+        frame:Raise()
+        UI:SetControlSurface(frame, GM.radius.popup, GC.popup, GC.popupBorder)
+        if options.clampToScreen == false then frame:SetClampedToScreen(false) end
+        if options.dragAnywhere then
+            UI:SetDragAnywhere(frame, {
+                onDragStart = function() frame._v2Dragged = true end,
+                onDragStop = function(_, x, y)
+                    if popover.alive and options.onDragStop and x then options.onDragStop(popover, x, y) end
+                end,
+            })
+        end
+        frame:SetSize(Part(style, "quickPopoverWidth"), pad * 2 + 1)
+        PlaceWordPopover(frame, anchor, gap)
+        local host = frame._v2Content
+        host:ClearAllPoints()
+        host:SetPoint("TOPLEFT", frame, "TOPLEFT", pad, -pad)
+        host:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -pad, -pad)
+        host:SetHeight(1)
+        host:Show()
+        -- owner 浅拷贝：高度回调接到小框；按小框画（不画卡面）。
+        local popoverOwner = {}
+        for key, value in pairs(owner) do popoverOwner[key] = value end
+        popoverOwner.quickbar, popoverOwner.onContentWidthChanged = nil, nil
+        popoverOwner._exQuick = "popover"
+        popoverOwner.onHeightChanged = function(height)
+            if not popover.alive then return end
+            frame:SetHeight(math.max(1, height) + pad * 2)
+            if not frame._v2Dragged then PlaceWordPopover(frame, anchor, gap) end
+        end
+        local session, failure = UI:MountSettingsDeclarationV2(host, declaration, popoverOwner)
+        if not session then
+            RecycleQuickFrame(frame)
+            Check(false, failure and (failure.path .. ": " .. failure.message) or "word popover mount failed")
+        end
+        popover.session = session
+        current = popover
+
+        function popover:Close()
+            if not self.alive then return end
+            self.alive = false
+            if current == self then current = nil end
+            frame:SetScript("OnUpdate", nil)
+            frame:SetScript("OnKeyDown", nil)
+            frame:EnableKeyboard(false)
+            self.session:Release()
+            RecycleQuickFrame(frame)
+            self.session, self.frame = nil, nil
+            if options.onClose then options.onClose(self) end
+        end
+        function popover:Refresh() if self.alive then self.session:Refresh() end end
+        function popover:SetAnchor(target)
+            if not self.alive then return end
+            Check(type(target) == "table" and type(target.GetRect) == "function", "贴词小框的 anchor 必须是框体")
+            anchor = target
+            if not frame._v2Dragged then PlaceWordPopover(frame, anchor, gap) end
+        end
+
+        -- 点外面关（小框、anchor、小框里弹出的更高层下拉 / 取色器不算外面）。
+        frame:RegisterEvent("GLOBAL_MOUSE_DOWN")
+        frame:SetScript("OnEvent", function()
+            if MouseInside(frame) or MouseInside(anchor) or MouseOnHigherPopup(frame) then return end
+            popover:Close()
+        end)
+        -- anchor 不再可见（所在行被收走、面板关了）才关；页面刷新里同一帧内的隐藏再显示不算。
+        frame:SetScript("OnUpdate", function()
+            if not anchor:IsVisible() then popover:Close() end
+        end)
+        -- Esc 关：只吃 Esc，其余按键照常往下传。战斗中不接键盘（受限接口）。
+        if not InCombatLockdown() then
+            frame:EnableKeyboard(true)
+            frame:SetPropagateKeyboardInput(true)
+            frame:SetScript("OnKeyDown", function(self, key)
+                if InCombatLockdown() then return end
+                if key == "ESCAPE" then
+                    self:SetPropagateKeyboardInput(false)
+                    popover:Close()
+                else
+                    self:SetPropagateKeyboardInput(true)
+                end
+            end)
+        end
+        return popover
+    end
 end
 
 -- Context menus share the page reference/record rules and the existing menu painter.

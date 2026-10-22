@@ -4195,6 +4195,148 @@ local Factory = _G.ExwindFactory
 local MODERN_MEDIA = Internal.MODERN_MEDIA
 
 -- ---------------------------------------------------------
+-- 任何空白处拖动（EXAura 浮出物用）：EXUI:SetDragAnywhere(frame, opts) / EXUI:SetDragAnywhere(frame, nil) 关掉
+--   opts = { onDragStart = function(frame)（可选，开始移动前调）, onDragStop = function(frame, x, y)（可选）,
+--            fromButtons = true（可选：按在 frame 里的按钮上也能拖——移动超过阈值就改拖整个框并取消这次按钮点击，没动照常点击）}
+-- 按下左键时鼠标下是 frame 本身，或 frame 里的普通 Frame / ScrollFrame（自己没有 OnMouseDown / OnMouseUp / OnDragStart，
+-- 一路到 frame 都不经过按钮、输入框、滑条这类控件），拖过 GM.space.dragThreshold 像素才开始移动（单击不动）。
+-- 已有原生拖动（写了 OnDragStart）的框不经这里，由它自己的脚本拖。
+-- 松开后 frame 改成 TOPLEFT 贴 UIParent 左下角，x, y 就是这个偏移（frame 自己的坐标单位）：
+-- 调用方恢复位置 = ClearAllPoints(); SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)。改高时顶边不动。
+-- 夹不夹在屏幕内由 frame:SetClampedToScreen 决定，这里不管。
+-- ---------------------------------------------------------
+local SettleDraggedFrame
+do
+    SettleDraggedFrame = function(frame)
+        local x, y = frame:GetLeft(), frame:GetTop()
+        if not x then return nil, nil end
+        frame:ClearAllPoints()
+        frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
+        return x, y
+    end
+
+    local function DragAnywhereBlank(focus, target)
+        if type(focus) ~= "table" or not focus.GetObjectType then return false end
+        if focus:GetScript("OnDragStart") then return false end
+        if focus == target then return true end
+        local kind = focus:GetObjectType()
+        if kind ~= "Frame" and kind ~= "ScrollFrame" then return false end
+        if focus:GetScript("OnMouseDown") or focus:GetScript("OnMouseUp") then return false end
+        local parent = focus:GetParent()
+        while parent and parent ~= target do
+            local parentKind = parent:GetObjectType()
+            if parentKind ~= "Frame" and parentKind ~= "ScrollFrame" then return false end
+            parent = parent:GetParent()
+        end
+        return parent == target
+    end
+
+    -- fromButtons：按下时鼠标下是 target 里的按钮（一路到 target 只经过普通框、滚动框、按钮）就返回它。
+    local function DragAnywhereButton(focus, target)
+        if type(focus) ~= "table" or not focus.GetObjectType or focus:GetObjectType() ~= "Button" then return nil end
+        if focus:GetScript("OnDragStart") then return nil end
+        local parent = focus:GetParent()
+        while parent and parent ~= target do
+            local kind = parent:GetObjectType()
+            if kind ~= "Frame" and kind ~= "ScrollFrame" and kind ~= "Button" then return nil end
+            parent = parent:GetParent()
+        end
+        return parent == target and focus or nil
+    end
+
+    -- 拖动开始时把按下的那个按钮的 OnClick 换成一次性空函数（松手那次点击被吃掉），松手后的下一帧之前换回原脚本。
+    local function DragAnywhereRestoreClick(driver)
+        local swallowed = driver._exSwallowed
+        if not swallowed then return end
+        driver._exSwallowed = nil
+        swallowed.button:SetScript("OnClick", swallowed.script)
+    end
+
+    local function DragAnywhereSwallowClick(driver, button)
+        driver._exSwallowed = { button = button, script = button:GetScript("OnClick") }
+        button:SetScript("OnClick", function() DragAnywhereRestoreClick(driver) end)
+        button:SetButtonState("NORMAL")
+    end
+
+    local function DragAnywhereFinish(driver)
+        local target, moving = driver._exTarget, driver._exMoving
+        driver._exPending, driver._exMoving, driver._exButton = nil, nil, nil
+        driver:SetScript("OnUpdate", nil)
+        if driver._exSwallowed then C_Timer.After(0, function() DragAnywhereRestoreClick(driver) end) end
+        if not moving then return end
+        target:StopMovingOrSizing()
+        local x, y = SettleDraggedFrame(target)
+        local opts = driver._exOpts
+        if opts and opts.onDragStop then opts.onDragStop(target, x, y) end
+    end
+
+    local function DragAnywhereUpdate(driver)
+        if not IsMouseButtonDown("LeftButton") then DragAnywhereFinish(driver) return end
+        if not driver._exPending then return end
+        local x, y = GetCursorPosition()
+        local threshold = GM.space.dragThreshold
+        if math.abs(x - driver._exPressX) < threshold and math.abs(y - driver._exPressY) < threshold then return end
+        driver._exPending, driver._exMoving = nil, true
+        local target, opts = driver._exTarget, driver._exOpts
+        if driver._exButton then DragAnywhereSwallowClick(driver, driver._exButton) end
+        if opts.onDragStart then opts.onDragStart(target) end
+        target:StartMoving()
+    end
+
+    local function DragAnywhereEvent(driver, event, button)
+        if button ~= "LeftButton" or not driver._exOpts then return end
+        if event == "GLOBAL_MOUSE_UP" then
+            if driver._exPending or driver._exMoving then DragAnywhereFinish(driver) end
+            return
+        end
+        local target = driver._exTarget
+        local focus = GetMouseFoci()[1]
+        local button = driver._exOpts.fromButtons and DragAnywhereButton(focus, target) or nil
+        if not target:IsVisible() or not (button or DragAnywhereBlank(focus, target)) then return end
+        driver._exButton = button
+        driver._exPressX, driver._exPressY = GetCursorPosition()
+        driver._exPending = true
+        driver:SetScript("OnUpdate", DragAnywhereUpdate)
+    end
+
+    function EXUI:SetDragAnywhere(frame, opts)
+        if type(frame) ~= "table" or type(frame.StartMoving) ~= "function" then error("SetDragAnywhere: frame must be a frame", 2) end
+        if opts ~= nil then
+            if type(opts) ~= "table" then error("SetDragAnywhere: opts must be a table or nil", 2) end
+            for key in pairs(opts) do
+                if key ~= "onDragStart" and key ~= "onDragStop" and key ~= "fromButtons" then error("SetDragAnywhere: unknown option " .. tostring(key), 2) end
+            end
+            if opts.fromButtons ~= nil and opts.fromButtons ~= true then error("SetDragAnywhere: fromButtons must be true or nil", 2) end
+            if opts.onDragStart ~= nil and type(opts.onDragStart) ~= "function" then error("SetDragAnywhere: onDragStart must be a function", 2) end
+            if opts.onDragStop ~= nil and type(opts.onDragStop) ~= "function" then error("SetDragAnywhere: onDragStop must be a function", 2) end
+        end
+        local driver = frame._exDragAnywhere
+        if not driver then
+            if opts == nil then return end
+            driver = CreateFrame("Frame", nil, frame)
+            driver:SetSize(1, 1)
+            driver:EnableMouse(false)
+            driver._exTarget = frame
+            driver:SetScript("OnEvent", DragAnywhereEvent)
+            frame._exDragAnywhere = driver
+        end
+        if driver._exMoving then frame:StopMovingOrSizing() end
+        DragAnywhereRestoreClick(driver)
+        driver._exPending, driver._exMoving, driver._exButton = nil, nil, nil
+        driver:SetScript("OnUpdate", nil)
+        driver._exOpts = opts
+        if opts then
+            frame:SetMovable(true)
+            driver:RegisterEvent("GLOBAL_MOUSE_DOWN")
+            driver:RegisterEvent("GLOBAL_MOUSE_UP")
+            driver:Show()
+        else
+            driver:UnregisterAllEvents()
+        end
+    end
+end
+
+-- ---------------------------------------------------------
 -- 非模态浮动窗口
 -- ---------------------------------------------------------
 local FLOATING_POOL = "EXUI.FloatingWindow"
@@ -4210,14 +4352,22 @@ local function RaiseFloatingWindow(window)
 end
 
 local function LayoutFloatingTitle(window, closable)
-    local title = window._exFloatTitle
+    local title, pad = window._exFloatTitle, window.contentPadding
     title:ClearAllPoints()
-    title:SetPoint("LEFT", window._exFloatHeader, "LEFT", GM.space.cardBodyPadding, 0)
+    title:SetPoint("LEFT", window._exFloatHeader, "LEFT", pad, 0)
     if closable then
         title:SetPoint("RIGHT", window._exFloatClose, "LEFT", -GM.space.descriptionGap, 0)
     else
-        title:SetPoint("RIGHT", window._exFloatHeader, "RIGHT", -GM.space.cardBodyPadding, 0)
+        title:SetPoint("RIGHT", window._exFloatHeader, "RIGHT", -pad, 0)
     end
+end
+
+-- 内容区：标题行下面，左右下各留 window.contentPadding。
+local function PlaceFloatingContent(window)
+    local pad, content = window.contentPadding, window.content
+    content:ClearAllPoints()
+    content:SetPoint("TOPLEFT", window, "TOPLEFT", pad, -window._exFloatHeader:GetHeight())
+    content:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -pad, pad)
 end
 
 -- 贴靠函数在下文定义，这里先声明，window.SetAnchor 才能取到同一个 local。
@@ -4230,7 +4380,22 @@ local function FloatingWindowDragStart(window)
     if window._exFloatAnchor then window:SetAnchor(nil) end
     window:StartMoving()
 end
-local function FloatingWindowDragStop(window) window:StopMovingOrSizing() end
+local function FloatingWindowDragStop(window)
+    window:StopMovingOrSizing()
+    -- dragAnywhere 窗口：拖完改成 TOPLEFT 贴 UIParent（之后改高顶边不动），告诉调用方位置。
+    if not window._exFloatDragAnywhere then return end
+    local x, y = SettleDraggedFrame(window)
+    local callback = window._exFloatOnDragStop
+    if callback and x then callback(window, x, y) end
+end
+-- 空白处拖动（EXUI:SetDragAnywhere）走的两头：开始时取消贴靠，结束时同上告诉调用方。
+local FLOATING_DRAG_ANYWHERE = {
+    onDragStart = function(window) if window._exFloatAnchor then window:SetAnchor(nil) end end,
+    onDragStop = function(window, x, y)
+        local callback = window._exFloatOnDragStop
+        if callback and x then callback(window, x, y) end
+    end,
+}
 
 -- 空白处也能拖：吃鼠标但没有任何鼠标手势的纯背景 Frame（卡片、分组底等）把拖动转给所在浮窗。
 -- 按钮、输入框、滑条等交互控件及已有鼠标脚本的框保持原样；内容是动态建的，所以显示时和调用方要求时各扫一遍。
@@ -4316,10 +4481,9 @@ local function BuildFloatingWindow(window)
     end)
     window._exFloatClose = close
 
-    local content = CreateFrame("Frame", nil, window)
-    content:SetPoint("TOPLEFT", window, "TOPLEFT", GM.space.cardBodyPadding, -GM.size.floatingHeaderHeight)
-    content:SetPoint("BOTTOMRIGHT", window, "BOTTOMRIGHT", -GM.space.cardBodyPadding, GM.space.cardBodyPadding)
-    window.content = content
+    window.content = CreateFrame("Frame", nil, window)
+    window.contentPadding = GM.space.cardBodyPadding
+    PlaceFloatingContent(window)
 
     window.SetTitle = function(self, text) self._exFloatTitle:SetText(text or "") end
     window.Release = function(self) Factory:ReleaseCompositeHost(self) end
@@ -4330,6 +4494,8 @@ end
 
 -- 贴靠：全部换算成窗口自己的坐标单位，相对 UIParent 左下角摆放。
 -- 先放目标右边（顶对齐），放不下换左边，再不行上方、下方（左对齐）；都放不下仍用右边。最后夹在屏幕内。
+-- anchor.align = "center"：左右两侧时竖直中心线对齐目标中心，上下两侧时水平中心线对齐；anchor.margin = 离屏幕四边至少多少。
+-- anchor.side = "below"：先放目标下方（下方放不下再按上面的顺序），用于贴在顶部按钮条下面的面板。
 local function PlaceFloatingWindowBeside(window)
     local anchor = window._exFloatAnchor
     local target = anchor.frame
@@ -4343,20 +4509,35 @@ local function PlaceFloatingWindowBeside(window)
     local sw, sh = UIParent:GetWidth() * us, UIParent:GetHeight() * us
     local ww, wh = window:GetWidth(), window:GetHeight()
     local gap = anchor.gap
+    local centered = anchor.align == "center"
+    local sideY = centered and ((T + B) / 2 - wh / 2) or (T - wh)
+    local sideX = centered and ((L + R) / 2 - ww / 2) or L
+    local margin = anchor.margin or 0
     local x, y
-    if R + gap + ww <= sw then
-        x, y = R + gap, T - wh
+    if anchor.side == "below" and B - gap - wh >= 0 then
+        x, y = sideX, B - gap - wh
+    elseif R + gap + ww <= sw then
+        x, y = R + gap, sideY
+        -- anchor.trail：同组跟在本窗右边的浮窗（如二级）。整组右边放不下时整组往左移到刚好放得下，
+        -- 本窗左边不越过目标左边；移了也放不下才不管（同组浮窗自己翻边）。
+        local companion = anchor.trail and anchor.trail()
+        if companion and companion:IsShown() then
+            local cr = companion:GetEffectiveScale() / ws
+            local cAnchor = companion._exFloatAnchor
+            local over = x + ww + (companion:GetWidth() + (cAnchor and cAnchor.gap or 0)) * cr - (sw - margin)
+            if over > 0 and x - over >= L then x = x - over end
+        end
     elseif L - gap - ww >= 0 then
-        x, y = L - gap - ww, T - wh
+        x, y = L - gap - ww, sideY
     elseif T + gap + wh <= sh then
-        x, y = L, T + gap
+        x, y = sideX, T + gap
     elseif B - gap - wh >= 0 then
-        x, y = L, B - gap - wh
+        x, y = sideX, B - gap - wh
     else
-        x, y = R + gap, T - wh
+        x, y = R + gap, sideY
     end
-    x = math.max(0, math.min(x, sw - ww))
-    y = math.max(0, math.min(y, sh - wh))
+    x = math.max(margin, math.min(x, sw - ww - margin))
+    y = math.max(margin, math.min(y, sh - wh - margin))
     window:ClearAllPoints()
     window:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, y)
 end
@@ -4366,7 +4547,10 @@ local function FloatingWindowFollow(window)
 end
 
 -- window:SetAnchor(spec)：spec = { frame = 目标框, gap = 间距（可选，默认 GM.space.descriptionGap）,
--- follow = true 时每帧跟随目标移动 }；传 nil 取消贴靠（窗口停在当前位置）。
+-- follow = true 时每帧跟随目标移动, align = "top"（默认，顶对齐）| "center"（中心线对齐目标中心）,
+-- margin = 离屏幕边至少多少（可选，默认 0）, trail = function() 返回同组跟在右边的浮窗或 nil（可选）,
+-- side = "below"（可选：先放目标下方）}；传 nil 取消贴靠（窗口停在当前位置）。
+-- 当前贴靠在 window._exFloatAnchor（同样的字段），窗口改了尺寸后可以 window:SetAnchor(window._exFloatAnchor) 重摆。
 SetFloatingWindowAnchor = function(window, spec)
     if spec == nil then
         window._exFloatAnchor = nil
@@ -4382,7 +4566,20 @@ SetFloatingWindowAnchor = function(window, spec)
     if spec.follow ~= nil and type(spec.follow) ~= "boolean" then
         error("CreateFloatingWindow: anchor.follow must be boolean", 3)
     end
-    window._exFloatAnchor = { frame = spec.frame, gap = spec.gap or GM.space.descriptionGap }
+    if spec.align ~= nil and spec.align ~= "top" and spec.align ~= "center" then
+        error("CreateFloatingWindow: anchor.align must be top or center", 3)
+    end
+    if spec.margin ~= nil and (type(spec.margin) ~= "number" or spec.margin < 0) then
+        error("CreateFloatingWindow: anchor.margin must be a non-negative number", 3)
+    end
+    if spec.trail ~= nil and type(spec.trail) ~= "function" then
+        error("CreateFloatingWindow: anchor.trail must be a function", 3)
+    end
+    if spec.side ~= nil and spec.side ~= "below" then
+        error("CreateFloatingWindow: anchor.side must be below", 3)
+    end
+    window._exFloatAnchor = { frame = spec.frame, gap = spec.gap or GM.space.descriptionGap, follow = spec.follow,
+        align = spec.align, margin = spec.margin, trail = spec.trail, side = spec.side }
     window:SetScript("OnUpdate", spec.follow == true and FloatingWindowFollow or nil)
     PlaceFloatingWindowBeside(window)
 end
@@ -4399,12 +4596,23 @@ end
 --   title           可选，标题栏文字；不填则标题栏只作拖动条
 --   closable        true 时标题栏右侧显示 × 关闭按钮（点击 = window:Hide()）
 --   strata          可选 "DIALOG"（默认）或 "FULLSCREEN_DIALOG"
+--   padding         可选，内容区（和标题 / 页签）离窗口左右、内容离底边的内距，默认 GM.space.cardBodyPadding；
+--                   实际值放在 window.contentPadding
+--   dragAnywhere    可选 true：窗口里任何空白处（不是按钮、输入框等控件的地方）都能拖（EXUI:SetDragAnywhere）；
+--                   拖完窗口改成 TOPLEFT 贴 UIParent 左下角，之后内容刷新、改高都不挪位置
+--   clampToScreen   可选 false：不夹在屏幕内（可以拖出屏幕）；不写照旧夹住
+--   onDragStop(window, x, y) 可选，只在 dragAnywhere 时调：用户拖完（标题栏、空白处都算）后的位置，
+--                   恢复用 window:ClearAllPoints(); window:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
+--   background      可选 "panel"：窗口底色与外框用设置主窗口那一套（GUIColors.panel / panelBorder）；不写照旧用对话框底
 --   onHide(window)  可选；窗口因关闭按钮、Hide()、父级隐藏等原因隐藏时调用（Release 引发的隐藏不调用；
 --   onCloseRequested(window, "close-button") 可选；×只请求关闭，owner先收尾再Hide/Release。
 --                   可以在 onHide 里调 window:Release()）
 --   anchor          可选 { frame, gap, follow }：贴在 frame 旁边（右→左→上→下，夹在屏幕内），follow=true 每帧跟随；
 --                   之后可用 window:SetAnchor(spec) 换目标、SetAnchor(nil) 取消；用户拖动窗口会自动取消。
 --                   不传时位置照旧为屏幕中心。
+--   headerTabs      可选 { items, value, onChange, height, fontSize }：页签放在标题行（不再有单独的标题文字），
+--                   × 在页签行最右；items / value / onChange 同 CreateTabGroup，height = 标题行高（默认 GM.size.tabHeight），
+--                   fontSize = 页签字号（可选）。返回的 window.tabs 就是这个页签组（SetValue / GetValue 照常）。
 -- 返回已隐藏的窗口：window.content 是内容区 Frame，window:SetTitle(text)，window:Release()，
 -- window:RefreshDragSurfaces()（内容重建后让新背景框也能拖窗口；显示时自动扫一次）；位置默认屏幕中心，
 -- 调用方自行 ClearAllPoints/SetPoint 与 Show()。不吞 Esc、不遮罩、不抢键盘。
@@ -4423,6 +4631,36 @@ function EXUI:CreateFloatingWindow(options)
     if options.onCloseRequested ~= nil and type(options.onCloseRequested) ~= "function" then
         error("CreateFloatingWindow: options.onCloseRequested must be a function", 2)
     end
+    local headerTabs = options.headerTabs
+    if headerTabs ~= nil then
+        if type(headerTabs) ~= "table" or type(headerTabs.items) ~= "table" then
+            error("CreateFloatingWindow: options.headerTabs must be { items, value, onChange, height, fontSize }", 2)
+        end
+        for key in pairs(headerTabs) do
+            if key ~= "items" and key ~= "value" and key ~= "onChange" and key ~= "height" and key ~= "fontSize" then
+                error("CreateFloatingWindow: options.headerTabs unknown field " .. tostring(key), 2)
+            end
+        end
+        if headerTabs.height ~= nil and (type(headerTabs.height) ~= "number" or headerTabs.height <= 0) then
+            error("CreateFloatingWindow: options.headerTabs.height must be a positive number", 2)
+        end
+        if options.title ~= nil then error("CreateFloatingWindow: headerTabs replaces the title; omit options.title", 2) end
+    end
+    if options.dragAnywhere ~= nil and type(options.dragAnywhere) ~= "boolean" then
+        error("CreateFloatingWindow: options.dragAnywhere must be boolean", 2)
+    end
+    if options.clampToScreen ~= nil and type(options.clampToScreen) ~= "boolean" then
+        error("CreateFloatingWindow: options.clampToScreen must be boolean", 2)
+    end
+    if options.onDragStop ~= nil and type(options.onDragStop) ~= "function" then
+        error("CreateFloatingWindow: options.onDragStop must be a function", 2)
+    end
+    if options.padding ~= nil and (type(options.padding) ~= "number" or options.padding < 0) then
+        error("CreateFloatingWindow: options.padding must be a non-negative number", 2)
+    end
+    if options.background ~= nil and options.background ~= "panel" then
+        error("CreateFloatingWindow: options.background must be panel or nil", 2)
+    end
     local strata = options.strata == nil and "DIALOG" or options.strata
     if not FLOATING_STRATA[strata] then
         error("CreateFloatingWindow: options.strata must be DIALOG or FULLSCREEN_DIALOG", 2)
@@ -4436,8 +4674,35 @@ function EXUI:CreateFloatingWindow(options)
     window:EnableMouse(true)
     window._exFloatTitle:SetText(options.title or "")
     window._exFloatClose:SetShown(options.closable == true)
+    window.contentPadding = options.padding or GM.space.cardBodyPadding
+    window:SetClampedToScreen(options.clampToScreen ~= false)
+    window._exFloatDragAnywhere = options.dragAnywhere == true
+    window._exFloatOnDragStop = options.onDragStop
+    EXUI:SetDragAnywhere(window, options.dragAnywhere == true and FLOATING_DRAG_ANYWHERE or nil)
     LayoutFloatingTitle(window, options.closable == true)
+    if headerTabs then
+        -- 页签进标题行：标题行加高到页签高，页签占满标题行（× 左边为止），内容区跟着下移。
+        local header, height = window._exFloatHeader, headerTabs.height or GM.size.tabHeight
+        header:SetHeight(height)
+        window._exFloatTitle:Hide()
+        local tabs = EXUI:CreateTabGroup(header, { items = headerTabs.items, value = headerTabs.value, fit = true,
+            onChange = headerTabs.onChange, itemHeight = height, fontSize = headerTabs.fontSize })
+        tabs:ClearAllPoints()
+        tabs:SetPoint("TOPLEFT", header, "TOPLEFT", window.contentPadding, 0)
+        if options.closable == true then
+            tabs:SetPoint("BOTTOMRIGHT", window._exFloatClose, "BOTTOMLEFT", -GM.space.descriptionGap, -(height - GM.size.floatingCloseSize) / 2)
+        else
+            tabs:SetPoint("BOTTOMRIGHT", header, "BOTTOMRIGHT", -window.contentPadding, 0)
+        end
+        tabs:Show()
+        window.tabs = tabs
+    end
+    PlaceFloatingContent(window)
     EXUI:ApplyDialogStyle(window, window._exFloatTitle)
+    if options.background == "panel" then
+        -- 和 EXBoss / Tools 设置主窗口同一底色与外框（GUIColors.panel / panelBorder）。
+        EXUI:SetControlSurface(window, GM.radius.dialog, GC.panel, GC.panelBorder)
+    end
     RaiseFloatingWindow(window)
     window:Hide()
     window._exFloatOnHide = options.onHide
@@ -4450,6 +4715,18 @@ function EXUI:CreateFloatingWindow(options)
         self._exFloatOnHide = nil
         self._exFloatOnCloseRequested = nil
         self._exFloatAnchor = nil
+        self._exFloatOnDragStop, self._exFloatDragAnywhere = nil, nil
+        EXUI:SetDragAnywhere(self, nil)
+        self:SetClampedToScreen(true)
+        if self.tabs then
+            -- 标题行页签：归还页签组，标题行与内容区回到默认高度。
+            Factory:ReleaseCompositeHost(self.tabs)
+            self.tabs = nil
+            self._exFloatHeader:SetHeight(GM.size.floatingHeaderHeight)
+            self._exFloatTitle:Show()
+        end
+        self.contentPadding = GM.space.cardBodyPadding
+        PlaceFloatingContent(self)
         self:SetScript("OnUpdate", nil)
         self:StopMovingOrSizing()
         if self:IsShown() then self:Hide() end
@@ -4740,12 +5017,22 @@ local function BuildIconButton(host)
     icon:SetPoint("CENTER", hit, "CENTER", 0, 0)
     host.button, host._exIbIcon = hit, icon
     host._exOverlayRefresh = PaintIconButton
-    hit:SetScript("OnEnter", function() host._exIbHover = true; PaintIconButton(host) end)
-    hit:SetScript("OnLeave", function()
+    hit:SetScript("OnEnter", function(self)
+        host._exIbHover = true; PaintIconButton(host)
+        if host._exIbTooltip then
+            GameTooltip:SetOwner(self, "ANCHOR_TOP")
+            GameTooltip:AddLine(host._exIbTooltip, 1, 1, 1, true)
+            GameTooltip:Show()
+        end
+    end)
+    hit:SetScript("OnLeave", function(self)
         host._exIbHover, host._exIbPressed = false, false
         PaintIconButton(host)
+        if GameTooltip:GetOwner() == self then GameTooltip:Hide() end
     end)
     hit:SetScript("OnMouseDown", function(self, mouseButton)
+        -- 按下就收起悬停提示（同 V2 句子词、芯片）。
+        if GameTooltip:GetOwner() == self then GameTooltip:Hide() end
         if mouseButton == "LeftButton" and self:IsEnabled() then
             host._exIbPressed = true
             PaintIconButton(host)
@@ -4822,6 +5109,7 @@ end
 --   checked     boolean：开关按钮（左键切换后调用 onToggle；field、input、dark 外观）；nil：普通按钮（点击调用 onClick）
 --   onToggle(checked, button)   开关切换后调用（控件已切到新状态；业务拒绝时调用 SetChecked 改回）
 --   onClick(button, mouseButton) 普通按钮点击
+--   tooltip     可选，悬停提示文字（GameTooltip，按钮上方）；按下即收起
 -- 返回池化宿主：SetChecked(bool)（静默）、GetChecked()、SetIcon(id)、SetIconColor(color)、SetHoverColors(border, icon)、
 -- SetAppearance(name)、
 -- SetEnabled(bool)、Release()；
@@ -4845,6 +5133,9 @@ function EXUI:CreateIconButton(parent, width, height, options)
     if options.iconSize ~= nil and (type(options.iconSize) ~= "number" or options.iconSize <= 0) then
         error("CreateIconButton: options.iconSize must be a positive number", 2)
     end
+    if options.tooltip ~= nil and type(options.tooltip) ~= "string" then
+        error("CreateIconButton: options.tooltip must be a string", 2)
+    end
     for _, key in ipairs({ "onToggle", "onClick" }) do
         if options[key] ~= nil and type(options[key]) ~= "function" then
             error("CreateIconButton: options." .. key .. " must be a function", 2)
@@ -4859,6 +5150,7 @@ function EXUI:CreateIconButton(parent, width, height, options)
     host._exIbChecked = options.checked
     host._exIbEnabled = true
     host._exIbOnToggle, host._exIbOnClick = options.onToggle, options.onClick
+    host._exIbTooltip = options.tooltip
     host._exIbHover, host._exIbPressed = false, false
     local size = options.iconSize or GM.size.iconGlyphSize
     host._exIbIcon:SetSize(size, size)
@@ -4868,7 +5160,8 @@ function EXUI:CreateIconButton(parent, width, height, options)
     Factory:AttachPoolRelease(host, function(self)
         self._exIbAppearance, self._exIbChecked, self._exIbEnabled = nil, nil, nil
         self._exIbIconColor, self._exIbHoverBorder, self._exIbHoverIcon = nil, nil, nil
-        self._exIbOnToggle, self._exIbOnClick = nil, nil
+        self._exIbOnToggle, self._exIbOnClick, self._exIbTooltip = nil, nil, nil
+        if GameTooltip:GetOwner() == self.button then GameTooltip:Hide() end
         self._exIbHover, self._exIbPressed = nil, nil
         self._exIbIcon:SetTexture(nil)
         self.button:Enable()
@@ -4958,6 +5251,11 @@ local function CreateStripSegment(strip, index)
         self._exStripHover = false
         PaintStripSegment(self)
         if GameTooltip:IsOwned(self) then GameTooltip:Hide() end
+    end)
+    -- 选项 hideTooltipOnPress：按下就收起悬停提示（点了会开面板，提示不能还盖着）。
+    segment:SetScript("OnMouseDown", function(self)
+        local owner = self._exStripOwner
+        if owner and owner._exStripHideTipOnPress and GameTooltip:IsOwned(self) then GameTooltip:Hide() end
     end)
     segment:SetScript("OnClick", function(self)
         local owner, item = self._exStripOwner, self._exStripItem
@@ -5111,6 +5409,7 @@ end
 --   onClick(id, segmentFrame, strip)   点某一段；segmentFrame 可当菜单锚点
 --   tooltipAnchor = "below"  可选：悬停提示水平居中放在该段正下方（间距 GM.size.capsuleTooltipGap）；
 --                            不写时照旧 GameTooltip 的 ANCHOR_BOTTOM。
+--   hideTooltipOnPress = true  可选：在某一段上按下鼠标就收起它的悬停提示（移开再移回才重新显示）；不写时照旧。
 -- 返回池化宿主（自己按内容定宽，高 GM.size.capsuleHeight）：SetItem(id, { icon?, text?, tooltip?, pressed? })、
 -- GetItemFrame(id)、Release()。悬停有 tooltip 的段显示 GameTooltip。
 function EXUI:CreateButtonStrip(parent, options)
@@ -5122,6 +5421,9 @@ function EXUI:CreateButtonStrip(parent, options)
     if options.tooltipAnchor ~= nil and options.tooltipAnchor ~= "below" then
         error("CreateButtonStrip: options.tooltipAnchor must be \"below\"", 2)
     end
+    if options.hideTooltipOnPress ~= nil and options.hideTooltipOnPress ~= true then
+        error("CreateButtonStrip: options.hideTooltipOnPress must be true or nil", 2)
+    end
     local items, seen = {}, {}
     for index, item in ipairs(options.items) do items[index] = CopyStripItem(item, index, seen) end
     local strip, isNew = Factory:AcquireCompositeHost(BUTTON_STRIP_POOL, parent)
@@ -5129,6 +5431,7 @@ function EXUI:CreateButtonStrip(parent, options)
     strip._exStripItems = items
     strip._exStripOnClick = options.onClick
     strip._exStripTooltipAnchor = options.tooltipAnchor
+    strip._exStripHideTipOnPress = options.hideTooltipOnPress
     for _, segment in ipairs(strip._exStripSegments) do segment._exStripHover = false end
     LayoutButtonStrip(strip)
     -- 自定义字体首帧可能还没载入，量出来的字宽偏小；下一帧同一租约再排一次。
@@ -5145,6 +5448,7 @@ function EXUI:CreateButtonStrip(parent, options)
             segment:Hide()
         end
         self._exStripItems, self._exStripOnClick, self._exStripTooltipAnchor = nil, nil, nil
+        self._exStripHideTipOnPress = nil
         EXUI:ClearControlSurface(self)
     end)
     return strip
@@ -5181,8 +5485,11 @@ local function BuildFlowThumb(thumb)
             error("FlowDirectionThumb:SetFlow expects direction/wrap of RIGHT, LEFT, UP or DOWN", 2)
         end
         local width, height = self:GetWidth(), self:GetHeight()
-        local size = math.floor(math.min(width / 4, height / 3))
-        local step = size + GM.space.flowCellGap
+        -- 最多三行三列小方块，四周留 flowCellInset，竖排的三行不贴格边。
+        local inset, cellGap = GM.space.flowCellInset, GM.space.flowCellGap
+        local size = math.max(1, math.floor(math.min((width - inset * 2 - cellGap * 2) / 3,
+            (height - inset * 2 - cellGap * 2) / 3)))
+        local step = size + cellGap
         local firstColor = self._exFlowFirstColor or GC.accent
         for index, cell in ipairs(self._exFlowCells) do
             local line, position = math.floor((index - 1) / FLOW_LINE_SIZE), (index - 1) % FLOW_LINE_SIZE
@@ -5273,7 +5580,8 @@ end
 --   direction, wrap  当前选中的主方向与换行方向（"RIGHT"/"LEFT"/"UP"/"DOWN"）；都不填 = 无选中
 --   firstColor       可选，缩略图第 1 个方块的颜色（业务色，默认 GC.accent）
 --   onChange(direction, wrap, picker)  用户点选后调用（控件已切到新选择）
--- 返回池化宿主（4 列 × 2 行共 8 个缩略图选择格）：SetFlow(direction, wrap)（静默）、GetFlow()、Release()。
+--   stretch          可选，true = 选择格随宿主宽变宽（4 列平分整宽，不窄于默认格宽）；改宽后调 Relayout()
+-- 返回池化宿主（4 列 × 2 行共 8 个缩略图选择格）：SetFlow(direction, wrap)（静默）、GetFlow()、Relayout()、Release()。
 function EXUI:CreateFlowDirectionPicker(parent, options)
     options = options or {}
     if type(options) ~= "table" then error("CreateFlowDirectionPicker: options must be a table", 2) end
@@ -5284,17 +5592,17 @@ function EXUI:CreateFlowDirectionPicker(parent, options)
     if options.onChange ~= nil and type(options.onChange) ~= "function" then
         error("CreateFlowDirectionPicker: options.onChange must be a function", 2)
     end
+    if options.stretch ~= nil and options.stretch ~= true then
+        error("CreateFlowDirectionPicker: options.stretch must be true or nil", 2)
+    end
     local picker, isNew = Factory:AcquireCompositeHost(FLOW_PICKER_POOL, parent)
     if isNew then BuildFlowPicker(picker) end
     local cellWidth, cellHeight, gap = GM.size.flowThumbWidth, GM.size.flowThumbHeight, GM.space.flowThumbGap
     picker._exFlowDirection, picker._exFlowWrap = options.direction, options.wrap
     picker._exFlowOnChange = options.onChange
+    picker._exFlowStretch = options.stretch
     picker:SetSize(4 * cellWidth + 3 * gap, 2 * cellHeight + gap)
-    for index, choice in ipairs(picker._exFlowChoices) do
-        choice:SetSize(cellWidth, cellHeight)
-        choice:ClearAllPoints()
-        choice:SetPoint("TOPLEFT", picker, "TOPLEFT",
-            ((index - 1) % 4) * (cellWidth + gap), -math.floor((index - 1) / 4) * (cellHeight + gap))
+    for _, choice in ipairs(picker._exFlowChoices) do
         choice._exFlowHover = false
         local thumb = EXUI:CreateFlowDirectionThumb(choice, cellWidth, cellHeight, { firstColor = options.firstColor })
         thumb:ClearAllPoints()
@@ -5302,13 +5610,26 @@ function EXUI:CreateFlowDirectionPicker(parent, options)
         thumb:SetFrameLevel(choice:GetFrameLevel() + 1)
         choice._exFlowThumb = thumb
     end
-    RefreshFlowPicker(picker)
+    -- 摆选择格：stretch 时 4 列平分当前宽（不窄于默认格宽），否则用默认格宽。
+    function picker:Relayout()
+        local width = cellWidth
+        if self._exFlowStretch then width = math.max(cellWidth, (self:GetWidth() - 3 * gap) / 4) end
+        for index, choice in ipairs(self._exFlowChoices) do
+            choice:SetSize(width, cellHeight)
+            choice:ClearAllPoints()
+            choice:SetPoint("TOPLEFT", self, "TOPLEFT",
+                ((index - 1) % 4) * (width + gap), -math.floor((index - 1) / 4) * (cellHeight + gap))
+            if choice._exFlowThumb then choice._exFlowThumb:SetSize(width, cellHeight) end
+        end
+        RefreshFlowPicker(self)
+    end
+    picker:Relayout()
     Factory:AttachPoolRelease(picker, function(self)
         for _, choice in ipairs(self._exFlowChoices) do
             if choice._exFlowThumb then choice._exFlowThumb:Release() end
             choice._exFlowThumb, choice._exFlowHover = nil, nil
         end
-        self._exFlowDirection, self._exFlowWrap, self._exFlowOnChange = nil, nil, nil
+        self._exFlowDirection, self._exFlowWrap, self._exFlowOnChange, self._exFlowStretch = nil, nil, nil, nil
     end)
     return picker
 end
@@ -5321,8 +5642,11 @@ Factory:InitCompositePool(PER_LINE_POOL)
 
 local function RefreshPerLine(selector)
     local value = selector._exPerLineValue
+    -- single：单选，只亮选中的那一个；否则 1..value 全亮（表示“到第几个换行”）。
+    local single = selector._exPerLineSingle
     for index, square in ipairs(selector._exPerLineSquares) do
-        square._exButtonVariant = (value ~= nil and index <= value) and "primary" or "secondary"
+        local lit = value ~= nil and (single and index == value or (not single and index <= value))
+        square._exButtonVariant = lit and "primary" or "secondary"
         Internal.PaintModernButton(square)
     end
     local none = selector._exPerLineNone
@@ -5330,7 +5654,7 @@ local function RefreshPerLine(selector)
         none._exButtonVariant = value == nil and "primary" or "secondary"
         Internal.PaintModernButton(none)
     end
-    selector._exPerLineInput:SetNumber(value)
+    if selector._exPerLineInput then selector._exPerLineInput:SetNumber(value) end
 end
 
 local function CommitPerLine(selector, value)
@@ -5351,7 +5675,9 @@ end
 --   validation   可选，"clamp"（默认）或"reject"；透传数字输入的原始值校验策略
 --   noneText     可选，“清除个数”按钮的文字；不填则不显示该按钮（点击 = onChange(nil)）
 --   onChange(value, selector)  用户点方块、输入数字、点清除按钮后调用（value 为正整数或 nil）
--- 返回池化宿主：SetValue(value)（静默）、GetValue()、Release()。
+--   single       可选，true = 只用一种控件：max 不超过 10 只给一排方块（随宿主宽收窄，最窄 perLineMinSquare，
+--                改宽后调 Relayout()；_exMinWidth = 能收窄到的宽），超过 10 只给数字框；不显示 inputLabel / noneText
+-- 返回池化宿主：SetValue(value)（静默）、GetValue()、Relayout()、Release()。
 function EXUI:CreatePerLineSelector(parent, options)
     options = options or {}
     if type(options) ~= "table" then error("CreatePerLineSelector: options must be a table", 2) end
@@ -5375,6 +5701,9 @@ function EXUI:CreatePerLineSelector(parent, options)
     if options.onChange ~= nil and type(options.onChange) ~= "function" then
         error("CreatePerLineSelector: options.onChange must be a function", 2)
     end
+    if options.single ~= nil and options.single ~= true then
+        error("CreatePerLineSelector: options.single must be true or nil", 2)
+    end
     local selector, isNew = Factory:AcquireCompositeHost(PER_LINE_POOL, parent)
     if isNew then
         local label = EXUI:CreateVisualFontString(selector, EXFONTFRAME, "GameFontHighlightSmall")
@@ -5395,9 +5724,58 @@ function EXUI:CreatePerLineSelector(parent, options)
     end
     selector._exPerLineValue = value
     selector._exPerLineOnChange = options.onChange
+    selector._exPerLineSingle = options.single == true
 
     local size, gap = GM.size.controlHeight, GM.space.perLineGap
     selector._exPerLineSquares = {}
+    selector._exMinWidth = nil
+    function selector:Relayout() end
+    if options.single then
+        local squares = maximum <= 10
+        for index = 1, squares and maximum or 0 do
+            selector._exPerLineSquares[index] = EXUI:CreateButton(selector, size, size, tostring(index),
+                function(_, mouseButton, down)
+                    if (mouseButton ~= nil and mouseButton ~= "LeftButton") or down then return end
+                    CommitPerLine(selector, index)
+                end, { compact = true })
+        end
+        selector._exPerLineNone, selector._exPerLineInput = nil, nil
+        if squares then
+            -- 一排方块：按当前宽平分，边长在 perLineMinSquare 和控件高之间，竖直居中。
+            function selector:Relayout()
+                local edge = math.floor((self:GetWidth() - (maximum - 1) * gap) / maximum)
+                edge = math.max(GM.size.perLineMinSquare, math.min(size, edge))
+                for index, square in ipairs(self._exPerLineSquares) do
+                    square:SetSize(edge, edge)
+                    square:ClearAllPoints()
+                    square:SetPoint("TOPLEFT", self, "TOPLEFT", (index - 1) * (edge + gap), -(size - edge) / 2)
+                end
+            end
+            selector._exMinWidth = maximum * GM.size.perLineMinSquare + (maximum - 1) * gap
+            selector:SetSize(maximum * size + (maximum - 1) * gap, size)
+            selector:Relayout()
+        else
+            local input = EXUI:CreateNumberInput(selector, GM.size.perLineInputWidth, {
+                min = 1, max = maximum, step = 1, integer = true, value = value,
+                validation = options.validation,
+                onChanged = function(number) CommitPerLine(selector, number) end,
+            })
+            input:ClearAllPoints()
+            input:SetPoint("TOPLEFT", selector, "TOPLEFT", 0, 0)
+            selector._exPerLineInput = input
+            selector:SetSize(GM.size.perLineInputWidth, size)
+        end
+        selector._exPerLineLabel:SetText("")
+        selector._exPerLineLabel:Hide()
+        RefreshPerLine(selector)
+        Factory:AttachPoolRelease(selector, function(self)
+            for _, square in ipairs(self._exPerLineSquares) do ReleasePooledChild(square) end
+            if self._exPerLineInput then ReleasePooledChild(self._exPerLineInput) end
+            self._exPerLineSquares, self._exPerLineNone, self._exPerLineInput = nil, nil, nil
+            self._exPerLineValue, self._exPerLineOnChange, self._exMinWidth, self._exPerLineSingle = nil, nil, nil, nil
+        end)
+        return selector
+    end
     for index = 1, maximum do
         local square = EXUI:CreateButton(selector, size, size, tostring(index), function(_, mouseButton, down)
             if (mouseButton ~= nil and mouseButton ~= "LeftButton") or down then return end
@@ -6775,4 +7153,157 @@ do
             host.personCards, host.personOpts = nil, nil
         end,
     }
+end
+
+-- =========================================================
+-- 贴行提示：贴在某个控件 / 行下方的就地提示（右下角浮动提示见 ShowStatusToast）。
+-- EXUI:ShowInlineNotice(anchor, text, opts) -> notice
+--   anchor：贴靠的控件或行；提示在它下方左对齐，下方放不下放上方，左右夹在屏幕内；anchor 移动会跟着走，anchor 隐藏时提示自动收起。
+--   opts = { kind = "info" | "warn" | "error"（默认 info）, duration = 秒（默认 info 3 / warn 4 / error 5；0 = 不自动消失）,
+--            width = 宽（可选；默认取 anchor 宽，最窄 GM.size.inlineNoticeMinWidth） }
+--            dragAnywhere = true（可选）：提示可拖（可拖出屏幕），拖过就留在拖到的位置、不再跟 anchor；点一下（没拖）仍收起
+--   同一个 anchor 再调用时替换原来那条。点一下提示即收起。
+-- EXUI:HideInlineNotice(anchorOrNotice)：提前收起。
+-- 颜色照状态提示（statusXxxTint / Border / Fg），字号照页内提示条（GM.settings.parts.noticeFont）。
+-- =========================================================
+do
+    local INLINE_TONES = { info = "Info", warn = "Warn", error = "Err" }
+    local INLINE_ICONS = { info = "statusinfo", warn = CONTEXT_ICON_ROOT .. "warning.tga", error = "statuserror" }
+    local INLINE_DURATION = { info = 3, warn = 4, error = 5 }
+    local FADE = 0.15
+
+    local function ToParentUnits(anchor)
+        return anchor:GetEffectiveScale() / UIParent:GetEffectiveScale()
+    end
+
+    local function PlaceInlineNotice(notice)
+        local anchor = notice._anchor
+        local scale = ToParentUnits(anchor)
+        local left, bottom, top = anchor:GetLeft(), anchor:GetBottom(), anchor:GetTop()
+        local gap, margin = GM.space.inlineNoticeGap, GM.space.inlineNoticeScreenMargin
+        if not left then
+            notice:ClearAllPoints()
+            notice:SetPoint("TOPLEFT", anchor, "BOTTOMLEFT", 0, -gap)
+            return
+        end
+        left, bottom, top = left * scale, bottom * scale, top * scale
+        if notice._placedLeft == left and notice._placedBottom == bottom and notice._placedTop == top then return end
+        notice._placedLeft, notice._placedBottom, notice._placedTop = left, bottom, top
+        local width, height = notice:GetWidth(), notice:GetHeight()
+        local screenWidth, screenHeight = UIParent:GetWidth(), UIParent:GetHeight()
+        local x = math.max(margin, math.min(left, screenWidth - margin - width))
+        notice:ClearAllPoints()
+        if bottom - gap - height < margin and top + gap + height <= screenHeight - margin then
+            notice:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", x, top + gap)
+        else
+            notice:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, math.max(margin + height, bottom - gap))
+        end
+    end
+
+    local function NewInlineNotice()
+        local notice = CreateFrame("Frame", nil, UIParent)
+        notice:SetFrameStrata("FULLSCREEN_DIALOG")
+        notice:SetFrameLevel(9200)
+        notice:EnableMouse(true)
+        notice.icon = CreateFrame("Frame", nil, notice)
+        notice.icon:SetSize(GM.size.statusIconSize, GM.size.statusIconSize)
+        notice.text = FeedbackText(notice, GM.settings.parts.noticeFont, FeedbackColors().statusDesc, "")
+        notice.text:SetJustifyV("TOP")
+        notice.text:SetWordWrap(true)
+        return notice
+    end
+
+    local function InlineNoticeClick(self) EXUI:HideInlineNotice(self) end
+    local function InlineNoticePress(self) self._pressMoved = nil end
+    local function InlineNoticeRelease(self) if not self._pressMoved then EXUI:HideInlineNotice(self) end end
+    local INLINE_DRAG = { onDragStart = function(notice) notice._dragged, notice._pressMoved = true, true end }
+
+    local function InlineNoticeUpdate(self, elapsed)
+        local anchor = self._anchor
+        if not anchor:IsVisible() then EXUI:HideInlineNotice(self) return end
+        if not self._dragged then PlaceInlineNotice(self) end
+        self._life = self._life + elapsed
+        local duration = self._duration
+        if self._life < FADE then
+            self:SetAlpha(self._life / FADE)
+        elseif duration > 0 and self._life >= duration + FADE then
+            EXUI:HideInlineNotice(self)
+        elseif duration > 0 and self._life >= duration then
+            self:SetAlpha(1 - (self._life - duration) / FADE)
+        else
+            self:SetAlpha(1)
+        end
+    end
+
+    function EXUI:ShowInlineNotice(anchor, text, opts)
+        opts = opts or {}
+        local kind = opts.kind or "info"
+        local tone = INLINE_TONES[kind]
+        if not tone then error("ShowInlineNotice: kind must be info, warn or error", 2) end
+        if type(anchor) ~= "table" or not anchor.GetEffectiveScale then error("ShowInlineNotice: anchor must be a frame", 2) end
+        if opts.dragAnywhere ~= nil and type(opts.dragAnywhere) ~= "boolean" then error("ShowInlineNotice: dragAnywhere must be boolean", 2) end
+        self._inlineNotices = self._inlineNotices or {}
+        self._inlineNoticePool = self._inlineNoticePool or {}
+        local notice = self._inlineNotices[anchor] or table.remove(self._inlineNoticePool) or NewInlineNotice()
+        self._inlineNotices[anchor] = notice
+        notice._anchor = anchor
+        notice._inactive = nil
+        notice._dragged, notice._pressMoved = nil, nil
+        if opts.dragAnywhere then
+            -- 可拖：按下拖动不收起，松开时这一按没拖过才收起；拖过就留在拖到的位置，不再跟着 anchor。
+            notice:SetMovable(true)
+            EXUI:SetDragAnywhere(notice, INLINE_DRAG)
+            notice:SetScript("OnMouseDown", InlineNoticePress)
+            notice:SetScript("OnMouseUp", InlineNoticeRelease)
+        else
+            EXUI:SetDragAnywhere(notice, nil)
+            notice:SetScript("OnMouseDown", InlineNoticeClick)
+            notice:SetScript("OnMouseUp", nil)
+        end
+        local c = FeedbackColors()
+        local fg, border, tint = c["status" .. tone .. "Fg"], c["status" .. tone .. "Border"], c["status" .. tone .. "Tint"]
+        local base, alpha = c.toast, tint[4] or 1
+        local fill = { base[1] * (1 - alpha) + tint[1] * alpha, base[2] * (1 - alpha) + tint[2] * alpha,
+            base[3] * (1 - alpha) + tint[3] * alpha, 1 }
+        EXUI:SetControlSurface(notice, GM.radius.control, fill, border)
+        SetContextGlyph(notice.icon, INLINE_ICONS[kind], fg)
+        notice.text:SetTextColor(unpack(self.ControlAppearance.colors.text))
+        notice.text:SetText(text or "")
+        -- 尺寸：宽取 opts.width 或 anchor 宽（换算到 UIParent），夹在最窄和屏幕宽之间；高按文字折行。
+        local padX, padY = GM.space.inlineNoticePaddingX, GM.space.inlineNoticePaddingY
+        local iconSize, iconGap = GM.size.statusIconSize, GM.space.inlineNoticeIconGap
+        local margin = GM.space.inlineNoticeScreenMargin
+        local width = opts.width or (anchor:GetWidth() * ToParentUnits(anchor))
+        width = math.min(math.max(width, GM.size.inlineNoticeMinWidth), UIParent:GetWidth() - margin * 2)
+        local textWidth = math.max(1, width - padX * 2 - iconSize - iconGap)
+        notice.text:ClearAllPoints()
+        notice.text:SetPoint("TOPLEFT", notice, "TOPLEFT", padX + iconSize + iconGap, -padY)
+        notice.text:SetWidth(textWidth)
+        notice.icon:ClearAllPoints()
+        -- 16px 图标比 13 号字高，上移 1px 与首行对中。
+        notice.icon:SetPoint("TOPLEFT", notice, "TOPLEFT", padX, -(padY - 1))
+        notice:SetSize(width, math.max(iconSize, math.ceil(notice.text:GetStringHeight())) + padY * 2)
+        notice._placedLeft, notice._placedBottom, notice._placedTop = nil, nil, nil
+        notice._duration = opts.duration or INLINE_DURATION[kind]
+        notice._life = 0
+        notice:SetAlpha(0)
+        PlaceInlineNotice(notice)
+        notice:Show()
+        notice:SetScript("OnUpdate", InlineNoticeUpdate)
+        return notice
+    end
+
+    function EXUI:HideInlineNotice(target)
+        local list = self._inlineNotices
+        if not list or not target then return end
+        local notice = list[target] or (target._anchor and list[target._anchor] == target and target) or nil
+        if not notice or notice._inactive then return end
+        notice._inactive = true
+        notice:SetScript("OnUpdate", nil)
+        EXUI:SetDragAnywhere(notice, nil)
+        notice:Hide()
+        list[notice._anchor] = nil
+        notice._anchor = nil
+        self._inlineNoticePool[#self._inlineNoticePool + 1] = notice
+    end
 end

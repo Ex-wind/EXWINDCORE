@@ -4231,7 +4231,7 @@ function EXUI:CreateMultiSelectDropdown(parent, width, label, options, selection
             display = L["全部"]
         elseif #selectedLabels > 0 then
             if #selectedLabels <= 2 then
-                display = table.concat(selectedLabels, ", ")
+                display = table.concat(selectedLabels, self._exMultiSeparator or ", ")
             else
                 display = string.format(L["已选 %d 项"], #selectedLabels)
             end
@@ -4239,6 +4239,8 @@ function EXUI:CreateMultiSelectDropdown(parent, width, label, options, selection
         SetDropdownDisplayText(self, display)
     end
 
+    -- 摘要分隔符：调用方（如 V2 页面样式 multiSeparator）在创建后另设，池化复用时先清掉。
+    dropdown._exMultiSeparator = nil
     dropdown:RefreshSelectionDisplay()
 
     dropdown:SetupMenu(function(self, rootDescription)
@@ -4720,6 +4722,7 @@ end
 -- 新接口可以把最后一个参数换成 callbacks 表（或作为第十个参数传入）：
 --   { onValueChanged = fn, onBegin = fn, onLive = fn, onCommit = fn }
 --
+--   callbacks.parse = fn(text) -> 数值或 nil（可选）：数字框输入的文字怎么换成值（如百分比显示时去掉 % 再除以 100）；不给按 tonumber。
 -- onValueChanged 仍在 Slider 的每一次值变化时调用，保证旧页面行为不变。
 -- onBegin/onLive/onCommit 只描述用户交互：按下、拖动、放开/输入提交。
 -- 程序化静默回填使用 slider:SetEXUIValue(value, "silent")。
@@ -4773,6 +4776,7 @@ function EXUI:CreateSlider(parent, width, label, minVal, maxVal, curVal, step, f
     slider._onBegin = lifecycle and lifecycle.onBegin or nil
     slider._onLive = lifecycle and lifecycle.onLive or nil
     slider._onCommit = lifecycle and lifecycle.onCommit or nil
+    slider._exParseInput = lifecycle and lifecycle.parse or nil
     slider._exControlWidth = controlWidth
     -- GridSlider 来自对象池时不能继承上一次拖动的交互状态。
     slider._exDragging = false
@@ -5040,7 +5044,7 @@ function EXUI:CreateSlider(parent, width, label, minVal, maxVal, curVal, step, f
         self._exLastArrowCommitText = nil
         if slider._exSyncingInput then return end
         local text = self:GetText():gsub("^%s+", ""):gsub("%s+$", ""):gsub(",", ".")
-        local value = NormalizeValue(slider, text)
+        local value = NormalizeValue(slider, slider._exParseInput and slider._exParseInput(text) or text)
         if value == nil then
             UpdateDisplayedValue(slider, NormalizeValue(slider, GetInnerValue(slider)))
             return
@@ -5050,7 +5054,7 @@ function EXUI:CreateSlider(parent, width, label, minVal, maxVal, curVal, step, f
     numberInput:SetScript("OnEnterPressed", function(self)
         self._exSkipLostCommit = true
         local text = self:GetText():gsub("^%s+", ""):gsub("%s+$", ""):gsub(",", ".")
-        local value = NormalizeValue(slider, text)
+        local value = NormalizeValue(slider, slider._exParseInput and slider._exParseInput(text) or text)
         if value == nil then
             UpdateDisplayedValue(slider, NormalizeValue(slider, GetInnerValue(slider)))
         else

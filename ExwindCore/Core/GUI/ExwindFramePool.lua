@@ -175,6 +175,7 @@ local function StandardReset(pool, frame)
     end
     frame._exButtonPresentation = nil
     frame._exSidebarSelected = nil
+    EXUI:PaintSelectRow(frame, false)
     frame._exSidebarLevel = nil
     if frame._exSidebarIcon then
         frame._exSidebarIcon:SetTexture(nil)
@@ -186,7 +187,6 @@ local function StandardReset(pool, frame)
         end
         frame._exSidebarBackground:Hide()
     end
-    if frame._exSidebarAccent then frame._exSidebarAccent:Hide() end
 
     -- [v4.3.13] 清理 Multiselect 属性，防止职业切换时数据残留
     frame._options = nil
@@ -615,9 +615,6 @@ end)
 -- 17. GridCard - 纯外观卡片
 EXFactory:InitPool("GridCard", "Frame", "BackdropTemplate", function(f)
     f:SetSize(400, 120)
-
-    local accent = EXUI:CreateVisualTexture(f, _G.EXBORDERFRAME)
-    f.Accent = accent
 
     local title = EXUI:CreateVisualFontString(f, _G.EXFONTFRAME)
     title:SetPoint("TOPLEFT", 12, -12)

@@ -36,10 +36,14 @@ ExwindTools.GUIMetrics = {
         toggleItemPadX = 44,      -- 多选（角标勾小块）：文字左 14 + 右侧角标区 30
         toggleItemGap = 4,        -- 多选：小块之间的间距
         soundSourceMaxRatio = 0.4, -- 声音选择里“来源”段最多占整段宽的比例
+        soundChannelSourceRatio = 0.2, -- 带输出声道时“来源”段最多占的比例（中间的内容段要宽）
+        soundChannelRatio = 0.22,  -- 带输出声道时“声道”段占整段宽的比例
         tableCellPadX = 4,        -- 表格单元格左右内距
         multilineHeight = 120,    -- 多行文字框标准高度
         multilineTallHeight = 240, -- 多行文字框 size="tall"（导入导出字符串）
         multilineScrollReserve = 20, -- 多行文字区给滚动留的宽度
+        numberStepIconSize = 14,     -- 数字框（CreateNumberInput）加减号图标边长
+        sliderValueGap = 6,          -- 设置行滑杆：轨道与右侧数值框之间（数值框是纯输入框，不带加减，用户 10-26 定）
         -- 可选页面样式预设（EXAura 编辑器新版）：页面声明只写预设名，不写像素。
         -- 颜色直接引用 Core 色表 GUIColors 里的项。styles 在下方表外填入。
         styles = {},
@@ -66,6 +70,8 @@ ExwindTools.GUIMetrics = {
             summaryButtonIconSize = 13, -- 摘要行图标按钮里的图标边长
             summaryGap = 8,            -- 行首图标、文字、尾部按钮之间
             sentenceLineHeight = 30,   -- 句子卡每行行高
+            sentencePaddingY = 8,      -- 句子卡上下内距
+            sentenceLineGap = 4,       -- 句子卡两行之间
             sentenceFragmentIconSize = 18, -- 句子里词前的小图标（法术图标）边长
             sentenceIconGap = 4,       -- 小图标与文字之间
             sentenceTokenPadX = 6,     -- 可点词左右内距
@@ -77,13 +83,17 @@ ExwindTools.GUIMetrics = {
             stepTitleHeight = 30,      -- 步骤名行高
             stepTitleGap = 6,          -- 步骤名到内容
             stepBottom = 4,            -- 步骤内容下内距（再加组间距到下一步）
-            stepDotSize = 12,          -- 步骤圆点直径
-            stepDotBorder = 2,         -- 圆点边宽
-            stepDotX = 21,             -- 圆点离卡左缘
+            stepDotSize = 26,          -- 步骤圆圈直径（序号写在圈里）
+            stepDotBorder = 2,         -- 圆圈边宽
+            stepDotX = 0,              -- 圆圈离卡左缘
             stepNumberFont = 13,       -- 序号字号
-            stepNumberGap = 5,         -- 序号右缘到圆点
             stepLineWidth = 2,         -- 连线宽
             stepLineGap = 4,           -- 连线两端离圆点
+            -- 预设 stepSide = true 时（步骤名在左栏、内容在右边同一行）用的尺寸：
+            stepSideWidth = 132,       -- 左栏宽（序号方块 + 步骤名）
+            stepSideNameGap = 8,       -- 序号方块与步骤名之间
+            stepSideRadius = 6,        -- 序号方块圆角
+            stepSideDivider = 1,       -- 步骤之间横线粗（画在组间距正中）
             optionCardGap = 8,         -- 横排选择卡之间
             optionCardPadX = 12,       -- 选择卡左右内距
             optionCardPadY = 10,       -- 选择卡上下内距
@@ -108,6 +118,14 @@ ExwindTools.GUIMetrics = {
             propsValueInset = 6,       -- 值框文字左右内距
             propsButtonSize = 24,      -- 框后图标按钮边长
             propsButtonIconSize = 14,  -- 框后图标按钮里的图标边长
+            propsPrefixWidth = 22,     -- prefixIcon 项：框内前缀图标占的宽（文字从这里开始）
+            propsPrefixInset = 5,      -- 前缀图标离值框左缘
+            propsPrefixIconSize = 13,  -- 前缀图标边长
+            propsPrefixShortWidth = 72, -- prefixIcon 项 size="short" 的值框宽（含图标）
+            propsInlineButtonSize = 22, -- prefixIcon 项：框内右侧图标按钮边长
+            propsInlineButtonInset = 2, -- 框内图标按钮离值框右缘
+            propsClampPadY = 3,        -- clampLines 多行项：文字上下内距
+            propsMoreGap = 4,          -- clampLines 多行项：文字与“展开 / 收起”之间
             catalogCardMinWidth = 96,  -- 预览卡最窄（按它算每行几张，多出的宽平分）
             catalogPreviewHeight = 60, -- 预览卡里预览区高
             catalogIconSize = 32,      -- 预览区里的图标边长（没给绘制回调时）
@@ -116,6 +134,50 @@ ExwindTools.GUIMetrics = {
             catalogLabelGap = 4,       -- 预览区与名字之间
             catalogLabelLines = 1,     -- 预览卡名字最多几行（1 = 不换行；大于 1 时放不下换行，卡高按实际行数）
             catalogGap = 8,            -- 预览卡之间
+            catalogTileWidth = 72,     -- 方格卡（catalog presentation="tile"）宽：图标在上、名字在下
+            catalogTileIcon = 44,      -- 方格卡图标（或绘制回调的预览区）边长
+            catalogTileIconRadius = 6, -- 方格卡里材质图标的圆角
+            catalogTileColumns = 4,    -- 方格卡每行最多几张（靠左排，不拉宽）
+            catalogTilePadY = 6,       -- 方格卡上下内距
+            catalogTileGap = 6,        -- 方格卡之间
+            catalogTileLargeWidth = 160, -- 大方格卡（catalog size="large"）宽：样子同方格卡，只是放大
+            catalogTileLargeIcon = 76,   -- 大方格卡图标边长
+            catalogTileLargeIconRadius = 10, -- 大方格卡里材质图标的圆角
+            catalogTileLargeFont = 15,   -- 大方格卡名字字号（比 catalogLabelFont 大一档）
+            catalogTileLargePadY = 12,   -- 大方格卡上下内距
+            optionCellHeight = 40,     -- 预设 optionCardCells：横排选择卡画成只有名字的格子时格高
+            optionCellWidth = 96,      -- 格子参考宽（页面按“左栏 + 4 格”算面板宽时用；实际宽按列数平分）
+            optionCellFont = 15,       -- 格子名字字号
+            soundTileHeight = 60,      -- 声音选择格子排法（soundselector opts.tiles）每格高
+            soundTileGap = 8,          -- 格子之间
+            soundTilePadX = 12,        -- 格内左右内距
+            soundTileLineGap = 2,      -- 小标题与值之间
+            soundTileCaptionFont = 13, -- 小标题字号
+            soundTileValueFont = 15,   -- 值字号
+            soundTileArrowSize = 12,   -- 下拉箭头边长
+            soundTileEditHeight = 26,  -- 内容是输入框（文件路径）时框高
+            soundTileSourceWidth = 150, -- 来源格宽
+            soundTileChannelWidth = 150, -- 声道格宽
+            soundTilePlayWidth = 84,   -- 试听格宽（声音格分剩下的宽）
+            soundTileDisabledAlpha = 0.5, -- 停用时格子透明度
+            glowTileGap = 6,           -- 发光设置组（glow_settings）预设格之间
+            glowTileMinWidth = 72,     -- 预设格最窄（放不下四格时改两格一行）
+            glowTileSampleSize = 48,   -- 预设格里样本图标边长
+            glowTilePreviewHeight = 78, -- 预设格预览区高（样本外留出发光的位）
+            glowTileLabelFont = 13,    -- 预设格名字字号
+            glowTileMarkFont = 12,     -- “已改”字号
+            glowTilePadY = 6,          -- 预设格上下内距
+            glowTileLineGap = 3,       -- 预览、名字、“已改”之间
+            glowTileBlockPadY = 10,    -- 预设格整排上下留白
+            glowSampleOffsetMax = 4,   -- 预设格样本的发光间距上限（大间距在小格里会出界）
+            glowSwatchSize = 18,       -- 颜色行色板边长
+            glowSwatchGap = 6,         -- 色板之间
+            catalogDimAlpha = 0.4,     -- 记录 dim 的卡（不能选）透明度
+            catalogDimHoverAlpha = 0.7, -- dim 卡悬停时透明度
+            catalogHeadingFont = 13,   -- 网格上方小标题（title / description）字号
+            catalogHeadingGap = 6,     -- 小标题行到卡片
+            catalogHeadingNoteGap = 8, -- 小标题与说明之间
+            catalogHeadingInset = 2,   -- 小标题离左缘
             entryHeight = 64,          -- 入口卡（catalog presentation="entry"）高
             entryMinWidth = 150,       -- 入口卡最窄
             entryGap = 12,             -- 入口卡之间
@@ -126,6 +188,7 @@ ExwindTools.GUIMetrics = {
             chipIconSize = 16,         -- 带图标芯片里的图标边长
             chipIconGap = 4,           -- 芯片图标与文字之间
             chipInputWidth = 140,      -- 芯片列表末尾输入框的宽
+            chipCornerRemoveSize = 12, -- 方块图标芯片（chipIconCompact）右上角删除叉边长
             triFont = 13,              -- 三态小标签字号
             triPaddingX = 12,          -- 三态小标签左右内距
             triDotSize = 10,           -- 三态小标签文字前的色点直径
@@ -136,7 +199,8 @@ ExwindTools.GUIMetrics = {
             prefixWidth = 18,          -- 数字框前缀（字母或图标）占的宽
             prefixFont = 13,           -- 前缀字母字号
             prefixIconSize = 14,       -- 前缀图标边长
-            prefixInset = 6,           -- 前缀离输入框左缘
+            prefixGap = 6,             -- 前缀（画在输入框外左边）到输入框左缘
+            prefixInset = 6,           -- 前缀图标离输入框左缘
             noticePaddingX = 10,       -- 行内提示条左右内距
             noticePaddingY = 8,        -- 行内提示条上下内距
             noticeFont = 13,           -- 行内提示条字号
@@ -150,17 +214,43 @@ ExwindTools.GUIMetrics = {
             pickSearchWidth = 200,     -- 搜索框宽
             pickCountFont = 13,        -- 计数字号
             pickHeaderGap = 10,        -- 搜索行与分组之间
-            quickButtonSize = 26,      -- 快速工具条按钮边长
-            quickIconSize = 15,        -- 工具条按钮里的图标边长
-            quickPadding = 4,          -- 工具条内距
-            quickButtonGap = 4,        -- 工具条按钮之间
-            quickAnchorGap = 6,        -- 工具条与选中元素、小框与工具条的间距
-            quickCellHeight = 36,      -- 工具条每格高（格间竖线也这么高）
-            quickInlineGap = 6,        -- inline 格里图标与控件之间
-            quickPopoverWidth = 300,   -- 工具条小框宽
+            iconPickCell = 40,         -- 图标选取（iconpick）：格子图标边长（职业、专精、英雄天赋、种族）
+            iconPickSmall = 28,        -- 小号图标边长（载入页行下的已选图标、“…”方块）
+            iconPickGlow = 8,          -- 选中外发光比格子每边大出
+            iconPickCardWidth = 120,   -- 副本卡宽（首领卡的最小宽）
+            iconPickCardImage = 66,    -- 副本卡上冒险手册按钮图高（按钮图 174×95 的比例）
+            iconPickCardName = 22,     -- 副本卡图下的名字行高
+            iconPickBossHeight = 64,   -- 首领卡高（同 EXBoss 首领页）
+            iconPickModelWidth = 54,   -- 首领卡 3D 头像宽
+            iconPickModelHeight = 58,  -- 首领卡 3D 头像高
+            iconPickTextGap = 6,       -- 图标与文字之间
+            iconPickGap = 4,           -- 同一行里两项之间
+            iconPickRowPadY = 2,       -- 行上下内距
+            iconPickSeparatorGap = 8,  -- 竖分隔线左右留白
+            iconPickSeparatorHeight = 20, -- 竖分隔线高
+            iconPickGridGap = 6,       -- 等分格之间
+            iconPickTitleHeight = 18,  -- 分组小标题行高
+            iconPickTitleFont = 13,    -- 分组小标题字号
+            iconPickFont = 14,         -- 副本名、导航项字号
+            iconPickHeadHeight = 22,   -- 分组标题（head：可点的小图标 + 名字）行高
+            iconPickHeadIcon = 20,     -- 分组标题里的小图标边长
+            iconPickSectionGap = 8,    -- 组与组之间
+            iconPickColumnGap = 16,    -- 并排的组之间
+            iconPickDividerHeight = 7, -- 横分隔线所占行高（线在中间）
+            iconPickDimAlpha = 0.45,   -- 没选中的首领卡 3D 头像透明度（模型不能去色）
+            iconPickNavWidth = 160,    -- 侧栏导航项（nav）宽
+            iconPickNavHeight = 32,    -- 侧栏导航项高
+            iconPickNavIcon = 24,      -- 侧栏导航项里的图标边长
+            iconPickNavPadX = 6,       -- 侧栏导航项左右内距
+            texturePickCell = 52,      -- 材质网格（texturegrid）：格子边长
+            texturePickGap = 6,        -- 格子之间；材质预览里材质离示意图标
+            texturePickInset = 4,      -- 格子里材质离格边
+            texturePickPreviewHeight = 150, -- 材质预览（texturepreview）区高
+            texturePickPreviewIcon = 40,    -- 预览中间示意图标边长
+            texturePickPreviewSize = 72,    -- 预览里材质的边长（按宽高比放进这个方框）
+            quickAnchorGap = 6,        -- 贴词小框与贴靠框体的间距
+            quickPopoverWidth = 300,   -- 贴词小框宽
             quickPopoverPadding = 2,   -- 小框外框内距（里面的页面自带页边距）
-            quickStarSize = 14,        -- 完整面板行名字前的星号边长
-            quickStarGap = 6,          -- 星号与后面（勾选框 / 图标 / 名字）之间
         },
     },
 
@@ -243,6 +333,7 @@ ExwindTools.GUIMetrics = {
         menuRowHighlightInset = 1,     -- 行高亮块相对行框的左右内缩；菜单外框 inset 已有 6，这里不再叠大留白
         menuEdgePadding = 4,           -- 右键菜单四周外边距，以及行到菜单边的留白
         menuDividerGap = 3,            -- 右键菜单分隔线上下留白
+        menuShortcutGap = 16,          -- 右键菜单项文字与右侧快捷键（item.shortcut）之间至少留
 
         -- 页内状态提示与浮动 Toast（ExwindGUIComposite.lua）。
         statusPaddingX = 14,           -- 状态提示左右内边距
@@ -268,6 +359,7 @@ ExwindTools.GUIMetrics = {
         colorSwatchPaddingX = 10,      -- 色块到按钮左缘的内边距
         colorSwatchGap = 8,            -- 色块到标签的间隙
         colorButtonTextPaddingRight = 8, -- 标签右内边距
+        colorPresetGap = 4,            -- 常用色小方块之间
 
         -- 复合设置组（ExwindGUIComposite.lua 的 COMPOSITE_* 常量真源）。
         compositePadX = 10,            -- 复合组左右内边距；加上列内控件内缩 10 后与设置行左缘 20 对齐（settings.rowPaddingX）
@@ -327,17 +419,18 @@ ExwindTools.GUIMetrics = {
         sliderHeight = 54,                 -- Slider 整体高度（标题行 + 轨道）
         sliderTrackHeight = 4,             -- Slider 轨道粗细；两端圆角由 surface 按高度/2 自动取半圆。
                                            -- 轨道是空的灰条，不再画已走过那一段的填充（用户 2026-10-05）
+                                           -- 所有页面同一套细滑条，页面预设不再另给粗轨道（用户 10-26：“好丑”）
         timelineTrackHeight = 4,           -- 时间轴滑条轨道粗细（保持原样）
-        sliderThumbWidth = 26,             -- Slider 拖块宽
+        sliderThumbWidth = 12,             -- Slider 拖块：小圆点（宽高相等）
         sliderThumbHeight = 12,            -- Slider 拖块高；与轨道高度同奇偶
         controlDefaultWidth = 200,
         buttonMinWidth = 104,              -- 按钮最小宽度；BUTTON_STYLE.minWidth
         buttonRadius = 4,                  -- 按钮圆角，等于 radius.control
         buttonPressOffset = 1,             -- 按钮按下时文字向右下移动的像素
         picButtonPressInset = 2,           -- 图片按钮按下时贴图四周内缩的像素（按下反馈）
-        -- 滑条数值框：13 号字下 "100.5"（5 个字符）加上左右各 sliderInputInset(3) 的内缩
-        -- 需要约 42px 可用宽，所以框宽 48；高度仍是 20 的具名例外。
-        sliderInputWidth = 48,
+        -- 滑条数值框（纯输入框，不带加减）：13 号字下 "100.5%" 加上左右各 sliderInputInset(3) 的内缩，框宽 56；
+        -- 设置行里数值更长放不下时按最长数值加宽。高度仍是 20 的具名例外。
+        sliderInputWidth = 56,
         sliderInputHeight = 20,
         -- 播放指示器（唯一公共入口 EXUI:AcquirePlayingIndicator）：待播时的播放图标，
         -- 播放中换成 5 条竖线（只有中间 3 条跳动）。所有播放入口共用这一组尺寸。
@@ -347,10 +440,11 @@ ExwindTools.GUIMetrics = {
 
         menuRowHeight = 30,                -- 菜单行高与勾标尺寸独立。
         menuSearchHeight = 42,             -- 下拉菜单搜索栏高度；EXTERNAL_DROPDOWN_SEARCH_HEIGHT
+        menuSearchMinItems = 8,            -- 下拉选项不超过这么多项时不出搜索框，多了才出（用户 10-26）
         menuCheckSize = 16,                -- 菜单勾号边长（用户 2026-10-04：原 14 太小）
         menuScrollBarWidth = 8,
         menuScrollThumbWidth = 4,
-        numberStepperWidth = 20,
+        numberStepperWidth = 22,           -- 数字框加减步进列 / 左减右加每个按钮的宽
         menuMaxHeight = 400,               -- [WEB-REQ 57] 右键菜单最大高度，对齐 Dropdown 的 SetScrollMode(400)；更长则滚动
         menuMaxWidth = 420,                -- 右键菜单最大宽度（按真实文字测宽，超过则单行截断）
         menuMinWidth = 190,                -- 右键菜单最小宽度
@@ -371,6 +465,7 @@ ExwindTools.GUIMetrics = {
         dialogCloseGlyphSize = 16,         -- 对话框关闭图标边长；比 Toast 的 14 大一档，对应更大的按钮
         colorButtonDefaultWidth = 225,     -- 颜色按钮默认宽度
         colorSwatchSize = 16,              -- 颜色按钮左侧色块边长
+        colorPresetSize = 12,              -- 颜色按钮里常用色小方块边长
         cardHeaderHeight = 32,             -- 设置卡片标题栏高度；ExwindGUISettingsList.lua SETTINGS_CARD_HEADER_HEIGHT
         personPortraitAvatar = 56,         -- 人物卡竖排默认圆形头像直径
         homeContactIcon = 48,              -- 首页顶部联系图标
@@ -399,7 +494,7 @@ ExwindTools.GUIMetrics = {
         minTextWidth = 160,                -- 设置列表文字列最小宽度；SETTINGS_LIST_MIN_TEXT_WIDTH
         -- [WEB-REQ 28] 设置列表普通行（按钮/输入/下拉/颜色/滑条）右侧控件的最小可用宽与窄版阈值：
         -- 文字列 >= minTextWidth 放不下时，文字列可收窄到 settingsRowCompactTextWidth，仍放不下才把控件换到下一行。
-        settingsRowSliderMinWidth = 154,   -- 滑条（数值框 sliderInputWidth 48 + 间距 10 + 轨道 >= 96）
+        settingsRowSliderMinWidth = 158,   -- 滑条（数值框 sliderInputWidth 56 + 间距 sliderValueGap 6 + 轨道 >= 96）
         sliderTrackMinWidth = 96,          -- 滑条轨道最小宽（与上一行同一组数）
         settingsRowCompactTextWidth = 112, -- 窄版时文字列最小宽度
         externalHeaderHeight = 56,         -- 外置卡片头高度；SETTINGS_LIST_EXTERNAL_HEADER_HEIGHT
@@ -445,16 +540,16 @@ do
         return style
     end
 
-    -- 分组照 6702（10-21 定案）：标题不带底、V 形细线箭头，行装在圆角带边卡里。
+    -- 分组照 6702（10-21 定案）：标题不带底、加减号折叠，行装在圆角带边卡里。
     styles.exaura = {
         catalogLabelLines = 2,          -- 预览卡名字放不下换行，最多两行
         headerHeight = 18,              -- 标题行高
         headerRadius = 6,               -- 标题条圆角（标题条透明，只占位）
         headerFill = GC.transparent,    -- 标题不带底
         headerPaddingLeft = 2,          -- 箭头离标题行左缘
-        foldGlyph = "chevron",          -- 折叠号画 V 形细线箭头（收起朝右、展开朝下）
-        foldWidth = 13,                 -- 箭头边长
-        foldNameGap = 8,                -- 箭头与组名间距
+        foldGlyph = "plus",             -- 折叠号画加减号图标（收起“+”、展开“−”；用户 10-24 不要箭头）
+        foldWidth = 18,                 -- 加减号边长
+        foldNameGap = 6,                -- 加减号与组名间距
         headerFont = 18,                -- 组名字号
         headerText = GC.text,           -- 组名颜色（同标准页节标题）
         noteFont = 13,                  -- 标题右侧字字号
@@ -493,43 +588,119 @@ do
         summaryButtonIconSize = 16,     -- 图标按钮里的图标边长
         tabHeight = 34,                 -- 面板页签行高（浮窗 headerTabs 用）；蓝线在行底，行矮一点线就贴近文字
         tabFont = 17,                   -- 页签字号
-        quickHeight = 52,               -- 快速工具条高
-        quickItemPadX = 10,             -- 工具条每格左右内距
-        quickDivider = GC.popupDivider, -- 工具条格间竖线（同弹出菜单分隔线）
-        quickButtonSize = 30,           -- 工具条按钮边长（含“⋯”）
-        quickIconSize = 16,             -- 工具条图标边长
-        quickAnchorGap = 12,            -- 工具条离元素
-        quickSelectWidth = 110,         -- 工具条 inline 格里的下拉宽
-        quickStarTrailing = true,       -- 完整面板星号紧跟 quick 行名字后面，不在行首留一列
+        quickAnchorGap = 12,            -- 贴词小框离贴靠框体
         multiSeparator = "、",          -- 多选下拉摘要里选中项之间的分隔
         optionCardGap = 6,              -- 横排选择卡之间
         optionCardPadX = 8,             -- 选择卡左右内距（三张一排时描述放得下两行）
         optionCardPadY = 8,             -- 选择卡上下内距
+        optionCardFit = true,           -- 选择卡名字不换行放不下、描述超过两行或末行只剩一个字时自动少一列（3→2→1）
+        optionCardDescLines = 2,        -- 选择卡描述最多几行（配合 optionCardFit）
+        triLabelAbove = true,           -- 只有三态小标签的设置行（过滤类名 + 一串标签）一律类名在上、标签在下
         unlabeledFill = true,           -- 没写 label 的设置行：控件区占满整行（只有按钮时仍靠右）
         chipInputFill = true,           -- 法术芯片末尾的输入框占满所在行剩下的宽
+        chipInputColumns = 2,           -- 法术芯片：前几个（chipInputNamedMax）一行两个，图标 + 名字
+        chipInputNamedMax = 6,          -- 法术芯片：超过 6 个时多出来的只显示图标，按宽度一行排满再换行
+        chipInputFirst = true,          -- 法术芯片：输入框在最上面，新加的往下排，先加入的先变成只有图标
+        chipIconCompact = true,         -- 法术芯片：只有图标的画成方块图标，右上角小红叉删除
+        chipInputHoverRemove = true,    -- 法术芯片：删除叉都是右上角小叉，鼠标移到芯片上才显示（用户 10-25 定）
+        chipInputHeight = 36,           -- 法术芯片高（图标放大，用户 10-25 定；输入框照 controlHeight）
+        chipInputIconSize = 28,         -- 法术芯片里的法术图标边长（普通芯片 chipIconSize 16）
+        sentencePaddingY = 4,           -- 句子卡（触发页顶部摘要）上下内距：紧凑
+        sentenceLineGap = 0,            -- 句子卡两行之间
+        sentenceLineHeight = 26,        -- 句子卡每行行高
+        triFont = 15,                   -- 三态小标签（光环过滤）字号（用户 10-22 嫌 13 太小）
+        segmentTextOffsetY = 1,         -- 分段文字下移 1 像素（中文字形偏上，看起来不居中）
+        sliderSelectWidth = true,       -- 不带 label 的滑杆整组（轨道 + 数字框）宽同本页下拉
+        sliderInputHeight = 24,         -- 滑杆数值框高 24（同本页控件高）
+        -- 滑杆占满标签右边整列（减去数值框）；轨道、拖块用 Core 默认细滑条（用户 10-26）。
+        sliderFill = true,
+        sliderLabelWidth = 76,          -- 滑杆行的标签列至少这么宽：标签长短不一时滑杆仍从同一处起、一样长（用户 10-26）
         tableEmptyCompact = true,       -- 表格没有记录时不画表头，只留新增按钮（靠右、普通行高）；有记录时表头列不窄于列名
         tableAddLast = true,            -- 表格新增按钮排在所有记录行下面
         tableHeaderCellAligned = true,  -- 表头列名与下面格子里的控件左缘对齐
         perLineSingle = true,           -- 每行个数只用一种控件：上限不超过 10 只给方块，超过只给数字框
         inputFitPlaceholder = true,     -- 输入框至少放得下整句占位字
-        -- 作者 / 版本 / 链接 / 说明（props）：行名、字号、行高同面板其他行，键名与其他行名左缘对齐，下面不多留。
+        -- 作者 / 版本 / 链接 / 说明（props）：字号同面板其他行；写了键名时与其他行名左缘对齐，下面不多留。
         propsKeyRole = "settingsLabel",
         propsValueRole = "control",
-        propsRowHeight = 36,
+        propsRowHeight = 30,            -- 作者 / 版本 / 链接一行：图标代替行名，排紧凑（用户 10-25 定原型 ③）
         propsValueHeight = 26,
-        propsPaddingX = 4,
+        propsPaddingX = 10,             -- 左右同行内距 rowPaddingX：值框右缘和其他行控件对齐
+        propsKeyInset = 0,              -- 键名左缘 = propsPaddingX，和其他行名对齐
         propsPaddingTop = 0,
         propsPaddingBottom = 2,
         propsKeyWidth = 44,
+        -- 值框平时只显示文字，鼠标悬停或点进去才显出输入框（用户 10-24 要求恢复这样）。
+        propsMultilineFixed = true,     -- 说明（多行）一直占两行高，卡片高度固定
+        propsMultilineHeight = 44,      -- 说明框高：两行字
+        -- 左列表（光环树面板）：树控件外面一圈的排布。搜索框、眼睛高 controlHeight，眼睛图标 iconButtonIconSize。
+        listPadding = 8,                -- 四周留白：边距、搜索行空白都落在面板底上，按住能拖整块面板
+        listToolInset = 4,              -- 搜索框左缘 / 眼睛右缘离内容区边（列表本身不缩）
+        listToolGap = 6,                -- 搜索框与眼睛之间、搜索行与列表之间
+        listPinSize = 22,               -- 图钉按钮边长
+        listPinX = 12,                  -- 图钉离面板左缘
+        listPinY = 18,                  -- 图钉离面板上缘
+        listEmptyInset = 7,             -- 没有光环时提示字离列表左上
+        listEmptyWidth = 240,           -- 提示字宽
+        listRailWidth = 68,             -- 收起时只显示图标列的面板宽
+        listRailInset = 6,              -- 图标列离面板左 / 下缘
+        listRailTop = 48,               -- 图标列离面板上缘（让出图钉）
+        listMiniIcon = 36,              -- 图标列里光环图标边长
+        listMiniIconInset = 2,          -- 图标贴图、类型条离图标按钮边
+        listMiniKindBar = 3,            -- 图标底部类型条高
+        listMiniRingRadius = 4,         -- 选中蓝框圆角
+        listMiniGap = 6,                -- 图标 / 白框之间
+        listMiniPad = 4,                -- 白框上下内距
+        listMiniFolder = 14,            -- 白框顶部文件夹图标边长
+        listMiniFolderGap = 3,          -- 文件夹图标到框内第一项
+        listMiniBoxInset = 2,           -- 嵌套白框比外框左右各再缩（在 listMiniPad 之外）
+        listMiniBoxBottom = 2,          -- 白框底部在 listMiniPad 之外再留
+        listMiniBoxMinExtra = 8,        -- 嵌套白框至少比图标宽这么多
+        listGhostWidth = 290,           -- 拖动时跟随指针的名字框
+        listGhostHeight = 52,
+        listGhostOffsetX = 16,          -- 名字框离指针（右、下）
+        listGhostOffsetY = 12,
+        listDropLine = 2,               -- 落点之前 / 之后的标记线粗
+        -- 图标选取（载入页职业专精、种族、副本、首领面板）：格子 40、间距 6，首领面板约 400 宽。
+        iconPickGap = 6,               -- 同一行里两项之间
+        iconPickGridGap = 6,           -- 等分格之间（副本卡、首领卡）
+        iconPickSeparatorGap = 4,      -- 竖分隔线左右留白
+        iconPickSeparatorHeight = 32,  -- 竖分隔线高（格子高减上下各 4）
+        iconPickRowPadY = 3,           -- 行上下内距（行距 6）
+        iconPickSectionGap = 10,       -- 组与组之间
+        iconPickColumnGap = 12,        -- 副本列表与首领卡之间
+        iconPickNavWidth = 132,        -- 副本列表项宽
+        iconPickNavHeight = 32,        -- 副本列表项高
     }
+
+    -- 载入页选取面板（职业与专精 / 种族 / 副本 / 首领）：同 exaura，只是行不装进圆角带边卡（面板里不套内框）。
+    styles.exauraPick = Derive(styles.exaura, {})
+    styles.exauraPick.cardFill = nil
 
     -- 元素面板（贴在光环旁的窄面板）：控件收窄，名字和控件放得进同一行。
     styles.exauraPanel = Derive(styles.exaura, {
         shortWidth = 84,                -- 数字框宽：放得下带负号、一位小数的 5 位数（-4000.5），两个数字框加名字仍放得下一行
         prefixWidth = 16,               -- 数字框前缀占的宽（“X”“宽”）
-        prefixInset = 6,                -- 前缀离输入框左缘
+        prefixGap = 4,                  -- 前缀（画在输入框外左边）到输入框左缘
         switchWidth = ExwindTools.GUIMetrics.size.switchTrackWidth, -- 不带文字的开关只占轨道宽
         sliderWidth = 176,              -- 不带文字的滑杆（数字框 48 + 轨道）
+    })
+
+    -- 条件面板（添加音效 / 添加动画）：每一步一行——左栏是放大的圆角方块序号 + 步骤名，右边固定 4 格，
+    -- 步骤之间一条横线，不套卡片；“什么时候”是只有名字的格子，选中用卡片勾选框的右上角斜角小勾。
+    styles.exauraSteps = Derive(styles.exaura, {
+        stepSide = true,
+        stepDotSize = 30,               -- 序号方块边长（比圆圈大一圈）
+        stepDotBorder = 2,
+        stepNumberFont = 17,
+        stepTitleFont = 15,
+        stepTitleHeight = 40,           -- 左栏按第一行（格子高）竖直居中
+        groupGap = 13,                  -- 步骤之间（横线画在正中）
+        optionCardCells = true,
+        optionCardGap = 6,
+        catalogTileWidth = 80,          -- 法术卡、动画卡比普通方格卡大一档，图标圆角也更圆
+        catalogTileIcon = 52,
+        catalogTileIconRadius = 10,
     })
 
     -- 载入页：文字列按标签实际字宽。
@@ -537,5 +708,6 @@ do
         labelAutoWidth = true,
         controlWidth = 150,             -- 标准控件宽
         shortWidth = 60,                -- size="short" 的宽
+        catalogTileWidth = 96,          -- 行下已选的副本 / 首领卡：名字放得下 7 个字
     })
 end

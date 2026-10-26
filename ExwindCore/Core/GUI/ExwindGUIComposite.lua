@@ -1570,119 +1570,6 @@ function EXUI:CreatePreviewCanvas(parent, width, height, elementsData, callbacks
 end
 
 -- =========================================================
--- 12. Glow 设置复合组件 (Glow Settings Group)
--- =========================================================
-function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate)
-    local container = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    local groupWidth = width or 750
-    local groupHeight = 240
-
-    container:SetSize(groupWidth, groupHeight)
-    EXUI:ClearControlSurface(container)
-
-    -- 内容容器
-    local content = CreateFrame("Frame", nil, container)
-    content:SetSize(groupWidth, groupHeight)
-    content:SetPoint("TOPLEFT", 0, 0)
-
-    -- 布局坐标
-    local col1, col2, col3 = 15, 275, 535
-    local row1, row2, row3 = -25, -95, -165
-    local itemW = 225
-
-    local enableKey = key .. "Enabled"
-    if db[enableKey] == nil then db[enableKey] = true end
-
-    local cb = EXUI:CreateCheckbox(content, L["启用发光"], db[enableKey], function(checked)
-        db[enableKey] = checked
-        if onUpdate then onUpdate() end
-    end)
-    -- 注意：CreateCheckbox 返回一个容器，不是简单的 Button
-    cb:SetPoint("TOPLEFT", col1, row1 - 5)
-
-
-    -- 1. 样式选择 (Style Dropdown)
-    local styleKey = key .. "Style"
-    local styles = {
-        { L["标准 (Classic)"], "Action Button Glow" },
-        { L["像素 (Pixel)"], "Pixel Glow" },
-        { L["自动施法 (AutoCast)"], "Autocast Shine" },
-        { L["新版触发 (Proc)"], "Proc Glow" },
-    }
-
-    local styleDropdown = EXUI:CreateDropdown(content, itemW, L["样式类型"], styles, db[styleKey] or "Action Button Glow",
-        function(val)
-            db[styleKey] = val
-            container:RefreshLayout()
-            if onUpdate then onUpdate() end
-        end)
-    styleDropdown:SetPoint("TOPLEFT", col2, row1 - 10)
-
-    -- 2. 颜色选择
-    local colorBtn = EXUI:CreateColorButton(content, L["发光颜色"], db, key .. "Color", true, function()
-        if onUpdate then onUpdate() end
-    end)
-    -- Color button matches generic button height
-    colorBtn:SetPoint("TOPLEFT", col3, row1 - 10)
-
-    -- 3. Sliders
-    local sliders = {}
-    local function CreateGlowSlider(sLabel, sKey, min, max, step, def)
-        local itemKey = key .. sKey
-        local s = EXUI:CreateSlider(content, itemW, sLabel, min, max, db[itemKey] or def, step, nil, function(v)
-            db[itemKey] = v
-            if onUpdate then onUpdate() end
-        end)
-        return s
-    end
-
-    sliders.Frequency = CreateGlowSlider(L["频率 (Frequency)"], "Frequency", 0.1, 5, 0.1, 0.25)
-    sliders.Lines = CreateGlowSlider(L["线条 (Lines)"], "Lines", 1, 30, 1, 8)
-    sliders.Scale = CreateGlowSlider(L["大小/粗细 (Scale)"], "Scale", 0.5, 3, 0.1, 1)
-    sliders.Offset = CreateGlowSlider(L["边距 (Offset)"], "Offset", -50, 50, 1, 0)
-    if db[key .. "Offset"] == nil then db[key .. "Offset"] = 0 end
-
-    container.Sliders = sliders
-
-    function container:RefreshLayout()
-        local style = db[styleKey] or "Action Button Glow"
-
-        if style == "Proc Glow" then colorBtn:Hide() else colorBtn:Show() end
-
-        for _, s in pairs(sliders) do s:Hide() end
-
-        -- Row 2 placement
-        if style == "Action Button Glow" then
-            sliders.Frequency:Show(); sliders.Frequency.Title:SetText(L["闪烁速度"]); sliders.Frequency:SetPoint("TOPLEFT", col1,
-                row2)
-        elseif style == "Pixel Glow" then
-            sliders.Frequency:Show(); sliders.Frequency.Title:SetText(L["流动速度"]); sliders.Frequency:SetPoint("TOPLEFT", col1,
-                row2)
-            sliders.Lines:Show(); sliders.Lines.Title:SetText(L["线条数量"]); sliders.Lines:SetPoint("TOPLEFT", col2, row2)
-            sliders.Scale:Show(); sliders.Scale.Title:SetText(L["线条粗细"]); sliders.Scale:SetPoint("TOPLEFT", col3, row2)
-        elseif style == "Autocast Shine" then
-            sliders.Frequency:Show(); sliders.Frequency.Title:SetText(L["闪烁速度"]); sliders.Frequency:SetPoint("TOPLEFT", col1,
-                row2)
-            sliders.Lines:Show(); sliders.Lines.Title:SetText(L["粒子数量"]); sliders.Lines:SetPoint("TOPLEFT", col2, row2)
-            sliders.Scale:Show(); sliders.Scale.Title:SetText(L["粒子大小"]); sliders.Scale:SetPoint("TOPLEFT", col3, row2)
-        end
-
-        -- Row 3 placement (Offset)
-        if style ~= "Proc Glow" then
-            sliders.Offset:Show(); sliders.Offset:SetPoint("TOPLEFT", col1, row3)
-        end
-    end
-
-    container:RefreshLayout()
-    container._exGridOwnedControls = {
-        cb, styleDropdown, colorBtn,
-        sliders.Frequency, sliders.Lines, sliders.Scale, sliders.Offset,
-    }
-    EXUI:ClearControlSurface(container)
-    return container
-end
-
--- =========================================================
 -- 17. 图标设置组 (Icon Settings Group)
 -- =========================================================
 function EXUI:CreateIconGroup(parent, width, label, db, key, onUpdate, opts)
@@ -2721,196 +2608,424 @@ function EXUI:CreateTimerBarGroup(parent, width, label, db, key, onUpdate, opts)
 end
 
 -- =========================================================
--- 19. Glow 设置组（Core 原生动画引擎）
--- 旧版 CreateGlowSettings 对应 LibCustomGlow 参数；保留别名仅作代码参考，
--- 公开入口改为 EXUI Glow 的 Pulse / Translation 线条 / Proc 三种样式。
+-- 19. Glow 设置组（Core 原生动画引擎 ExwindGlow）
+-- 一列设置行：顶行“发光”开关；开了露出一排四张预设格（蚂蚁线 / 流光 / 脉冲 / 翻书），每格一枚常亮的
+-- 样本按该预设（叠上当前颜色、速度等）真实发光，选中的高亮，选了预设又改过参数的格下标“已改”；
+-- 下面是颜色（色板 + 自定义色块）、透明度，以及当前样式真支持的参数：三种都有速度、间距，
+-- 沿边流光多出线条数量 / 长度 / 粗细 / 方向，呼吸、触发光环多出大小。
+-- 存法：db 里以 key 为前缀的扁平字段（<key>Enabled / Style / Frequency / Lines / Length / Thickness /
+-- Direction / Scale / Offset / ColorR / G / B / A），与 BuildGlowStyle 读的一致；V2 声明里 path 就是前缀
+-- （如 path = "s.glow" → s.glowEnabled …），字段存到哪由调用方的 path 决定。
+-- 一次操作（拖完滑杆、选预设、点色板、选颜色）写完所有字段后只调一次 onUpdate(db)。
+-- opts.style = V2 页面样式（设置行外观跟着页面）；opts.sampleIcon = 样本图标（贴图 ID / 路径，或返回它的函数）。
+-- opts.desaturate = true：翻书样本去色后再着色（同 ExwindGlow 的 desaturate）。
+-- opts.params = { <后缀> = { min, max, step, decimals } }：按调用方改某个滑杆的范围、步进和显示小数位，没写的照 GLOW_PARAMS。
+-- 样本发光只在组可见时播放：组隐藏时全部停掉，归还时释放。
 -- =========================================================
-EXUI.CreateGlowSettingsLegacy = EXUI.CreateGlowSettings
+local GLOW_DEFAULTS = { Enabled = true, Style = "EDGE_FLOW", Frequency = 1, Lines = 1, Length = 32, Thickness = 2,
+    Direction = "CLOCKWISE", Scale = 1, Offset = 3, ColorR = 1, ColorG = 0.82, ColorB = 0.20, ColorA = 1 }
+local GLOW_LEGACY_STYLES = {
+    ["Action Button Glow"] = "PULSE",
+    ["Pixel Glow"] = "EDGE_FLOW",
+    ["Autocast Shine"] = "EDGE_FLOW",
+    ["Proc Glow"] = "PROC_FLIPBOOK",
+    ["Proc Alt Glow"] = "PROC_FLIPBOOK",
+}
+-- 预设只是参数的快捷组合：蚂蚁线 = 沿边流光多条短线，流光 = 沿边流光一条长线，脉冲 = 呼吸，翻书 = 触发光环。
+local GLOW_PRESETS = {
+    { text = "蚂蚁线", values = { Style = "EDGE_FLOW", Lines = 8, Length = 10, Thickness = 2 } },
+    { text = "流光", values = { Style = "EDGE_FLOW", Lines = 1, Length = 32, Thickness = 2 } },
+    { text = "脉冲", values = { Style = "PULSE", Scale = 1 } },
+    { text = "翻书", values = { Style = "PROC_FLIPBOOK", Scale = 1 } },
+}
+-- 参数行（颜色行之后）：flow = true 只给沿边流光，flow = false 只给另两种，不写三种都有。
+local GLOW_PARAMS = {
+    { suffix = "ColorA", label = "透明度", min = 0, max = 1, step = 0.05, percent = true },
+    { suffix = "Frequency", label = "速度", min = 0.1, max = 5, step = 0.1 },
+    { suffix = "Offset", label = "间距", min = -20, max = 50, step = 1 },
+    { suffix = "Lines", label = "线条数量", min = 1, max = 36, step = 1, flow = true },
+    { suffix = "Length", label = "线条长度", min = 8, max = 120, step = 1, flow = true },
+    { suffix = "Thickness", label = "线条粗细", min = 1, max = 20, step = 0.5, flow = true },
+    { suffix = "Direction", label = "方向", flow = true, segment = true },
+    { suffix = "Scale", label = "大小", min = 0.25, max = 3, step = 0.05, flow = false },
+}
+local GLOW_POOL = "CompositeGlowSettings"
 
--- 发光设置组的列数与高度：三列放不下滑条标题、样式选项或开关标签时改两列。
--- 实际摆放与 Grid 测量读同一个函数；行距 62 与原三列布局一致。
-local function GLOW_STYLE_ITEMS()
-    return {
-        { L["呼吸发光（Alpha + Scale）"], "PULSE" },
-        { L["边框线条流光（原生 Translation）"], "EDGE_FLOW" },
-        { L["触发光环（原生 Proc）"], "PROC_FLIPBOOK" },
-    }
+local function GlowPart(name) return GM.settings.parts[name] end
+
+-- 预设格的固定高：内距 + 预览区 + 名字 + “已改”。
+local function GlowTileHeight()
+    return GlowPart("glowTilePadY") * 2 + GlowPart("glowTilePreviewHeight") + GlowPart("glowTileLabelFont")
+        + GlowPart("glowTileMarkFont") + GlowPart("glowTileLineGap") * 2
 end
 
-local function GlowRowTop(row)
-    return row == 0 and -14 or (-76 - 62 * (row - 1))
+local function GlowTileColumns(width, padX)
+    local room = math.max(1, width - padX * 2)
+    local gap = GlowPart("glowTileGap")
+    local columns = #GLOW_PRESETS
+    while columns > 1 and (room - gap * (columns - 1)) / columns < GlowPart("glowTileMinWidth") do
+        columns = columns / 2
+    end
+    return math.max(1, math.floor(columns))
 end
 
-local function GlowSettingsLayout(width)
-    width = tonumber(width) or 750
-    local padding, gap = GM.space.compositePadX + COMPOSITE_CONTROL_X, 16
-    local function ItemWidth(columns)
-        return math.floor((width - padding * 2 - gap * (columns - 1)) / columns)
+local function GlowTilesBlockHeight(width, padX)
+    local columns = GlowTileColumns(width, padX)
+    local rows = math.ceil(#GLOW_PRESETS / columns)
+    return GlowPart("glowTileBlockPadY") * 2 + rows * GlowTileHeight() + (rows - 1) * GlowPart("glowTileGap")
+end
+
+-- 预设格照方格卡画法（Core 公共的卡片勾选框底、悬停、右上角斜角 + 白勾）。
+local function PaintGlowTile(tile)
+    EXUI:PaintCheckCardSurface(tile, tile._exSelected == true, tile:IsMouseOver(), true, GM.radius.popup)
+end
+
+-- 一次性建在池化宿主上的固定件：四张预设格、色板条。每次借出只改文字、颜色和回调。
+local function BuildGlowHost(group)
+    group.content = CreateFrame("Frame", nil, group)
+    group.tiles = {}
+    for index = 1, #GLOW_PRESETS do
+        local tile = CreateFrame("Button", nil, group.content)
+        tile:RegisterForClicks("LeftButtonUp")
+        tile.sample = CreateFrame("Frame", nil, tile)
+        tile.sample:EnableMouse(false)
+        tile.icon = tile.sample:CreateTexture(nil, "ARTWORK")
+        tile.icon:SetAllPoints(tile.sample)
+        tile.label = EXUI:CreateVisualFontString(tile, EXFONTFRAME, "GameFontHighlight")
+        tile.label:SetJustifyH("CENTER")
+        tile.label:SetWordWrap(false)
+        tile.mark = EXUI:CreateVisualFontString(tile, EXFONTFRAME, "GameFontHighlightSmall")
+        tile.mark:SetJustifyH("CENTER")
+        tile:SetScript("OnEnter", PaintGlowTile)
+        tile:SetScript("OnLeave", PaintGlowTile)
+        tile:SetScript("OnClick", function(self) if self._exOnPick then self._exOnPick() end end)
+        group.tiles[index] = tile
     end
-    -- 滑条标题行 = 标题 + 数值框；下拉 = 选项文字 + 箭头；开关 = 标签 + 开关。
-    local need = 0
-    for _, title in ipairs({ L["数量"], L["长度"], L["粗度"], L["速度"], L["大小倍率"], L["间距（负值向内）"] }) do
-        need = math.max(need, EXUI:MeasureButtonWidth(title) + GM.size.sliderInputWidth)
+    group.swatchBar = CreateFrame("Frame", nil, group.content)
+    group.swatches = {}
+    for index = 1, #ExwindTools.GUIColors.glowPalette do
+        local swatch = CreateFrame("Button", nil, group.swatchBar)
+        swatch:RegisterForClicks("LeftButtonUp")
+        swatch:SetScript("OnClick", function(self) if self._exOnPick then self._exOnPick() end end)
+        group.swatches[index] = swatch
     end
-    for _, item in ipairs(GLOW_STYLE_ITEMS()) do
-        need = math.max(need, EXUI:MeasureButtonWidth(item[1]) + GM.size.toggleDropdownArrowWidth)
+end
+
+-- 归还：样本发光释放、本次借的控件和设置行还池、回调清掉。
+local function ReleaseGlowSettings(host)
+    for _, tile in ipairs(host.tiles) do
+        EXUI:ReleaseGlow(tile.sample)
+        tile._exOnPick, tile._exSelected = nil, nil
+        tile:Hide()
     end
-    need = math.max(need, EXUI:MeasureButtonWidth(L["启用发光"]) + GM.size.switchTrackWidth)
-    local columns = ItemWidth(3) >= need and 3 or 2
-    local rows = math.ceil(9 / columns)
-    return { columns = columns, itemWidth = ItemWidth(columns),
-        height = -GlowRowTop(rows) + 4 + 46 }
+    for _, swatch in ipairs(host.swatches) do swatch._exOnPick = nil end
+    for _, control in ipairs(host._exGlowControls or {}) do
+        EXUI:RestoreSettingsListControl(control)
+        _G.ExwindFactory:ReleaseGridWidget(control)
+    end
+    for _, row in ipairs(host._exGlowRows or {}) do row:Release() end
+    host:SetScript("OnShow", nil)
+    host:SetScript("OnHide", nil)
+    host._exGlowControls, host._exGlowRows, host._exStandardSliderControls = nil, nil, nil
+    host._exStandardSliderDB, host._glowDb, host._exMeasureHeight = nil, nil, nil
+    host._exCompositeReflow, host._exCompositeConfigure = nil, nil
+    host._exCompositeDb, host._exCompositeOnUpdate, host._exCompositeOpts = nil, nil, nil
 end
 
 function EXUI:CreateGlowSettings(parent, width, label, db, key, onUpdate, opts)
     db = type(db) == "table" and db or {}
     opts = type(opts) == "table" and opts or {}
     key = key or "glow"
-
-    local legacyStyles = {
-        ["Action Button Glow"] = "PULSE",
-        ["Pixel Glow"] = "EDGE_FLOW",
-        ["Autocast Shine"] = "EDGE_FLOW",
-        ["Proc Glow"] = "PROC_FLIPBOOK",
-        ["Proc Alt Glow"] = "PROC_FLIPBOOK",
-    }
-    local function SetDefault(suffix, value)
-        local field = key .. suffix
-        if db[field] == nil then db[field] = value end
+    for suffix, value in pairs(GLOW_DEFAULTS) do
+        if db[key .. suffix] == nil then db[key .. suffix] = value end
     end
-    SetDefault("Enabled", true)
-    SetDefault("Style", "EDGE_FLOW")
-    SetDefault("Frequency", 1)
-    SetDefault("Lines", 1)
-    SetDefault("Length", 32)
-    SetDefault("Thickness", 2)
-    SetDefault("Direction", "CLOCKWISE")
-    SetDefault("Scale", 1)
-    SetDefault("Offset", 3)
-    SetDefault("ColorR", 1)
-    SetDefault("ColorG", 0.82)
-    SetDefault("ColorB", 0.20)
-    SetDefault("ColorA", 1)
-    db[key .. "Style"] = legacyStyles[db[key .. "Style"]] or db[key .. "Style"]
+    db[key .. "Style"] = GLOW_LEGACY_STYLES[db[key .. "Style"]] or db[key .. "Style"]
 
-    local groupWidth = width or 750
-    local groupHeight = 250
-    local group = CreateFrame("Frame", nil, parent, "BackdropTemplate")
-    group:SetSize(groupWidth, groupHeight)
-    -- 标准 Slider 合同元数据：只暴露既有控件与其真实 DB 路径，
-    -- 不改变视觉、写入时机或原有回调。
+    local group, isNew = AcquireCompositeGroup(GLOW_POOL, parent)
+    if isNew then BuildGlowHost(group) end
+    EXUI:ClearControlSurface(group)
+    local content = group.content
+    content:ClearAllPoints()
+    content:SetPoint("TOPLEFT", group, "TOPLEFT", 0, 0)
+    content:Show()
+    local style = opts.style
+    local styledHeight = style and style.controlHeight
+    local padX = style and style.rowPaddingX or GM.settings.rowPaddingX
+    local GC = ExwindTools.GUIColors
+    local function Get(suffix) return db[key .. suffix] end
+    local function IsFlow() return Get("Style") == "EDGE_FLOW" end
+
+    -- 标准 Slider 合同元数据：只暴露既有控件与其真实 DB 路径。
     group._exStandardSliderControls = {}
     group._exStandardSliderDB = db
-    EXUI:ClearControlSurface(group)
-
-    local content = CreateFrame("Frame", nil, group)
-    content:SetPoint("TOPLEFT", 0, 0)
-    content:SetSize(groupWidth, groupHeight)
-    local padding, gap = GM.space.compositePadX + COMPOSITE_CONTROL_X, 16
-    local layout = GlowSettingsLayout(groupWidth)
-    local itemWidth = layout.itemWidth
-
-    local function EmitUpdate()
+    group._glowDb = db
+    local controls, rows = {}, {}
+    group._exGlowControls, group._exGlowRows = controls, rows
+    local entries = {}
+    local refresh -- 下面定义：按 db 回填控件、预设格与色板
+    local function Emit()
+        refresh()
         if onUpdate then onUpdate(db) end
     end
-    local function MakeSlider(text, suffix, min, max, step)
-        local slider = EXUI:CreateSlider(content, itemWidth, text, min, max, db[key .. suffix], step, nil, function(value)
-            db[key .. suffix] = value
-            EmitUpdate()
-        end, { numberInputPosition = "title" })
-        table.insert(group._exStandardSliderControls, {
-            control = slider,
-            path = key .. suffix,
+    local function Entry(rowLabel, control, kind)
+        local entry = { control = control, kind = kind }
+        if kind ~= "fixed" then controls[#controls + 1] = control end -- 色板条是宿主的固定件，不归还
+        local fixed
+        if kind == "segment" then
+            fixed = style and style.segmentEqualWidth and style.controlWidth
+                or (control.NaturalWidth and control:NaturalWidth()) or control:GetWidth()
+        elseif kind == "fixed" then
+            fixed = control:GetWidth()
+        end
+        entry.row = EXUI:CreateSettingsRow(content, {
+            label = rowLabel,
+            controlKind = kind == "slider" and "ordinary" or nil,
+            controlWidth = fixed,
+            controlMinWidth = kind == "slider" and GM.size.settingsRowSliderMinWidth or fixed,
+            style = style,
         })
-        return slider
+        rows[#rows + 1] = entry.row
+        entries[#entries + 1] = entry
+        return entry
     end
 
-    local enabled = EXUI:CreateCheckbox(content, L["启用发光"], db[key .. "Enabled"], function(value)
-        db[key .. "Enabled"] = value
-        EmitUpdate()
+    -- 顶行开关。
+    local enabled = EXUI:CreateCheckbox(content, L["发光"], Get("Enabled") == true, function(checked)
+        db[key .. "Enabled"] = checked == true
+        Emit()
     end)
-    EXUI:PrepareSettingsListControl(enabled, { presentation = "switch", labelLeft = true })
+    EXUI:PrepareSettingsListControl(enabled, { hideLabel = true, presentation = "switch" })
+    local switchEntry = Entry(L["发光"], enabled, "switch")
 
-    local styleDrop = EXUI:CreateDropdown(content, itemWidth, L["发光样式"], GLOW_STYLE_ITEMS(), db[key .. "Style"], function(value)
-        db[key .. "Style"] = value
-        group:RefreshLayout()
-        EmitUpdate()
-    end)
-    local color = EXUI:CreateColorButton(content, L["发光颜色"], db, key .. "Color", true, EmitUpdate)
-
-    local lines = MakeSlider(L["数量"], "Lines", 1, 36, 1)
-    local length = MakeSlider(L["长度"], "Length", 8, 120, 1)
-    local thickness = MakeSlider(L["粗度"], "Thickness", 1, 20, 0.5)
-    local frequency = MakeSlider(L["速度"], "Frequency", 0.1, 5, 0.1)
-    local scale = MakeSlider(L["大小倍率"], "Scale", 0.25, 3, 0.05)
-    local offset = MakeSlider(L["间距（负值向内）"], "Offset", -20, 50, 1)
-    local directionItems = {
-        { L["顺时针"], "CLOCKWISE" },
-        { L["逆时针"], "COUNTERCLOCKWISE" },
-    }
-    local direction = EXUI:CreateDropdown(content, itemWidth, L["方向"], directionItems, db[key .. "Direction"], function(value)
-        db[key .. "Direction"] = value
-        EmitUpdate()
-    end)
-    local info = EXUI:CreateVisualFontString(content, EXFONTFRAME, "GameFontNormalSmall")
-    info:SetJustifyH("LEFT")
-    MODERN.ApplyTextRole(info, "hint")
-
-    -- 三列放不下任何一个标题或选项时改成两列（GlowSettingsLayout），文字不截断；按顺序逐格排。
-    function group:RefreshLayout()
-        local style = db[key .. "Style"]
-        local isTrail = style == "EDGE_FLOW"
-        local order = isTrail
-            and { color, enabled, styleDrop, lines, length, thickness, frequency, offset, direction }
-            or { color, enabled, styleDrop, frequency, scale, offset }
-        for _, control in ipairs({ lines, length, thickness, frequency, scale, offset, direction }) do
-            control:ClearAllPoints()
-            control:Hide()
+    -- 颜色行：色板 + 自定义色块（色块的取色器带透明度，与透明度滑杆写同一字段）。
+    local swatchSize, swatchGap = GlowPart("glowSwatchSize"), GlowPart("glowSwatchGap")
+    local custom = EXUI:CreateColorButton(group.swatchBar, "", db, key .. "Color", true, Emit, { swatchOnly = true })
+    custom:SetSize(styledHeight or GM.size.controlHeight, styledHeight or GM.size.controlHeight)
+    local barHeight = custom:GetHeight()
+    for index, swatch in ipairs(group.swatches) do
+        local color = GC.glowPalette[index]
+        swatch:ClearAllPoints()
+        swatch:SetPoint("LEFT", group.swatchBar, "LEFT", (index - 1) * (swatchSize + swatchGap), 0)
+        swatch:SetSize(swatchSize, swatchSize)
+        swatch:EnableMouse(true)
+        swatch._exOnPick = function()
+            db[key .. "ColorR"], db[key .. "ColorG"], db[key .. "ColorB"] = color[1], color[2], color[3]
+            Emit()
         end
-        local columns = layout.columns
-        for index, control in ipairs(order) do
-            local column, row = (index - 1) % columns, math.floor((index - 1) / columns)
-            local x = padding + column * (itemWidth + gap)
-            local top = GlowRowTop(row)
-            -- 下拉与颜色按钮的标题行比滑条矮，低 6；开关与它们同一行时居中对齐。
-            if control == styleDrop or control == direction or control == color then top = top - (row == 0 and 0 or 6)
-            elseif control == enabled then top = top + 6 end
-            control:ClearAllPoints()
-            control:SetPoint("TOPLEFT", content, "TOPLEFT", x, top)
-            control:Show()
+        swatch:Show()
+    end
+    custom:ClearAllPoints()
+    custom:SetPoint("LEFT", group.swatchBar, "LEFT", #group.swatches * (swatchSize + swatchGap), 0)
+    group.swatchBar:SetSize(#group.swatches * (swatchSize + swatchGap) + custom:GetWidth(), barHeight)
+    local colorEntry = Entry(L["颜色"], group.swatchBar, "fixed")
+    controls[#controls + 1] = custom
+
+    -- 参数行。
+    local params = {}
+    local paramOverrides = type(opts.params) == "table" and opts.params or {}
+    for _, base in ipairs(GLOW_PARAMS) do
+        local spec = base
+        local override = paramOverrides[base.suffix]
+        if type(override) == "table" then
+            spec = {}
+            for name, value in pairs(base) do spec[name] = value end
+            for name, value in pairs(override) do spec[name] = value end
         end
-        local infoTop = GlowRowTop(math.ceil(#order / columns)) - 4
-        info:ClearAllPoints()
-        info:SetPoint("TOPLEFT", content, "TOPLEFT", padding, infoTop)
-        info:SetPoint("TOPRIGHT", content, "TOPRIGHT", -padding, infoTop)
-        if isTrail then
-            info:SetText(L["数量 = 同时环绕的线条数；间距可为负，负值让线条向图标内部收。四边移动完全由原生 Translation 处理。"])
-        elseif style == "PROC_FLIPBOOK" then
-            info:SetText(L["使用暴雪原生 Proc FlipBook；速度同时控制起手段与循环段，大小与外扩边距控制光环范围。"])
+        local field = key .. spec.suffix
+        local control
+        if spec.segment then
+            local items = { { L["顺时针"], "CLOCKWISE" }, { L["逆时针"], "COUNTERCLOCKWISE" } }
+            control = EXUI:CreateSegmentedControl(content, GM.size.controlDefaultWidth, items, db[field], function(value)
+                db[field] = value
+                Emit()
+            end, styledHeight and { height = styledHeight } or nil)
         else
-            info:SetText(L["使用 Alpha + Scale 原生循环；速度控制呼吸节奏，大小与外扩边距控制发光范围。"])
+            local decimalFormat = spec.decimals and ("%." .. spec.decimals .. "f") or nil
+            local formatter = spec.percent and function(v) return string.format("%d%%", math.floor(v * 100 + 0.5)) end
+                or (decimalFormat and function(v) return string.format(decimalFormat, v) end) or nil
+            local parse = spec.percent and function(text)
+                local number = tonumber((text:gsub("%%$", "")))
+                return number and number / 100 or nil
+            end or nil
+            control = EXUI:CreateSlider(content, GM.size.controlDefaultWidth, L[spec.label], spec.min, spec.max,
+                db[field], spec.step, formatter, {
+                    -- 拖动中只更新预设格样本，放开或输入提交时才算一次改动。
+                    onLive = function(value) db[field] = value; refresh() end,
+                    onCommit = function(value) db[field] = value; Emit() end,
+                    parse = parse,
+                })
+            EXUI:PrepareSettingsListControl(control, { ordinaryControl = true, hideLabel = true, valuePosition = "right" })
+            table.insert(group._exStandardSliderControls, { control = control, path = field })
+        end
+        local entry = Entry(L[spec.label], control, spec.segment and "segment" or "slider")
+        entry.spec = spec
+        params[#params + 1] = entry
+    end
+
+    -- 预设格：选中 = 同样式里与当前值最接近的那张，字段没全对上标“已改”。
+    local function PickedPreset()
+        local best, bestScore, bestCount
+        for index, preset in ipairs(GLOW_PRESETS) do
+            if preset.values.Style == Get("Style") then
+                local score, count = 0, 0
+                for suffix, value in pairs(preset.values) do
+                    count = count + 1
+                    if Get(suffix) == value then score = score + 1 end
+                end
+                if not best or score > bestScore then best, bestScore, bestCount = index, score, count end
+            end
+        end
+        return best, best and bestScore < bestCount
+    end
+    local function SampleIcon()
+        local icon = opts.sampleIcon
+        if type(icon) == "function" then icon = icon() end
+        return icon or 134400
+    end
+    local function StopSamples()
+        for _, tile in ipairs(group.tiles) do EXUI:HideGlow(tile.sample) end
+    end
+    local function PlaySamples()
+        if not group:IsVisible() or Get("Enabled") ~= true then StopSamples(); return end
+        local size = GlowPart("glowTileSampleSize")
+        for index, tile in ipairs(group.tiles) do
+            local values = {}
+            for suffix in pairs(GLOW_DEFAULTS) do values[key .. suffix] = Get(suffix) end
+            for suffix, value in pairs(GLOW_PRESETS[index].values) do values[key .. suffix] = value end
+            values[key .. "Offset"] = math.min(values[key .. "Offset"], GlowPart("glowSampleOffsetMax"))
+            local glowStyle = EXUI:BuildGlowStyle(values, key, size, size)
+            glowStyle.enabled = true
+            glowStyle.desaturate = opts.desaturate == true
+            EXUI:ShowGlow(tile.sample, glowStyle)
         end
     end
-    group._glowDb = db
-    group._exGridOwnedControls = {
-        enabled, styleDrop, color, lines, length, thickness,
-        frequency, scale, offset, direction,
-    }
-    group._exCompositeReflow = function(self, nextWidth, nextHeight)
-        layout = GlowSettingsLayout(nextWidth)
-        itemWidth = layout.itemWidth
-        content:ClearAllPoints()
-        content:SetPoint("TOPLEFT", self, "TOPLEFT", 0, 0)
-        content:SetSize(nextWidth, nextHeight)
-        enabled:SetSize(itemWidth, GM.size.checkboxRowHeight)
-        for _, control in ipairs({ styleDrop, color, lines, length, thickness, frequency, scale, offset, direction }) do
-            control:SetWidth(itemWidth)
+    local labelFont, markFont = GlowPart("glowTileLabelFont"), GlowPart("glowTileMarkFont")
+    for index, tile in ipairs(group.tiles) do
+        local preset = GLOW_PRESETS[index]
+        MODERN.Font(tile.label, labelFont, GC.text, "", "GameFontHighlight")
+        MODERN.Font(tile.mark, markFont, GC.textDim, "", "GameFontHighlightSmall")
+        tile.label:SetText(L[preset.text])
+        tile.mark:SetText(L["已改"])
+        tile.icon:SetTexture(SampleIcon())
+        tile:EnableMouse(true)
+        tile._exOnPick = function()
+            for suffix, value in pairs(preset.values) do db[key .. suffix] = value end
+            Emit()
         end
-        self:RefreshLayout()
+    end
+
+    local width = width or 750
+    -- 按宽从上往下排：开关行；开着时预设格一排、颜色行、当前样式的参数行。返回总高。
+    local function Layout(nextWidth)
+        width = nextWidth or width
+        content:SetWidth(width)
+        local on = Get("Enabled") == true
+        local flow = IsFlow()
+        local shown = { switchEntry }
+        if on then
+            shown[#shown + 1] = colorEntry
+            for _, entry in ipairs(params) do
+                if entry.spec.flow == nil or entry.spec.flow == flow then shown[#shown + 1] = entry end
+            end
+        end
+        local visible = {}
+        for _, entry in ipairs(shown) do visible[entry] = true end
+        for _, entry in ipairs(entries) do
+            if not visible[entry] then
+                entry.row:Hide()
+                entry.control:Hide()
+            end
+        end
+        local y = 0
+        for index, entry in ipairs(shown) do
+            local row, control = entry.row, entry.control
+            EXUI:SetSettingsRowLast(row, index == #shown)
+            local height, x, cy, controlWidth = EXUI:UpdateSettingsRowLayout(row, width, math.max(1, control:GetHeight()))
+            if entry.kind ~= "fixed" then control:SetWidth(controlWidth) end
+            if entry.kind == "slider" then
+                EXUI:UpdateSettingsListControlLayout(control, controlWidth, styledHeight)
+            end
+            height, x, cy = EXUI:UpdateSettingsRowLayout(row, width, math.max(1, control:GetHeight()))
+            row:ClearAllPoints()
+            row:SetPoint("TOPLEFT", content, "TOPLEFT", 0, -y)
+            row:Show()
+            control:ClearAllPoints()
+            control:SetPoint("TOPLEFT", row, "TOPLEFT", x, -cy)
+            control:Show()
+            y = y + height
+            -- 预设格一排紧跟开关行。
+            if entry == switchEntry and on then
+                local columns = GlowTileColumns(width, padX)
+                local gap, tileHeight = GlowPart("glowTileGap"), GlowTileHeight()
+                local tileWidth = math.floor((width - padX * 2 - gap * (columns - 1)) / columns)
+                local top = y + GlowPart("glowTileBlockPadY")
+                local preview = GlowPart("glowTilePreviewHeight")
+                local sampleSize = GlowPart("glowTileSampleSize")
+                local lineGap, tilePadY = GlowPart("glowTileLineGap"), GlowPart("glowTilePadY")
+                for tileIndex, tile in ipairs(group.tiles) do
+                    local column, line = (tileIndex - 1) % columns, math.floor((tileIndex - 1) / columns)
+                    tile:ClearAllPoints()
+                    tile:SetPoint("TOPLEFT", content, "TOPLEFT", padX + column * (tileWidth + gap), -(top + line * (tileHeight + gap)))
+                    tile:SetSize(tileWidth, tileHeight)
+                    tile.sample:ClearAllPoints()
+                    tile.sample:SetPoint("CENTER", tile, "TOP", 0, -(tilePadY + preview / 2))
+                    tile.sample:SetSize(sampleSize, sampleSize)
+                    tile.label:ClearAllPoints()
+                    tile.label:SetPoint("TOPLEFT", tile, "TOPLEFT", 2, -(tilePadY + preview + lineGap))
+                    tile.label:SetPoint("TOPRIGHT", tile, "TOPRIGHT", -2, -(tilePadY + preview + lineGap))
+                    tile.mark:ClearAllPoints()
+                    tile.mark:SetPoint("TOP", tile.label, "BOTTOM", 0, -lineGap)
+                    tile:Show()
+                end
+                y = y + GlowTilesBlockHeight(width, padX)
+            end
+        end
+        for _, tile in ipairs(group.tiles) do tile:SetShown(on) end
+        content:SetHeight(math.max(1, y))
+        return math.max(1, y)
+    end
+
+    refresh = function()
+        enabled:SetChecked(Get("Enabled") == true)
+        EXUI:ApplyControlAppearance(enabled)
+        for _, entry in ipairs(params) do
+            local value = Get(entry.spec.suffix)
+            if entry.spec.segment then entry.control:SetValue(value)
+            elseif tonumber(value) then entry.control:SetEXUIValue(tonumber(value), "silent") end
+        end
+        custom:UpdateColor()
+        local r, g, b = Get("ColorR"), Get("ColorG"), Get("ColorB")
+        for index, swatch in ipairs(group.swatches) do
+            local color = GC.glowPalette[index]
+            local same = math.abs(color[1] - r) < 0.005 and math.abs(color[2] - g) < 0.005 and math.abs(color[3] - b) < 0.005
+            EXUI:SetControlSurface(swatch, GM.radius.thumb, { color[1], color[2], color[3], 1 },
+                same and GC.text or GC.subcardBorder)
+        end
+        local picked, modified = PickedPreset()
+        for index, tile in ipairs(group.tiles) do
+            tile._exSelected = index == picked
+            tile.mark:SetShown(index == picked and modified == true)
+            PaintGlowTile(tile)
+        end
+        PlaySamples()
+    end
+
+    group:SetScript("OnShow", PlaySamples)
+    group:SetScript("OnHide", StopSamples)
+    -- V2 页面先量高再排：量的时候就按这个宽排一次。
+    group._exMeasureHeight = function(_, measureWidth) return Layout(measureWidth) end
+    group._exCompositeReflow = function(self, nextWidth)
+        Layout(nextWidth)
         EXUI:ClearControlSurface(self)
     end
-    groupHeight = layout.height
-    EXUI:LayoutCompositeGroup(group, groupWidth, groupHeight)
+    -- 外部改了存档（预览拖动、撤销）后 RefreshCompositeGroupFromDB 走这里回填。
+    group._exCompositeDb, group._exCompositeOnUpdate, group._exCompositeOpts = db, onUpdate, opts
+    group._exCompositeConfigure = function() refresh(); Layout(width) end
+    _G.ExwindFactory:AttachPoolRelease(group, ReleaseGlowSettings)
+
+    refresh()
+    local height = Layout(width)
+    EXUI:LayoutCompositeGroup(group, width, height)
     return group
 end
 
@@ -3664,10 +3779,6 @@ function EXUI:CreateTextureGroup(parent, width, label, db, key, onUpdate, opts)
     group:SetBackdropColor(unpack(MC.panel))
     group:SetBackdropBorderColor(unpack(MC.border))
 
-    local accent = EXUI:CreateVisualTexture(group, EXBASEFRAME)
-    accent:SetPoint("TOPLEFT", 7, -11)
-    accent:SetSize(3, 20)
-    accent:SetColorTexture(unpack(MC.blue))
     local title = EXUI:CreateVisualFontString(group, EXFONTFRAME, "GameFontNormalLarge")
     title:SetPoint("TOPLEFT", 16, -8)
     title:SetText(group._exCompositeLabel)
@@ -3809,8 +3920,20 @@ EXUI:RegisterGridComponentMeasure("icongroup", ColumnsGroupMeasure(IconGroupLayo
 EXUI:RegisterGridComponentMeasure("timerbargroup", ColumnsGroupMeasure(TimerBarGroupLayout))
 EXUI:RegisterGridComponentMeasure("texturegroup", FixedGridMeasure(250))
 EXUI:RegisterGridComponentMeasure("anchorgroup", FixedGridMeasure(GM.settings.rowMinHeight))
-EXUI:RegisterGridComponentMeasure("glow_settings", function(width)
-    local height = GlowSettingsLayout(width).height
+-- 发光设置组在 V2 里由已挂载的组自己量（_exMeasureHeight）；这里只给没挂载时的估算：每行按最小行高。
+EXUI:RegisterGridComponentMeasure("glow_settings", function(width, opts, db, item)
+    local key = type(item) == "table" and item.key or "glow"
+    db = type(db) == "table" and db or {}
+    local rowHeight = (type(opts.style) == "table" and opts.style.rowMinHeight) or GM.settings.rowMinHeight
+    local height = rowHeight
+    if db[key .. "Enabled"] ~= false then
+        local flow = (db[key .. "Style"] or GLOW_DEFAULTS.Style) == "EDGE_FLOW"
+        local count = 1
+        for _, spec in ipairs(GLOW_PARAMS) do
+            if spec.flow == nil or spec.flow == flow then count = count + 1 end
+        end
+        height = height + count * rowHeight + GlowTilesBlockHeight(width, GM.settings.rowPaddingX)
+    end
     return { minHeight = height, preferredHeight = height }
 end)
 EXUI:RegisterGridComponentMeasure("soundgroup", function(width, opts)
@@ -4280,6 +4403,9 @@ do
         local target, opts = driver._exTarget, driver._exOpts
         if driver._exButton then DragAnywhereSwallowClick(driver, driver._exButton) end
         if opts.onDragStart then opts.onDragStart(target) end
+        -- 开始移动前先把锚点换成 TOPLEFT 贴 UIParent（按当前屏幕位置只算一次）：
+        -- 框原来贴在别的框上（贴靠目标、选中框）或用别的锚点时，StartMoving 不会再换算出跳一下的位置。
+        SettleDraggedFrame(target)
         target:StartMoving()
     end
 
@@ -4344,12 +4470,50 @@ Factory:InitCompositePool(FLOATING_POOL)
 
 local FLOATING_STRATA = { DIALOG = true, FULLSCREEN_DIALOG = true }
 
+-- 叠放规则（所有浮窗共用，只此一处）：同一层（strata）里鼠标和绘制都按 frameLevel 判谁在上，
+-- 而且是按每个子框自己的 frameLevel 比，不按所属窗口比。所以每只浮窗占一段级别（FLOATING_LEVEL_STEP），
+-- 提到最前 = 拿到比所有浮窗都高的一段，整棵子树（含吃鼠标的透明滚动框、卡片）一起压住下面的窗口。
+-- 不用 SetToplevel / Raise：它们只动窗口本身的级别，几只窗口会挤在同一级，下面窗口更深的子框反而挡住上面窗口的按钮。
+-- 子框级别随父框整体平移（窗口建好后再改级别，内容照常显示），段宽只要大过窗口内嵌套深度。
+local FLOATING_LEVEL_BASE, FLOATING_LEVEL_STEP, FLOATING_LEVEL_CEILING = 1000, 200, 9000
+local floatingTopLevel = FLOATING_LEVEL_BASE - FLOATING_LEVEL_STEP
+local floatingWindows = setmetatable({}, { __mode = "k" })
 local function RaiseFloatingWindow(window)
     window:SetFrameStrata(window._exFloatStrata)
-    window:SetFrameLevel(math.max(1000, (UIParent:GetFrameLevel() or 1) + 1000))
-    window:SetToplevel(true)
-    window:Raise()
+    floatingWindows[window] = true
+    local others = window:GetFrameLevel() < floatingTopLevel
+    if not others then
+        for other in pairs(floatingWindows) do
+            if other ~= window and other:IsShown() and other:GetFrameLevel() >= window:GetFrameLevel() then others = true; break end
+        end
+    end
+    if not others and window:GetFrameLevel() >= FLOATING_LEVEL_BASE then return end
+    if floatingTopLevel + FLOATING_LEVEL_STEP > FLOATING_LEVEL_CEILING then
+        -- 段号用完：按现有上下次序把显示中的浮窗重新从底排起，次序不变。
+        local order = {}
+        for other in pairs(floatingWindows) do
+            if other ~= window and other:IsShown() then order[#order + 1] = other end
+        end
+        table.sort(order, function(a, b) return a:GetFrameLevel() < b:GetFrameLevel() end)
+        floatingTopLevel = FLOATING_LEVEL_BASE - FLOATING_LEVEL_STEP
+        for _, other in ipairs(order) do
+            floatingTopLevel = floatingTopLevel + FLOATING_LEVEL_STEP
+            other:SetFrameLevel(floatingTopLevel)
+        end
+    end
+    floatingTopLevel = floatingTopLevel + FLOATING_LEVEL_STEP
+    window:SetFrameLevel(floatingTopLevel)
 end
+-- 在浮窗里任何地方按下（按钮、输入框、子面板也算）都把它提到最前：看按下时鼠标落在哪只浮窗里。
+local floatingRaiser = CreateFrame("Frame")
+floatingRaiser:RegisterEvent("GLOBAL_MOUSE_DOWN")
+floatingRaiser:SetScript("OnEvent", function()
+    local focus = GetMouseFoci()[1]
+    while focus do
+        if floatingWindows[focus] and focus._exFloatStrata and focus:IsShown() then RaiseFloatingWindow(focus); return end
+        focus = focus:GetParent()
+    end
+end)
 
 local function LayoutFloatingTitle(window, closable)
     local title, pad = window._exFloatTitle, window.contentPadding
@@ -4375,23 +4539,44 @@ local SetFloatingWindowAnchor
 
 -- 每个池化宿主只建一次：标题栏（拖动条）、标题文字、关闭按钮、内容区。
 -- 这些子对象和下面的脚本都不捕获任何租约数据；租约数据只放在宿主字段里。
-local function FloatingWindowDragStart(window)
-    -- 用户手动拖走：不再跟随贴靠目标，只留在拖到的位置。
-    if window._exFloatAnchor then window:SetAnchor(nil) end
-    window:StartMoving()
+-- 拖动中（按下拖起到松手）：window._exFloatDragging = true，位置只归鼠标——SetAnchor 不生效、贴靠跟随停掉，
+-- 调用方的重新贴靠 / 重排先看 window:IsDragging()。松手才把位置交回（onDragStop）。
+local FloatingWindowDragStart, FloatingWindowDragStop
+do
+    -- 标题栏、背景框原生拖动的松手兜底：拖起的那个框中途被收走时收不到 OnDragStop，左键一松也照样结束。
+    local function Watch(window)
+        if not IsMouseButtonDown("LeftButton") then FloatingWindowDragStop(window) end
+    end
+    FloatingWindowDragStart = function(window)
+        if window._exFloatDragging then return end
+        -- 用户手动拖走：不再跟随贴靠目标，只留在拖到的位置。
+        if window._exFloatAnchor then window:SetAnchor(nil) end
+        -- 先按当前屏幕位置换成 TOPLEFT 贴 UIParent（只算一次），再开始移动。
+        SettleDraggedFrame(window)
+        window._exFloatDragging = true
+        window:SetScript("OnUpdate", Watch)
+        window:StartMoving()
+    end
+    FloatingWindowDragStop = function(window)
+        if not window._exFloatDragging then return end
+        window._exFloatDragging = nil
+        window:SetScript("OnUpdate", nil)
+        window:StopMovingOrSizing()
+        -- dragAnywhere 窗口：拖完改成 TOPLEFT 贴 UIParent（之后改高顶边不动），告诉调用方位置。
+        if not window._exFloatDragAnywhere then return end
+        local x, y = SettleDraggedFrame(window)
+        local callback = window._exFloatOnDragStop
+        if callback and x then callback(window, x, y) end
+    end
 end
-local function FloatingWindowDragStop(window)
-    window:StopMovingOrSizing()
-    -- dragAnywhere 窗口：拖完改成 TOPLEFT 贴 UIParent（之后改高顶边不动），告诉调用方位置。
-    if not window._exFloatDragAnywhere then return end
-    local x, y = SettleDraggedFrame(window)
-    local callback = window._exFloatOnDragStop
-    if callback and x then callback(window, x, y) end
-end
--- 空白处拖动（EXUI:SetDragAnywhere）走的两头：开始时取消贴靠，结束时同上告诉调用方。
+-- 空白处拖动（EXUI:SetDragAnywhere）走的两头：开始时取消贴靠、记拖动中，结束时同上告诉调用方。
 local FLOATING_DRAG_ANYWHERE = {
-    onDragStart = function(window) if window._exFloatAnchor then window:SetAnchor(nil) end end,
+    onDragStart = function(window)
+        if window._exFloatAnchor then window:SetAnchor(nil) end
+        window._exFloatDragging = true
+    end,
     onDragStop = function(window, x, y)
+        window._exFloatDragging = nil
         local callback = window._exFloatOnDragStop
         if callback and x then callback(window, x, y) end
     end,
@@ -4428,6 +4613,12 @@ local function RefreshFloatingDragSurfaces(window)
     local function Visit(surface)
         local kind = surface:GetObjectType()
         if (kind ~= "Frame" and kind ~= "ScrollFrame") or surface._gridType then return end
+        -- 空白处可拖的窗口：只开了滚轮的滚动框（内容区整块）也是背景，它挡在窗口上面，按下去拖不动窗口；
+        -- 给它开鼠标、同样转发拖动（滚轮照旧）。
+        if window._exFloatDragAnywhere and kind == "ScrollFrame" and not surface:IsMouseEnabled()
+            and surface:IsMouseWheelEnabled() and BindFloatingDragSurface(window, surface) then
+            surface:EnableMouse(true)
+        end
         if surface:IsMouseEnabled() and not BindFloatingDragSurface(window, surface) then return end
         for _, child in ipairs({ surface:GetChildren() }) do Visit(child) end
     end
@@ -4441,8 +4632,12 @@ local function BuildFloatingWindow(window)
     window:RegisterForDrag("LeftButton")
     window:SetScript("OnDragStart", FloatingWindowDragStart)
     window:SetScript("OnDragStop", FloatingWindowDragStop)
+    -- 打开时和点击时一样提到最前：后打开的面板压住先开的面板和跟随元素的工具条。
     window:HookScript("OnShow", function(self)
-        C_Timer.After(0, function() if self:IsShown() then RefreshFloatingDragSurfaces(self) end end)
+        if self._exFloatStrata then RaiseFloatingWindow(self) end
+        if not self._exFloatManualDragScan then
+            C_Timer.After(0, function() if self:IsShown() then RefreshFloatingDragSurfaces(self) end end)
+        end
     end)
 
     local header = CreateFrame("Frame", nil, window)
@@ -4488,6 +4683,8 @@ local function BuildFloatingWindow(window)
     window.SetTitle = function(self, text) self._exFloatTitle:SetText(text or "") end
     window.Release = function(self) Factory:ReleaseCompositeHost(self) end
     window.SetAnchor = function(self, spec) SetFloatingWindowAnchor(self, spec) end
+    -- 用户正按着拖这只窗口（标题栏或空白处）：调用方的贴靠、重新摆放要等松手。
+    window.IsDragging = function(self) return self._exFloatDragging == true end
     -- 内容重建后由调用方调用，让新建的背景框也能拖窗口。
     window.RefreshDragSurfaces = RefreshFloatingDragSurfaces
 end
@@ -4552,6 +4749,8 @@ end
 -- side = "below"（可选：先放目标下方）}；传 nil 取消贴靠（窗口停在当前位置）。
 -- 当前贴靠在 window._exFloatAnchor（同样的字段），窗口改了尺寸后可以 window:SetAnchor(window._exFloatAnchor) 重摆。
 SetFloatingWindowAnchor = function(window, spec)
+    -- 拖动中位置归鼠标：贴靠（含重摆、取消）一律不动它，松手后用户拖到哪就停哪。
+    if window._exFloatDragging then return end
     if spec == nil then
         window._exFloatAnchor = nil
         window:SetScript("OnUpdate", nil)
@@ -4585,6 +4784,10 @@ SetFloatingWindowAnchor = function(window, spec)
 end
 
 local function FloatingWindowOnHide(window)
+    if window._exFloatDragging then
+        window._exFloatDragging = nil
+        window:SetScript("OnUpdate", nil)
+    end
     window:StopMovingOrSizing()
     local callback = window._exFloatOnHide
     if callback then callback(window) end
@@ -4600,6 +4803,8 @@ end
 --                   实际值放在 window.contentPadding
 --   dragAnywhere    可选 true：窗口里任何空白处（不是按钮、输入框等控件的地方）都能拖（EXUI:SetDragAnywhere）；
 --                   拖完窗口改成 TOPLEFT 贴 UIParent 左下角，之后内容刷新、改高都不挪位置
+--   manualDragScan  可选 true：显示时不自动扫可拖背景，由调用方在内容的框换了时自己调 window:RefreshDragSurfaces()
+--                   （内容复用、框没变时重开窗口不用再扫一遍）
 --   clampToScreen   可选 false：不夹在屏幕内（可以拖出屏幕）；不写照旧夹住
 --   onDragStop(window, x, y) 可选，只在 dragAnywhere 时调：用户拖完（标题栏、空白处都算）后的位置，
 --                   恢复用 window:ClearAllPoints(); window:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", x, y)
@@ -4614,7 +4819,8 @@ end
 --                   × 在页签行最右；items / value / onChange 同 CreateTabGroup，height = 标题行高（默认 GM.size.tabHeight），
 --                   fontSize = 页签字号（可选）。返回的 window.tabs 就是这个页签组（SetValue / GetValue 照常）。
 -- 返回已隐藏的窗口：window.content 是内容区 Frame，window:SetTitle(text)，window:Release()，
--- window:RefreshDragSurfaces()（内容重建后让新背景框也能拖窗口；显示时自动扫一次）；位置默认屏幕中心，
+-- window:RefreshDragSurfaces()（内容重建后让新背景框也能拖窗口；显示时自动扫一次），
+-- window:IsDragging()（用户正按着拖：拖动中 SetAnchor 不生效，调用方自己摆位置前也要先看它）；位置默认屏幕中心，
 -- 调用方自行 ClearAllPoints/SetPoint 与 Show()。不吞 Esc、不遮罩、不抢键盘。
 function EXUI:CreateFloatingWindow(options)
     if type(options) ~= "table" then error("CreateFloatingWindow: options must be a table", 2) end
@@ -4649,6 +4855,9 @@ function EXUI:CreateFloatingWindow(options)
     if options.dragAnywhere ~= nil and type(options.dragAnywhere) ~= "boolean" then
         error("CreateFloatingWindow: options.dragAnywhere must be boolean", 2)
     end
+    if options.manualDragScan ~= nil and type(options.manualDragScan) ~= "boolean" then
+        error("CreateFloatingWindow: options.manualDragScan must be boolean", 2)
+    end
     if options.clampToScreen ~= nil and type(options.clampToScreen) ~= "boolean" then
         error("CreateFloatingWindow: options.clampToScreen must be boolean", 2)
     end
@@ -4678,6 +4887,7 @@ function EXUI:CreateFloatingWindow(options)
     window:SetClampedToScreen(options.clampToScreen ~= false)
     window._exFloatDragAnywhere = options.dragAnywhere == true
     window._exFloatOnDragStop = options.onDragStop
+    window._exFloatManualDragScan = options.manualDragScan == true
     EXUI:SetDragAnywhere(window, options.dragAnywhere == true and FLOATING_DRAG_ANYWHERE or nil)
     LayoutFloatingTitle(window, options.closable == true)
     if headerTabs then
@@ -4714,8 +4924,8 @@ function EXUI:CreateFloatingWindow(options)
         -- 使用方在 onHide 里调 window:Release() 时同一窗口不会被归还两次。
         self._exFloatOnHide = nil
         self._exFloatOnCloseRequested = nil
-        self._exFloatAnchor = nil
-        self._exFloatOnDragStop, self._exFloatDragAnywhere = nil, nil
+        self._exFloatAnchor, self._exFloatDragging = nil, nil
+        self._exFloatOnDragStop, self._exFloatDragAnywhere, self._exFloatManualDragScan = nil, nil, nil
         EXUI:SetDragAnywhere(self, nil)
         self:SetClampedToScreen(true)
         if self.tabs then
@@ -5174,18 +5384,20 @@ end
 -- 胶囊按钮组
 -- 一条圆角胶囊（host 底 + 1px bDef 边）分成几段，每段图标 + 文字；段间 1px 竖线上下各缩一截。
 -- 悬停白 0.07 底；按下（pressed）白 0.14 底 + 1px 白 0.55 内描边，它两边的竖线隐藏。
+-- 选中（selected，几段里当前用的那一段）：底色和字色同分段控件选中（segmentSelected / segmentSelectedText），两边竖线隐藏。
 -- 首尾段的底色跟着胶囊圆角裁（_exJoinedEdge = "first" / "last"），中间段是直角。
 -- 段是胶囊宿主自己的子 Button，跟宿主一起进出对象池。
 -- ---------------------------------------------------------
 local BUTTON_STRIP_POOL = "EXUI.ButtonStrip"
 Factory:InitCompositePool(BUTTON_STRIP_POOL)
 local BUTTON_STRIP_TONES = { ok = true, danger = true }
-local BUTTON_STRIP_FIELDS = { icon = true, text = true, tooltip = true, pressed = true }
+local BUTTON_STRIP_FIELDS = { icon = true, text = true, tooltip = true, pressed = true, selected = true }
 
 -- 一段的文字与图标颜色：ok 绿、danger 红；没有 tone 时按下白、平常正文色。
 local function StripSegmentColor(item)
     if item.tone == "ok" then return GC.capsuleAddText end
     if item.tone == "danger" then return GC.capsuleDangerText end
+    if item.selected then return GC.segmentSelectedText end
     return item.pressed and GC.white or GC.text
 end
 
@@ -5194,6 +5406,8 @@ local function PaintStripSegment(segment)
     if not strip or not item then return end
     if item.pressed then
         MODERN.PaintControlSurface(segment, segment._exStripRadius, GC.capsulePressedFill, GC.capsulePressedBorder)
+    elseif item.selected then
+        MODERN.PaintControlSurface(segment, segment._exStripRadius, GC.segmentSelected, GC.transparent)
     elseif segment._exStripHover then
         MODERN.PaintControlSurface(segment, segment._exStripRadius, GC.capsuleHoverFill, GC.transparent)
     else
@@ -5206,7 +5420,8 @@ local function PaintStripSegment(segment)
     segment._exStripSeam:SetShown(item.pressed == true and segment._exJoinedEdge == "last")
     -- 段间竖线挂在后一段的左缘：按下段左右两条都隐藏。
     local previous = strip._exStripSegments[segment._exStripIndex - 1]
-    segment._exStripDivider:SetShown(previous ~= nil and not item.pressed and not previous._exStripItem.pressed)
+    segment._exStripDivider:SetShown(previous ~= nil and not (item.pressed or item.selected)
+        and not (previous._exStripItem.pressed or previous._exStripItem.selected))
 end
 
 local function ShowStripTooltip(segment)
@@ -5223,6 +5438,21 @@ local function ShowStripTooltip(segment)
     end
     GameTooltip:AddLine(item.tooltip, 1, 1, 1, true)
     GameTooltip:Show()
+    if strip and strip._exStripTooltipAnchor == "below" then
+        -- 提示比这一段宽时，居中会伸出胶囊（首尾段尤其明显）：伸出哪边就改为跟胶囊那一边对齐，
+        -- 仍在这一段下方、离段下沿 capsuleTooltipGap。宽度换算到段的坐标再比。
+        local ratio = GameTooltip:GetEffectiveScale() / segment:GetEffectiveScale()
+        local half = GameTooltip:GetWidth() * ratio / 2
+        local center = (segment:GetLeft() + segment:GetRight()) / 2
+        local gap = -GM.size.capsuleTooltipGap
+        if center - half < strip:GetLeft() then
+            GameTooltip:ClearAllPoints()
+            GameTooltip:SetPoint("TOPLEFT", segment, "BOTTOMLEFT", (strip:GetLeft() - segment:GetLeft()) / ratio, gap)
+        elseif center + half > strip:GetRight() then
+            GameTooltip:ClearAllPoints()
+            GameTooltip:SetPoint("TOPRIGHT", segment, "BOTTOMRIGHT", (strip:GetRight() - segment:GetRight()) / ratio, gap)
+        end
+    end
 end
 
 local function CreateStripSegment(strip, index)
@@ -5246,11 +5476,15 @@ local function CreateStripSegment(strip, index)
         self._exStripHover = true
         PaintStripSegment(self)
         ShowStripTooltip(self)
+        local owner, item = self._exStripOwner, self._exStripItem
+        if owner and owner._exStripOnHover and item then owner._exStripOnHover(item.id, self, true, owner) end
     end)
     segment:SetScript("OnLeave", function(self)
         self._exStripHover = false
         PaintStripSegment(self)
         if GameTooltip:IsOwned(self) then GameTooltip:Hide() end
+        local owner, item = self._exStripOwner, self._exStripItem
+        if owner and owner._exStripOnHover and item then owner._exStripOnHover(item.id, self, false, owner) end
     end)
     -- 选项 hideTooltipOnPress：按下就收起悬停提示（点了会开面板，提示不能还盖着）。
     segment:SetScript("OnMouseDown", function(self)
@@ -5343,8 +5577,9 @@ local function CopyStripItem(item, index, seen)
     if item.tooltip ~= nil and type(item.tooltip) ~= "string" then error(where .. ".tooltip must be a string", 3) end
     if item.emphasize ~= nil and type(item.emphasize) ~= "boolean" then error(where .. ".emphasize must be a boolean", 3) end
     if item.pressed ~= nil and type(item.pressed) ~= "boolean" then error(where .. ".pressed must be a boolean", 3) end
+    if item.selected ~= nil and type(item.selected) ~= "boolean" then error(where .. ".selected must be a boolean", 3) end
     return { id = item.id, icon = item.icon, text = item.text, tone = item.tone, tooltip = item.tooltip,
-        emphasize = item.emphasize == true, pressed = item.pressed == true }
+        emphasize = item.emphasize == true, pressed = item.pressed == true, selected = item.selected == true }
 end
 
 -- 用着的胶囊（弱表）：UI 缩放、窗口尺寸变化后按新的物理像素重排段宽和竖线。
@@ -5385,10 +5620,12 @@ local function BuildButtonStrip(strip)
         if fields.text ~= nil and type(fields.text) ~= "string" then error("ButtonStrip:SetItem text must be a string", 2) end
         if fields.tooltip ~= nil and type(fields.tooltip) ~= "string" then error("ButtonStrip:SetItem tooltip must be a string", 2) end
         if fields.pressed ~= nil and type(fields.pressed) ~= "boolean" then error("ButtonStrip:SetItem pressed must be a boolean", 2) end
+        if fields.selected ~= nil and type(fields.selected) ~= "boolean" then error("ButtonStrip:SetItem selected must be a boolean", 2) end
         if fields.icon ~= nil then item.icon = fields.icon end
         if fields.text ~= nil then item.text = fields.text end
         if fields.tooltip ~= nil then item.tooltip = fields.tooltip end
         if fields.pressed ~= nil then item.pressed = fields.pressed end
+        if fields.selected ~= nil then item.selected = fields.selected end
         LayoutButtonStrip(self)
         if GameTooltip:IsOwned(segment) then ShowStripTooltip(segment) end
     end
@@ -5402,21 +5639,27 @@ local function BuildButtonStrip(strip)
 end
 
 -- options（纯数据 + 回调）:
---   items = { { id, icon?, text?, tone? = "ok" | "danger", tooltip?, emphasize?, pressed? }, ... }（至少一项）
+--   items = { { id, icon?, text?, tone? = "ok" | "danger", tooltip?, emphasize?, pressed?, selected? }, ... }（至少一项）
 --     icon 是 GUIIcons ID；icon 与 text 至少一个。tone = "ok" 图标和文字染绿（capsuleAddText），
 --     "danger" 染红（capsuleDangerText），段底不变色。emphasize = true：字 capsuleAddFont、图标 capsuleAddIconSize。
 --     pressed = true：按下状态（白 0.14 底 + 白 0.55 内描边、白字，两边竖线隐藏）。
+--     selected = true：选中（几段里当前用的那一段）：同分段控件选中的底色和字色，两边竖线隐藏。
 --   onClick(id, segmentFrame, strip)   点某一段；segmentFrame 可当菜单锚点
+--   onHover(id, segmentFrame, entering, strip)  可选：鼠标进 / 出某一段时调用（entering = true 进、false 出），
+--                            给调用方在段旁边画自己的悬停预览；不写时照旧只有 tooltip。
 --   tooltipAnchor = "below"  可选：悬停提示水平居中放在该段正下方（间距 GM.size.capsuleTooltipGap）；
 --                            不写时照旧 GameTooltip 的 ANCHOR_BOTTOM。
 --   hideTooltipOnPress = true  可选：在某一段上按下鼠标就收起它的悬停提示（移开再移回才重新显示）；不写时照旧。
--- 返回池化宿主（自己按内容定宽，高 GM.size.capsuleHeight）：SetItem(id, { icon?, text?, tooltip?, pressed? })、
+-- 返回池化宿主（自己按内容定宽，高 GM.size.capsuleHeight）：SetItem(id, { icon?, text?, tooltip?, pressed?, selected? })、
 -- GetItemFrame(id)、Release()。悬停有 tooltip 的段显示 GameTooltip。
 function EXUI:CreateButtonStrip(parent, options)
     if type(options) ~= "table" then error("CreateButtonStrip: options must be a table", 2) end
     if type(options.items) ~= "table" or #options.items == 0 then error("CreateButtonStrip: options.items must be a non-empty array", 2) end
     if options.onClick ~= nil and type(options.onClick) ~= "function" then
         error("CreateButtonStrip: options.onClick must be a function", 2)
+    end
+    if options.onHover ~= nil and type(options.onHover) ~= "function" then
+        error("CreateButtonStrip: options.onHover must be a function", 2)
     end
     if options.tooltipAnchor ~= nil and options.tooltipAnchor ~= "below" then
         error("CreateButtonStrip: options.tooltipAnchor must be \"below\"", 2)
@@ -5430,6 +5673,7 @@ function EXUI:CreateButtonStrip(parent, options)
     if isNew then BuildButtonStrip(strip) end
     strip._exStripItems = items
     strip._exStripOnClick = options.onClick
+    strip._exStripOnHover = options.onHover
     strip._exStripTooltipAnchor = options.tooltipAnchor
     strip._exStripHideTipOnPress = options.hideTooltipOnPress
     for _, segment in ipairs(strip._exStripSegments) do segment._exStripHover = false end
@@ -5448,6 +5692,7 @@ function EXUI:CreateButtonStrip(parent, options)
             segment:Hide()
         end
         self._exStripItems, self._exStripOnClick, self._exStripTooltipAnchor = nil, nil, nil
+        self._exStripOnHover = nil
         self._exStripHideTipOnPress = nil
         EXUI:ClearControlSurface(self)
     end)
@@ -6199,6 +6444,10 @@ local function CreateContextRow(menu)
     -- 右界在 BuildContextPanel 里按本项是否有勾/箭头重设：没有标记的项不空出标记槽。
     row.label:SetPoint("RIGHT", -padX, 0)
     row.label:SetWordWrap(false) -- 宽度按真实文字测量；极端超长文字单行截断而不是撑高行
+    -- 快捷键列（item.shortcut）：靠行右缘、次要文字色；位置在 BuildContextPanel 里按本项有没有勾/箭头重设。
+    row.shortcut = FeedbackText(row, GM.font.label, c.textDim, "")
+    row.shortcut:SetJustifyH("RIGHT")
+    row.shortcut:SetWordWrap(false)
     row.check = CreateFrame("Frame", nil, row)
     row.check:SetSize(GM.size.menuCheckSize, GM.size.menuCheckSize)
     row.check:SetPoint("RIGHT", -padX, 0)
@@ -6277,7 +6526,13 @@ BuildContextPanel = function(items, title, level, reuse)
     for _, item in ipairs(items) do
         if item.text then
             menu._measure:SetText(tostring(item.text))
-            width = math.max(width, math.ceil(menu._measure:GetUnboundedStringWidth()) + rowChrome)
+            local textWidth = math.ceil(menu._measure:GetUnboundedStringWidth())
+            if item.shortcut then
+                -- 快捷键列：文字后至少留 menuShortcutGap，再放快捷键。
+                menu._measure:SetText(tostring(item.shortcut))
+                textWidth = textWidth + GM.space.menuShortcutGap + math.ceil(menu._measure:GetUnboundedStringWidth())
+            end
+            width = math.max(width, textWidth + rowChrome)
         end
     end
     if title and title ~= "" then
@@ -6333,9 +6588,21 @@ BuildContextPanel = function(items, title, level, reuse)
             -- 文字右界按需：只有真的有勾或箭头才让出标记槽。
             local itemMark = item.submenu and GM.size.menuArrowSize
                 or (item.checked and GM.size.menuCheckSize) or 0
+            local right = padX + (itemMark > 0 and (itemMark + slotGap) or 0)
             row.label:ClearAllPoints()
             row.label:SetPoint("LEFT", row.icon, "RIGHT", slotGap, 0)
-            row.label:SetPoint("RIGHT", -(padX + (itemMark > 0 and (itemMark + slotGap) or 0)), 0)
+            row.shortcut:ClearAllPoints()
+            if item.shortcut then
+                row.shortcut:SetText(tostring(item.shortcut))
+                row.shortcut:SetTextColor(unpack(item.disabled and c.contextMenuDisabled or c.textDim))
+                row.shortcut:SetPoint("RIGHT", -right, 0)
+                row.shortcut:Show()
+                row.label:SetPoint("RIGHT", row.shortcut, "LEFT", -GM.space.menuShortcutGap, 0)
+            else
+                row.shortcut:SetText("")
+                row.shortcut:Hide()
+                row.label:SetPoint("RIGHT", -right, 0)
+            end
             row.label:SetText(item.text or "")
             row.label:SetTextColor(unpack(color))
             if item.checked then
@@ -6758,8 +7025,11 @@ do
                 self:HighlightText()
             end
         end)
+        -- 焦点槽位里有输入框的焦点画器：连安装记录一起清掉，写完再补装。
+        self:ClearControlScript(edit, "OnEditFocusGained")
         edit:SetScript("OnEditFocusGained", function(self) self:HighlightText() end)
         edit:SetScript("OnMouseUp", function(self) self:HighlightText() end)
+        self:ApplyControlAppearance(box)
         return box
     end
 
@@ -6767,7 +7037,7 @@ do
         local edit = box.editBox or box
         edit._exInputTextRole = nil
         edit:SetScript("OnTextChanged", nil)
-        edit:SetScript("OnEditFocusGained", nil)
+        EXUI:ClearControlScript(edit, "OnEditFocusGained")
         edit:SetScript("OnMouseUp", nil)
         edit:ClearFocus()
         Factory:ReleaseGridWidget(box)

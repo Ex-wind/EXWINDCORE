@@ -277,12 +277,6 @@ function Panel:CreateWelcomeContent()
     card:SetPoint("CENTER", 0, 2)
     self.CoreStatusCard = card
 
-    local accent = EXUI:CreateVisualTexture(card, EXBASEFRAME)
-    accent:SetPoint("TOPLEFT", 0, 0)
-    accent:SetPoint("BOTTOMLEFT", 0, 0)
-    accent:SetWidth(3)
-    accent:SetColorTexture(CopyColor(Color.cyan))
-
     local eyebrow = MakeText(card, "OVERLAY", 10, Color.cyan, "OUTLINE")
     eyebrow:SetPoint("TOPLEFT", 22, -22)
     eyebrow:SetText("EXWINDCORE · UNIFIED PANEL")
@@ -495,8 +489,8 @@ end
 local function SetRailButtonState(button, active)
     if not button then return end
     button._active = active == true
-    SetRailButtonSurface(button, active and GC.shell.railActive or GC.shell.railTransparent)
-    button.accent:Hide() -- 选中不再显示左侧竖线（原 SetShown(active == true)）
+    SetRailButtonSurface(button, GC.shell.railTransparent)
+    EXUI:PaintSelectCell(button, button._active, 4)
     button.label:SetTextColor(CopyColor(active and Color.text or Color.muted))
 end
 
@@ -518,16 +512,12 @@ function Panel:RebuildAppRail()
                 button._providerMeta = self.ProviderMeta[id] or {}
                 button.label = MakeText(button, "OVERLAY", 15, Color.muted, "OUTLINE")
                 button.label:SetPoint("CENTER")
-                button.accent = EXUI:CreateVisualTexture(button, EXBASEFRAME)
-                button.accent:SetPoint("LEFT", -6, 0)
-                button.accent:SetSize(2, 23)
-                button.accent:SetColorTexture(CopyColor(Color.cyan))
                 button:SetScript("OnClick", function(self)
-                    Panel:SelectProvider(self._providerID)
+                    Panel:SelectProvider(self._providerID, nil, "rail")
                 end)
                 button:SetScript("OnEnter", function(self)
                     if not self._active then
-                        SetRailButtonSurface(self, GC.shell.railHover)
+                        SetRailButtonSurface(self, GC.menuHover)
                     end
                     GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
                     GameTooltip:SetText((self._providerMeta and self._providerMeta.title) or self._providerID, 0.86, 0.92, 1)
@@ -704,7 +694,9 @@ function Panel:UnregisterProvider(id)
     self:RebuildAppRail()
 end
 
-function Panel:SelectProvider(id, route)
+-- source（可选）：怎么选到的。"rail" = 在中央面板左侧点了这个插件的入口；命令、Router 打开不写。
+-- 原样交给 provider:ApplyRoute(route, previous, source)，不用它的 provider 不受影响。
+function Panel:SelectProvider(id, route, source)
     if not id then
         if self.ActiveProvider then
             local oldProvider = self.Providers[self.ActiveProvider]
@@ -750,7 +742,7 @@ function Panel:SelectProvider(id, route)
         navRatio = provider.navRatio,
     })
     if type(provider.ApplyRoute) == "function" then
-        provider:ApplyRoute(route, previous)
+        provider:ApplyRoute(route, previous, source)
     end
     self:RebuildAppRail()
     if self.SettingsRailButton then SetRailButtonState(self.SettingsRailButton, id == "settings") end
@@ -895,11 +887,6 @@ function Panel:CreateFrame()
     settingsBtn:SetPoint("BOTTOM", rail, "BOTTOM", 0, 188)
     SetRailButtonSurface(settingsBtn, GC.shell.railTransparent)
     settingsBtn._providerMeta = { accent = "cyan" }
-    settingsBtn.accent = EXUI:CreateVisualTexture(settingsBtn, EXBASEFRAME)
-    settingsBtn.accent:SetPoint("LEFT", -6, 0)
-    settingsBtn.accent:SetSize(2, 23)
-    settingsBtn.accent:SetColorTexture(CopyColor(Color.cyan))
-    settingsBtn.accent:Hide()
     -- SetRailButtonState 是圆形 Provider 按钮和这几个固定功能按钮共用的高亮
     -- 函数，会无条件访问 button.label；这里不显示文字，只为满足该访问。
     settingsBtn.label = MakeText(settingsBtn, "OVERLAY", 15, Color.muted, "OUTLINE")
@@ -911,7 +898,7 @@ function Panel:CreateFrame()
     settingsBtn:SetScript("OnClick", function() Panel:SelectProvider("settings") end)
     settingsBtn:SetScript("OnEnter", function(self)
         if not self._active then
-            SetRailButtonSurface(self, GC.shell.railHover)
+            SetRailButtonSurface(self, GC.menuHover)
         end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(L["通用设置"], 0.86, 0.92, 1)
@@ -938,7 +925,7 @@ function Panel:CreateFrame()
         end
     end)
     changelog:SetScript("OnEnter", function(self)
-        SetRailButtonSurface(self, GC.shell.railHover)
+        SetRailButtonSurface(self, GC.menuHover)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(L["更新日志"], 0.86, 0.92, 1)
         GameTooltip:Show()
@@ -963,7 +950,7 @@ function Panel:CreateFrame()
     editMode.icon:SetTexture("Interface\\AddOns\\ExwindCore\\Textures\\grid.png")
     editMode:SetScript("OnClick", function() Panel:EnterEditMode() end)
     editMode:SetScript("OnEnter", function(self)
-        SetRailButtonSurface(self, GC.shell.railHover)
+        SetRailButtonSurface(self, GC.menuHover)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(L["编辑模式"], 0.86, 0.92, 1)
         GameTooltip:Show()
@@ -984,7 +971,7 @@ function Panel:CreateFrame()
     reload.icon:SetTexture("Interface\\AddOns\\ExwindCore\\Textures\\reload.png")
     reload:SetScript("OnClick", function() ReloadUI() end)
     reload:SetScript("OnEnter", function(self)
-        SetRailButtonSurface(self, GC.shell.railHover)
+        SetRailButtonSurface(self, GC.menuHover)
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:SetText(L["重新加载界面"], 0.86, 0.92, 1)
         GameTooltip:Show()

@@ -468,13 +468,6 @@ local function CheckLibs()
             end
         },
         {
-            name = "LibCustomGlow-1.0",
-            check = function()
-                return LibStub and
-                    LibStub:GetLibrary("LibCustomGlow-1.0", true) ~= nil
-            end
-        },
-        {
             name = "LibDBIcon-1.0",
             check = function()
                 return LibStub and
@@ -577,6 +570,13 @@ end
 --=======================================================================
 --========================== 模块管理 ===================================
 --=======================================================================
+-- 设置表首次读取时补一次默认值即可：战斗中各模块高频取 ModuleDB，每次都递归整棵
+-- 默认值太贵。记录挂在"这一份设置表 + 这一份默认值来源"上（都用弱键），所以整份
+-- 重置、切配置、导入换进来的新表没有记录，会照常补；声明一经注册不可再改，
+-- compiled 表不变，同一份表不会重复补。
+local WEAK_KEYS_MT = { __mode = "k" }
+local mergedDefaultSources = setmetatable({}, WEAK_KEYS_MT)
+
 local function MergeDefaults(dst, src)
     if type(dst) ~= "table" or type(src) ~= "table" then return end
     for k, v in pairs(src) do
@@ -845,13 +845,34 @@ function ExwindTools:GetModuleDB(moduleKey, defaults)
         error("GetModuleDB[" .. moduleKey .. "]: declared module must not pass a second defaults table", 2)
     end
     local storage = self:GetModuleDBStorage(moduleKey)
-    storage.ModuleDB[moduleKey] = storage.ModuleDB[moduleKey] or {}
-    if declared then
-        MergeDefaults(storage.ModuleDB[moduleKey], declared.compiled)
-    elseif type(defaults) == "table" then
-        MergeDefaults(storage.ModuleDB[moduleKey], defaults)
+    local db = storage.ModuleDB[moduleKey]
+    if not db then
+        db = {}
+        storage.ModuleDB[moduleKey] = db
     end
-    return storage.ModuleDB[moduleKey]
+    local source = declared and declared.compiled or (type(defaults) == "table" and defaults or nil)
+    if source then
+        local merged = mergedDefaultSources[db]
+        if not merged then
+            merged = setmetatable({}, WEAK_KEYS_MT)
+            mergedDefaultSources[db] = merged
+        end
+        if not merged[source] then
+            MergeDefaults(db, source)
+            merged[source] = true
+        end
+    end
+    return db
+end
+
+-- 原地清空并整份换内容（模块持有设置表引用，不能换新表）之后调用：
+-- 让下一次 GetModuleDB 对这份表重新补默认值。
+function ExwindTools:InvalidateModuleDBDefaults(moduleKey)
+    local storage = self:GetModuleDBStorage(moduleKey)
+    local db = storage and storage.ModuleDB and storage.ModuleDB[moduleKey]
+    if db then
+        mergedDefaultSources[db] = nil
+    end
 end
 
 local function OwnerBelongsToModule(owner, moduleKey)

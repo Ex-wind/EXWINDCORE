@@ -606,7 +606,8 @@ local function ApplyPresentationPlacement(host, placement)
     if width <= 0 or height <= 0 then error("Project().placement width/height must be positive", 3) end
     host:ClearAllPoints()
     host:SetSize(width, height)
-    host:SetPoint(point, UIParent, relativePoint, x, y)
+    -- relativeTo（可选）：贴在别的框体上（例如姓名板、队伍框）；不写贴 UIParent。x / y 是相对它的偏移。
+    host:SetPoint(point, placement.relativeTo or UIParent, relativePoint, x, y)
 end
 
 -- 事务实体也是唯一编辑模式的世界对象，不能因为它们没有注册进
@@ -1387,6 +1388,7 @@ local function SetWorldElementSelection(session)
     local visible = SessionWorldVisualsEnabled(session) and canBegin or false
     session.worldVisible = visible
     local ownerID = selected and selected.ownerID
+    local drawFrame = session.provider.worldSelectionFrame ~= false
     local anchor
     for rootID, entity in pairs(session.entities) do
         for elementID, entry in pairs(entity.worldElements or {}) do
@@ -1395,10 +1397,11 @@ local function SetWorldElementSelection(session)
             local isOutlined = outlined and outlined[rootID] and outlined[rootID][elementID] == true
             local showSelection = active and shown and visible
             local showOutline = isOutlined == true and not active and shown and visible
-            if showSelection or showOutline then WorldInput.EnsureKit(session, rootID, entity, entry) end
+            local drawSelection = showSelection and drawFrame
+            if drawSelection or showOutline then WorldInput.EnsureKit(session, rootID, entity, entry) end
             WorldInput.SetSelected(entity, entry, showSelection == true)
             if entry.selection then
-                entry.selection:SetShown(showSelection)
+                entry.selection:SetShown(drawSelection)
                 entry.outline:SetShown(showOutline)
             end
             -- 会话中所有可选元素常显淡色轮廓（主题 faintOutlines = false 时不显示）；选中 / 资料夹描边的元素由各自更醒目的框代替。
@@ -1406,7 +1409,7 @@ local function SetWorldElementSelection(session)
                 and not showSelection and not showOutline)
             if showSelection then
                 WorldInput.HideHover(entry)
-                anchor = entry.selection
+                if drawSelection then anchor = entry.selection end
             end
         end
         for _, widget in ipairs(entity.worldOverlays or {}) do
@@ -1731,7 +1734,7 @@ end
 local function ApplyRootOffset(item, dx, dy)
     local placement = item.entity.placement or {}
     ApplyPresentationPlacement(item.entity.host, { point = placement.point, relativePoint = placement.relativePoint,
-        width = placement.width, height = placement.height,
+        relativeTo = placement.relativeTo, width = placement.width, height = placement.height,
         x = (tonumber(placement.x) or 0) + dx, y = (tonumber(placement.y) or 0) + dy })
 end
 
@@ -2097,6 +2100,12 @@ local function BuildOverlayParts(root, spec)
             parts.fill:SetTexture(CIRCLE_TEXTURE)
             parts.fill:SetTexCoord(CIRCLE_COORD, CIRCLE_COORD_MAX, CIRCLE_COORD, CIRCLE_COORD_MAX)
             parts.fill:SetAllPoints(button)
+        elseif spec.shape == "corner" then
+            -- L 形角标：两条臂在 Place 里按 spec.corner 摆（同一个池里的按钮可能换角）。
+            -- spec.square 时 fill / arm 改作元素选框角手柄同款的空心方块：fill 是外框，arm 是压在上面的内芯。
+            parts.fill = NewTexture(button)
+            parts.arm = EXUI:CreateVisualTexture(button, _G.EXFONTFRAME)
+            parts.arm:SetTexture(WHITE_TEXTURE)
         else
             parts.fill = NewTexture(button)
             parts.fill:SetAllPoints(button)
@@ -2154,9 +2163,11 @@ local function CreateOverlayWidget(session, rootID, entity, bundle, spec, theme)
                 end
             end,
             onCancel = function()
+                parts.hot = parts.arm and parts.handle:IsMouseOver() or nil
                 for _, other in ipairs(entity.worldOverlays or {}) do other.Override(nil) end
             end,
             onFinish = function(moved, dx, dy)
+                parts.hot = parts.arm and parts.handle:IsMouseOver() or nil
                 for _, other in ipairs(entity.worldOverlays or {}) do other.Override(nil) end
                 if not moved or not SessionInputAllowed(session) or session.entities[rootID] ~= entity then return end
                 if CommitWorldIntent(session, rootID, { type = "overlayDragged", overlayID = spec.id,
@@ -2215,6 +2226,35 @@ local function CreateOverlayWidget(session, rootID, entity, bundle, spec, theme)
             end
         elseif spec.kind == "cell" then
             WorldInput.PlaceVirtual(parts.visual, host, current, 0)
+        elseif spec.kind == "handle" and spec.shape == "corner" then
+            -- 可选的 L 形角标：rect.x / y 是被包住的那个角（宿主单位），rect 宽高是命中区边长（屏幕固定单位）；
+            -- 命中区贴在角外侧 gap 处，L 的拐点离命中区外角 inset，臂长 arm、线宽 thickness。
+            -- spec.square（边长，屏幕固定单位）= 不画 L，画在命中区正中、与元素选框角手柄同款的空心方块（悬停提亮外框、命中区照旧）。
+            local corner = spec.corner or "TOPLEFT"
+            local sx = corner:find("LEFT") and -1 or 1
+            local sy = corner:find("TOP") and 1 or -1
+            local gap, inset = spec.gap or 4, spec.inset or 3
+            local arm, thick = spec.arm or 9, spec.thickness or 2
+            local inner = (sy > 0 and "BOTTOM" or "TOP") .. (sx < 0 and "RIGHT" or "LEFT")
+            local ratio = WorldInput.ScaleRatio(host, parts.handle)
+            parts.handle:ClearAllPoints()
+            parts.handle:SetSize(current.width, current.height)
+            parts.handle:SetPoint(inner, host, "CENTER", current.x * ratio + sx * gap, current.y * ratio + sy * gap)
+            if spec.square then
+                parts.fill:ClearAllPoints()
+                parts.fill:SetPoint("CENTER", parts.handle, "CENTER", 0, 0)
+                parts.fill:SetSize(spec.square, spec.square)
+                parts.arm:ClearAllPoints()
+                parts.arm:SetPoint("TOPLEFT", parts.fill, "TOPLEFT", 1.5, -1.5)
+                parts.arm:SetPoint("BOTTOMRIGHT", parts.fill, "BOTTOMRIGHT", -1.5, 1.5)
+                parts.arm:Show()
+            else
+                for index, texture in ipairs({ parts.fill, parts.arm }) do
+                    texture:ClearAllPoints()
+                    texture:SetPoint(corner, parts.handle, corner, -sx * inset, -sy * inset)
+                    if index == 1 then texture:SetSize(arm, thick) else texture:SetSize(thick, arm) end
+                end
+            end
         elseif spec.kind == "handle" then
             WorldInput.PlaceVirtual(parts.handle, host, current, 0, spec.shape == "dot")
         else
@@ -2258,11 +2298,16 @@ local function CreateOverlayWidget(session, rootID, entity, bundle, spec, theme)
             PaintBorder(parts.solid, color)
         elseif spec.kind == "handle" then
             parts.handle:SetShown(shown)
-            PaintTexture(parts.fill, spec.color == "yellow" and theme.yellow or theme.accent)
+            -- L 形角标：鼠标在哪个角（含拖着它时）那个角提亮成 hover 色，移开恢复主色。
+            local color = parts.hot and theme.hover or theme.accent
+            PaintTexture(parts.fill, spec.color == "yellow" and theme.yellow or color)
+            if parts.arm then PaintTexture(parts.arm, spec.square and theme.chipText or color) end
             if parts.ring then PaintTexture(parts.ring, theme.handleRing) end
         else
-            parts.chip:SetShown(shown)
-            SetChip(parts.chip, override and override.text or spec.text, theme.labelBackground, theme.label, theme.badgeSize)
+            -- 文字为空的标签不显示（拖动提示只在有内容时出现）。
+            local text = override and override.text or spec.text
+            parts.chip:SetShown(shown and text ~= "")
+            if text ~= "" then SetChip(parts.chip, text, theme.labelBackground, theme.label, theme.badgeSize) end
         end
     end
 
@@ -2286,12 +2331,16 @@ local function CreateOverlayWidget(session, rootID, entity, bundle, spec, theme)
             end
             SetDashedShown(parts.dashed, false)
         end
+        parts.hot = nil
         for _, name in ipairs({ "visual", "chip", "handle" }) do
             local frame = parts[name]
             if frame then
                 frame:Hide()
                 frame:ClearAllPoints()
-                if frame.SetScript then frame:SetScript("OnMouseDown", nil); frame:SetScript("OnMouseUp", nil); frame:SetScript("OnDragStart", nil) end
+                if frame.SetScript then
+                    frame:SetScript("OnMouseDown", nil); frame:SetScript("OnMouseUp", nil); frame:SetScript("OnDragStart", nil)
+                    frame:SetScript("OnEnter", nil); frame:SetScript("OnLeave", nil)
+                end
             end
         end
         local list = bundle.overlayPool[key]
@@ -2317,6 +2366,14 @@ local function CreateOverlayWidget(session, rootID, entity, bundle, spec, theme)
             OnPress(self, "handle", button)
         end)
         parts.handle:SetScript("OnDragStart", function(self) OnDrag(self, "handle") end)
+        if parts.arm then
+            local function Hot(on)
+                parts.hot = on or nil
+                widget.Apply(session.worldSelection and session.worldSelection.ownerID, session.worldVisible == true)
+            end
+            parts.handle:SetScript("OnEnter", function() Hot(true) end)
+            parts.handle:SetScript("OnLeave", function() if not state.pointer then Hot(false) end end)
+        end
     end
     Place()
     return widget
@@ -3224,6 +3281,10 @@ function EXUI:RegisterEditSessionProvider(provider)
         if provider.selectedHitPad ~= nil and (type(provider.selectedHitPad) ~= "number" or provider.selectedHitPad < 0) then
             error("RegisterEditSessionProvider: selectedHitPad must be a number >= 0", 2)
         end
+        -- 可选：worldSelectionFrame = false 时画面上选中元素不画选框和控制点（选中身份、层级照旧，provider 自己画选中标记）。
+        if provider.worldSelectionFrame ~= nil and type(provider.worldSelectionFrame) ~= "boolean" then
+            error("RegisterEditSessionProvider: worldSelectionFrame must be boolean", 2)
+        end
         if type(provider.Catalog) ~= "function" or type(provider.RootOf) ~= "function" or type(provider.Project) ~= "function"
             or type(provider.Commit) ~= "function" or type(provider.SetPresentation) ~= "function" then
             error("RegisterEditSessionProvider: presentation-transaction requires Catalog, RootOf, Project, Commit, SetPresentation", 2)
@@ -3654,6 +3715,7 @@ function EXUI:ReapplyEditSessionWorldPlacement(providerID, rootIDs)
         placement.point = source.point or "CENTER"
         placement.relativePoint = source.relativePoint or placement.point
         if not points[placement.point] or not points[placement.relativePoint] then error("invalid placement anchor", 2) end
+        placement.relativeTo = source.relativeTo
         for _, key in ipairs({ "x", "y", "width", "height" }) do
             local value = source[key]
             if value == nil then value = (key == "x" or key == "y") and 0 or 1 end

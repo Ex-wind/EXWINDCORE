@@ -183,8 +183,12 @@ ExwindTools.GUIColors = {
     popupDivider      = H(C.bSubtle),
     menuHover         = NeutralA(0.10), -- [改] 原 AccentA(0.08)
     listSelected      = AccentA(0.13), -- 列表与技能卡使用主色半透明选中底色
-    menuSelected      = H(SOLID), -- [改] 原 AccentA(0.13)
-    menuSelectedHover = H(SOLID_HOVER), -- [改] 原 AccentA(0.20)
+    -- 下拉展开面板与下拉框本身同一套：底色、边框同输入框（原来用比卡片还亮的 popup 灰，
+    -- 和深色的下拉框、框里更深的搜索框三层明暗打架）；选中项淡主色底 + 浅蓝字和勾，不再整条实心蓝（用户 10-26）。
+    menuPanel         = H(C.ctrl),
+    menuPanelBorder   = H(C.iBorder),
+    menuSelected      = AccentA(0.13), -- 选中项淡主色底（同 listSelected）
+    menuSelectedHover = AccentA(0.20), -- 选中项悬停（同 tagSelectedHover）
 
     -- ---------- 滑桿 ----------
     -- 轨道是空的（不画已走过那一段的填充），所以悬停反馈全靠轨道自己换色：
@@ -265,13 +269,18 @@ ExwindTools.GUIColors = {
  -- [新]
     checkCardDesc           = H(C.dim),
  -- [新]
+    -- 图标选取（iconpick）格子：没选中去色后乘这个暗色，悬停乘浅一点的；选中外发光着主色。
+    pickDimShade            = Hex(0x6b, 0x6b, 0x6b),
+    pickHoverShade          = Hex(0xbf, 0xbf, 0xbf),
+    pickGlow                = AccentA(0.55),
+ -- [新]
 
     -- 彈出層 / 下拉選單
     popupShadow       = BlackA(0.55),
  -- [新]
-    menuSelectedText  = Hex(0xff, 0xff, 0xff),
+    menuSelectedText  = H(C.aText), -- 选中项文字：浅蓝（同 accentHover），压在淡主色底上
  -- [新]
-    menuCheck         = Hex(0xff, 0xff, 0xff),
+    menuCheck         = H(C.aFg),   -- 选中勾（行左侧）：浅蓝前景色
  -- [新]
 
     -- 下拉選單試聽圖示（音波）
@@ -525,6 +534,13 @@ ExwindTools.GUIColors = {
     iconDarkChecked      = WhiteA(0.24), -- 開啟（checked）的底
     iconDarkDisabledFill = BlackA(0.07), -- 停用底（平常底的 35%）
     iconDarkDisabledIcon = WhiteA(0.19), -- 停用圖示（平常圖示的 35%）
+    -- 發光設置組顏色行的色板（金、白、藍、綠、紅、紫；不含透明度，透明度另有滑桿）
+    glowPalette = { { 1, 0.82, 0.2 }, { 1, 1, 1 }, { 0.35, 0.8, 1 }, { 0.4, 1, 0.45 }, { 1, 0.35, 0.3 }, { 0.8, 0.45, 1 } },
+    -- 颜色按钮左边的常用色（白、红、橙、黄、绿、青、蓝、紫），点一下直接设成该色。
+    colorPresets = {
+        Hex(0xff, 0xff, 0xff), Hex(0xff, 0x30, 0x30), Hex(0xff, 0x80, 0x00), Hex(0xff, 0xd1, 0x00),
+        Hex(0x1e, 0xff, 0x00), Hex(0x00, 0xcc, 0xff), Hex(0x00, 0x70, 0xdd), Hex(0xa3, 0x35, 0xee),
+    },
 
     -- ---------- FontString 內嵌色 ----------
     markup = {
@@ -572,9 +588,7 @@ ExwindTools.GUIColors = {
         sidebarIdleText     = H(C.dim),
         sidebarIdleRail     = H(C.bDef),
 
-        railActive      = AccentA(0.13),
         railTransparent = { 0, 0, 0, 0 },
-        railHover       = NeutralA(0.08),
     },
 }
 
@@ -602,9 +616,8 @@ local sidebar = {
     -- 与基准不一致，也容易被看成选中，故一并取消。
     hover={fill=G.menuHover, border=G.transparent, text=G.shell.sidebarHoverText},
     pressed={fill=G.menuHover, border=G.transparent, text=G.shell.sidebarHoverText},
-    -- 侧栏选中＝只描边（用户 2026-10-05 推翻同月 4 日的“主色淡底 + 左侧 3px 指示条 + 纯白字”）：
-    -- 底色不动，只加一圈主色描边，文字用常规正文色。这是唯一呈现，没有第二套。
-    selected={fill=G.transparent, border=G.primaryFill, text=G.text},
+    -- 侧栏选中：底色不动、文字用正文色，外框由公共选中外观（UI:PaintSelectRow）画。
+    selected={fill=G.transparent, border=G.transparent, text=G.text},
     disabled={fill=G.transparent, border=G.transparent, text=G.shell.sidebarDisabledText},
 }
 ExwindTools.GUIStates = {

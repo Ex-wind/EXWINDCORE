@@ -999,6 +999,61 @@ local function ResolveBorderTexture(name)
     return "Interface\\Buttons\\UI-EmptySlot-White"
 end
 
+-- 纯色像素边框：样式写了 pixelBorder = true 才走（没写的照旧 Backdrop + 边框材质）。
+-- 四条纯白贴图上顶点色；粗细、间距都按物理像素算，按目标的有效缩放换成界面单位。
+-- 粗细按 1080p 等效：物理像素 = round(粗细 × 屏幕物理高 / 1080)，至少 1（1080p 下 1/2/4，1440p 下 1/3/5，4K 下 2/4/8），
+-- 不同分辨率下看起来一样粗；间距仍是物理像素。
+-- 边框画在“目标往外扩间距”的矩形里、往内画粗细；左右两条夹在上下之间，半透明时四角不叠色。
+-- 只用锚点、不读宽高，目标是秘密几何也能用。edges = { 上, 下, 左, 右 }。
+local PIXEL_BORDER_TEXTURE = "Interface\\Buttons\\WHITE8X8"
+function EXUI:LayoutPixelBorder(edges, target, size, padding, r, g, b, a)
+    local unit = PixelUtil.GetPixelToUIUnitFactor() / math.max(0.01, target:GetEffectiveScale())
+    local _, screenHeight = GetPhysicalScreenSize()
+    local thick = math.max(1, math.floor((tonumber(size) or 1) * (screenHeight or 1080) / 1080 + 0.5)) * unit
+    local pad = math.floor((tonumber(padding) or 0) + 0.5) * unit
+    for _, edge in ipairs(edges) do
+        edge:SetTexture(PIXEL_BORDER_TEXTURE)
+        edge:SetVertexColor(r or 0, g or 0, b or 0, a or 1)
+        edge:ClearAllPoints()
+        edge:Show()
+    end
+    local top, bottom, left, right = edges[1], edges[2], edges[3], edges[4]
+    top:SetPoint("TOPLEFT", target, "TOPLEFT", -pad, pad)
+    top:SetPoint("TOPRIGHT", target, "TOPRIGHT", pad, pad)
+    top:SetHeight(thick)
+    bottom:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -pad, -pad)
+    bottom:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", pad, -pad)
+    bottom:SetHeight(thick)
+    left:SetPoint("TOPLEFT", target, "TOPLEFT", -pad, pad - thick)
+    left:SetPoint("BOTTOMLEFT", target, "BOTTOMLEFT", -pad, -pad + thick)
+    left:SetWidth(thick)
+    right:SetPoint("TOPRIGHT", target, "TOPRIGHT", pad, pad - thick)
+    right:SetPoint("BOTTOMRIGHT", target, "BOTTOMRIGHT", pad, -pad + thick)
+    right:SetWidth(thick)
+end
+
+-- 控件自己的像素边框框体（第一次用到才建）；value(键) 取样式值。
+local function ApplyPixelBorder(widget, target, value)
+    local frame = widget.pixelBorder
+    if not frame then
+        frame = CreateFrame("Frame", nil, widget)
+        frame:EnableMouse(false)
+        frame:SetAllPoints(widget)
+        frame.edges = {}
+        for index = 1, 4 do frame.edges[index] = EXUI:CreateVisualTexture(frame, _G.EXBORDERFRAME) end
+        widget.pixelBorder = frame
+    end
+    EXUI:ApplyVisualLayer(frame, _G.EXBORDERFRAME, widget)
+    if value("showBorder") == false then
+        frame:Hide()
+        return
+    end
+    EXUI:LayoutPixelBorder(frame.edges, target, value("borderSize"), value("borderPadding"),
+        NumberOr(value("borderColorR"), 0), NumberOr(value("borderColorG"), 0),
+        NumberOr(value("borderColorB"), 0), NumberOr(value("borderColorA"), 1))
+    frame:Show()
+end
+
 -- swipeTexture 只属于静态 preview 样本。正常 runtime 的 IconWidget 样式没有此入口；
 -- 此处仅在一个曾套用过静态样本的 pooled Cooldown 上恢复模板等价的纯白扇形。
 local function ResetStaticCooldownSwipeTexture(widget)
@@ -1128,6 +1183,13 @@ end
 
 local function ApplyIconBorder(widget)
     local iconStyle = widget.iconStyle
+    if IconStyleValue(iconStyle, "pixelBorder") == true then
+        widget.border:Hide()
+        if widget.secretSafeBorder then widget.secretSafeBorder:Hide() end
+        ApplyPixelBorder(widget, widget, function(key) return IconStyleValue(iconStyle, key) end)
+        return
+    end
+    if widget.pixelBorder then widget.pixelBorder:Hide() end
     if widget._useSecretSafeBorder then
         ApplySecretSafeIconBorder(widget)
         return
@@ -1512,6 +1574,20 @@ local function IconWidgetSetStaticCooldown(widget, remaining, duration, formatRu
     return widget
 end
 
+-- 时长对象挂在不走的样本时钟上时（编辑样本），原生扇形不认那只时钟：数字仍由时长绑定画，
+-- 扇形按普通值停在已过 elapsed 的一刻（同 SetStaticCooldown）。下次 SetDurationObject / ClearCooldown 会解除暂停。
+local function IconWidgetFreezeCooldownSwipe(widget, elapsed, total)
+    local numericElapsed, numericTotal = tonumber(elapsed), tonumber(total)
+    if not numericElapsed or not numericTotal or numericTotal <= 0 then return widget end
+    if not widget.cooldown.SetPaused then
+        error("EXUI IconWidget: Cooldown:SetPaused is required for frozen swipe", 2)
+    end
+    widget.cooldown:SetPaused(false)
+    widget.cooldown:SetCooldown(GetTime() - math.max(0, math.min(numericTotal, numericElapsed)), numericTotal, 1)
+    widget.cooldown:SetPaused(true)
+    return widget
+end
+
 -- 2026-07-26 修复：原先是 start/duration/modRate 旧数值签名，从不驱动 secretCountdown，
 -- 倒数数字出不来（当时留了 TODO，担心 Cooldown:SetCooldown 收 secret 参数是否安全未经验证）。
 -- 现已通过 FrameAPICooldownDocumentation.lua 确认 SetCooldown 和 SetCooldownFromDurationObject
@@ -1677,6 +1753,7 @@ local function IconWidgetRelease(widget)
     widget.icon:SetRotation(0)
     widget.border:Hide()
     if widget.secretSafeBorder then widget.secretSafeBorder:Hide() end
+    if widget.pixelBorder then widget.pixelBorder:Hide() end
     widget:Hide()
     widget:ClearAllPoints()
     if widget.countdownText then widget.countdownText:Release(); widget.countdownText = nil end
@@ -1778,6 +1855,7 @@ EXFactory:InitPool(ICON_WIDGET_POOL, "Frame", nil, function(widget)
     widget.SetCooldown = IconWidgetSetCooldown
     widget.SetDurationObject = IconWidgetSetDurationObject
     widget.SetStaticCooldown = IconWidgetSetStaticCooldown
+    widget.FreezeCooldownSwipe = IconWidgetFreezeCooldownSwipe
     widget.SetSecretCooldown = IconWidgetSetSecretCooldown
     widget.SetCooldownDoneCallback = IconWidgetSetCooldownDoneCallback
     widget.ClearCooldown = IconWidgetClearCooldown
@@ -1946,6 +2024,12 @@ end
 
 local function ApplyTimerBarBorder(widget)
     local timerStyle = widget.timerStyle
+    if TimerStyleValue(timerStyle, "pixelBorder") == true then
+        widget.border:Hide()
+        ApplyPixelBorder(widget, widget.bar, function(key) return TimerStyleValue(timerStyle, key) end)
+        return
+    end
+    if widget.pixelBorder then widget.pixelBorder:Hide() end
     local configuredSize = NumberOr(TimerStyleValue(timerStyle, "borderSize"), 1)
     if TimerStyleValue(timerStyle, "showBorder") == false or configuredSize <= 0 then
         widget.border:Hide()
@@ -2905,6 +2989,7 @@ local function TimerBarWidgetApplyStyle(widget, style)
     iconAppearance.height = TimerStyleValue(widget.timerStyle, "iconHeight")
     iconAppearance.showCooldown = false -- 计时条图标固定为纯显示，倒数只走 TimeText。
     iconAppearance.showBorder = TimerStyleValue(widget.timerStyle, "showIconBorder") ~= false
+    iconAppearance.pixelBorder = TimerStyleValue(widget.timerStyle, "pixelBorder")
     iconAppearance.borderTexture = TimerStyleValue(widget.timerStyle, "iconBorderTexture")
     iconAppearance.borderSize = TimerStyleValue(widget.timerStyle, "iconBorderSize")
     iconAppearance.borderPadding = TimerStyleValue(widget.timerStyle, "iconBorderPadding")

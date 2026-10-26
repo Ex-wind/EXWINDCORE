@@ -25,11 +25,12 @@ ExwindTools.GUIIcons = {
         ["arrow-right"] = true,
         ["arrow-up"] = true,
         ["arrow-up-down"] = true,
+        ["arrow-up-right"] = true,
         ["arrow-up-to-line"] = true,
         ["award"] = true,
         ["ban"] = true,
         -- 自绘图标（不是 Lucide 官方图标，为 EXAura 顶部栏绘制）：bar-icon、border、cooldown-pie、
-        -- outline-none / outline-thin / outline-thick、shadow。
+        -- outline-none / outline-thin / outline-thick、shadow、valign-top / valign-middle / valign-bottom（文字垂直对齐）。
         -- 规格与本目录 Lucide 相同（40×40、白色、alpha 为覆盖率，线条 1.5 视框单位）；描边档的环是透明挖空。
         ["bar-icon"] = true,
         ["beer"] = true,
@@ -86,6 +87,7 @@ ExwindTools.GUIIcons = {
         ["message-circle-more"] = true,
         ["message-square"] = true,
         ["messages-square"] = true,
+        ["minus"] = true,
         ["mouse-pointer"] = true,
         ["move"] = true,
         ["move-horizontal"] = true,
@@ -136,6 +138,9 @@ ExwindTools.GUIIcons = {
         ["user"] = true,
         ["user-check"] = true,
         ["users"] = true,
+        ["valign-bottom"] = true,
+        ["valign-middle"] = true,
+        ["valign-top"] = true,
         ["volume-2"] = true,
         ["wand-sparkles"] = true,
         ["x"] = true,

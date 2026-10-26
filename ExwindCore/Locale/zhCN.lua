@@ -2541,6 +2541,13 @@ L["数量"] = true
 -- GlowSettings
 L["发光样式"] = true
 L["启用发光"] = true
+L["线条长度"] = true
+L["大小"] = true
+L["蚂蚁线"] = true
+L["流光"] = true
+L["脉冲"] = true
+L["翻书"] = true
+L["已改"] = true
 L["标准 (Classic)"] = true
 L["像素 (Pixel)"] = true
 L["自动施法 (AutoCast)"] = true
@@ -2788,9 +2795,12 @@ L["记录：%d"] = true
 L["输入物品 ID"] = true
 
 -- 设置页 V2 新种类
-L["更多 ›"] = true
+L["高级 ›"] = true
 L["收起 ‹"] = true
-L["加入快速工具条"] = true
-L["从快速工具条移除"] = true
-L["快速工具条已满（最多 %d 个）"] = true
+L["展开"] = true
+L["收起"] = true
 L["完整设置"] = true
+L["声音"] = true
+L["声道"] = true
+L["朗读文字"] = true
+L["播放一次所选声音"] = true

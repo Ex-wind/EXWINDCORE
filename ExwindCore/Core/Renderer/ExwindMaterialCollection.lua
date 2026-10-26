@@ -86,9 +86,49 @@ local function CombineOffsets(first, second)
     }
 end
 
+-- 成对（presentation.pair = { axis = "H" | "V", gap = 两张之间的距离 }，可选）：本体放左（H）或上（V），
+-- 另一侧放一张翻转的同材质，两张以 offset 为中心对称。不写 pair 时照旧只放一张在 offset。
 local function ApplyLocalOffset(item, offset)
+    local shift = item.pairShift
     item.widget:ClearAllPoints()
-    item.widget:SetPoint("CENTER", item.root, "CENTER", offset.x, offset.y)
+    if not shift then
+        item.widget:SetPoint("CENTER", item.root, "CENTER", offset.x, offset.y)
+        return
+    end
+    item.widget:SetPoint("CENTER", item.root, "CENTER", offset.x - shift.x, offset.y + shift.y)
+    item.pairWidget:ClearAllPoints()
+    item.pairWidget:SetPoint("CENTER", item.root, "CENTER", offset.x + shift.x, offset.y - shift.y)
+end
+
+-- 成对的另一张：同一份 presentation，只把成对方向上的翻转取反。返回整体的宽、高（不成对时就是本体的宽、高）。
+local function ApplyPair(item, presentation)
+    local width = math.max(1, item.widget:GetWidth() or 1)
+    local height = math.max(1, item.widget:GetHeight() or 1)
+    local pair = presentation.pair
+    if pair == nil then
+        item.pairShift = nil
+        if item.pairWidget then item.pairWidget:Clear() end
+        return width, height
+    end
+    if type(pair) ~= "table" or (pair.axis ~= "H" and pair.axis ~= "V") then
+        error("MaterialCollection presentation pair must be { axis = H | V, gap }", 3)
+    end
+    if not item.pairWidget then item.pairWidget = EXUI:CreateExtraTextureWidget(item.root) end
+    local mirrored = {}
+    for key, value in pairs(presentation) do mirrored[key] = value end
+    mirrored.pair = nil
+    if pair.axis == "H" then mirrored.flipH = presentation.flipH ~= true else mirrored.flipV = presentation.flipV ~= true end
+    item.pairWidget:ApplyPresentation(mirrored)
+    if presentation.hasColorComponents == true then item.pairWidget:SetColorComponents(presentation.colorComponents) end
+    local gap = tonumber(pair.gap) or 0
+    if pair.axis == "H" then
+        gap = math.max(-width, gap)
+        item.pairShift = { x = (width + gap) / 2, y = 0 }
+        return width * 2 + gap, height
+    end
+    gap = math.max(-height, gap)
+    item.pairShift = { x = 0, y = (height + gap) / 2 }
+    return width, height * 2 + gap
 end
 
 local function UnionBounds(acc, bounds, offset)
@@ -170,7 +210,13 @@ local function ConfigurePanelInteraction(collection, item, interaction)
     EnsureInteractionHighlight(overlay)
     if overlay:GetParent() ~= item.widget then overlay:SetParent(item.widget) end
     overlay:ClearAllPoints()
-    overlay:SetAllPoints(item.widget)
+    if item.pairShift then
+        -- 成对：拖动 / 右键范围盖住两张。
+        overlay:SetPoint("TOPLEFT", item.widget, "TOPLEFT")
+        overlay:SetPoint("BOTTOMRIGHT", item.pairWidget, "BOTTOMRIGHT")
+    else
+        overlay:SetAllPoints(item.widget)
+    end
     overlay:SetFrameStrata(item.widget:GetFrameStrata() or "MEDIUM")
     overlay:SetFrameLevel((item.widget:GetFrameLevel() or 0) + 50)
     overlay:EnableMouse(true)
@@ -203,8 +249,7 @@ local function ConfigurePanelInteraction(collection, item, interaction)
             local dx, dy = cursorX / drag.scale - drag.x, cursorY / drag.scale - drag.y
             if not drag.moved and math.abs(dx) < 2 and math.abs(dy) < 2 then return end
             drag.moved = true
-            item.widget:ClearAllPoints()
-            item.widget:SetPoint("CENTER", item.root, "CENTER", drag.baseX + dx, drag.baseY + dy)
+            ApplyLocalOffset(item, { x = drag.baseX + dx, y = drag.baseY + dy })
         end)
     end)
     overlay:SetScript("OnMouseUp", function(self, button)
@@ -416,7 +461,7 @@ local function NewItem(collection, itemID)
         resolveCore = function(elementID)
             local bounds = item.declaredBounds or { left = -.5, right = .5, bottom = -.5, top = .5 }
             if elementID == "core.root" then return root, bounds end
-            if elementID == "core.material" then return item.widget, bounds end
+            if elementID == "core.material" then return item.pairShift and root or item.widget, bounds end
             error("MaterialCollection unknown RegionElements core anchor: " .. tostring(elementID), 3)
         end,
         emitIntent = function(intent)
@@ -460,7 +505,7 @@ function EXUI:CreateMaterialCollection(parent, interactionMode, moduleKey, callb
         item.localOffset = ResolveLocalOffset(presentation)
         item.widget:ApplyPresentation(presentation)
         if presentation.hasColorComponents == true then item.widget:SetColorComponents(presentation.colorComponents) end
-        item.bodyWidth, item.bodyHeight = math.max(1, item.widget:GetWidth() or 1), math.max(1, item.widget:GetHeight() or 1)
+        item.bodyWidth, item.bodyHeight = ApplyPair(item, presentation)
         item.root:SetSize(item.bodyWidth, item.bodyHeight)
         ApplyLocalOffset(item, item.localOffset)
         ConfigurePanelInteraction(self, item, presentation.interaction)
@@ -575,6 +620,8 @@ function EXUI:CreateMaterialCollection(parent, interactionMode, moduleKey, callb
             if not (item.textWidgets and item.textWidgets[slotID]) then ResetOverlay(overlay, true) end
         end
         item.widget:Release()
+        if item.pairWidget then item.pairWidget:Release() end
+        item.pairWidget, item.pairShift = nil, nil
         ReleaseItemRoot(item.root)
         item.widget, item.root, item.presentation, item.declaredBounds, item.localOffset, item.interactionOverlay = nil, nil, nil, nil, nil, nil
         item.visualEffects = nil

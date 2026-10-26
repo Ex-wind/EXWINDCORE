@@ -392,6 +392,11 @@ local function ResolveStyledRowColumns(row, innerWidth, style, labelWidth)
             requested = requested * 0.75 * percent / 100
         end
     end
+    -- 占满标签右边的滑杆行（requested 为 math.huge）：标签列至少 sliderLabelWidth，且不窄于同一张卡里
+    -- 其他滑杆行最宽的标签（_exSettingsRowSliderLabelWidth，由 V2 设置行布局给），各行滑杆从同一处起、一样长。
+    if requested == math.huge and labelWidth > 0 then
+        labelWidth = math.max(labelWidth, style.sliderLabelWidth or 0, row._exSettingsRowSliderLabelWidth or 0)
+    end
     local room = innerWidth - SETTINGS_LIST_COLUMN_GAP - labelWidth
     if room >= requested then
         return requested, math.max(1, innerWidth - SETTINGS_LIST_COLUMN_GAP - requested), false
@@ -554,12 +559,16 @@ function EXUI:CreateRoundedImage(parent, radius, matchSurface)
     local function Layout()
         local width, height = image:GetWidth(), image:GetHeight()
         if width <= 0 or height <= 0 then return end
+        -- 尺寸、圆角、贴图坐标都和上次排好的一样（例如窗口重新显示）：片的位置不用重摆。
+        local uv = image._uv
+        local key = width .. "|" .. height .. "|" .. image._radius .. "|" .. uv[1] .. "|" .. uv[2] .. "|" .. uv[3] .. "|" .. uv[4]
+        if image._laidOut == key then return end
+        image._laidOut = key
         if image._border then
             EXUI:SetControlSurface(image._border, image._radius <= GM.radius.control and GM.radius.control or GM.radius.card, {0, 0, 0, 0}, {0, 0, 0, 1})
         end
         local r = math.min(image._radius, width / 2, height / 2)
         local x, y = { 0, r, width - r, width }, { 0, r, height - r, height }
-        local uv = image._uv
         for _, piece in ipairs(image._pieces) do
             local col, row, texture = piece.col, piece.row, piece.texture
             local w, h = x[col + 1] - x[col], y[row + 1] - y[row]
@@ -821,9 +830,10 @@ function EXUI:CreateSettingsRow(parent, options)
     row._exSettingsRowStyle = style
     -- autoWidth：这一行单独按标签实际字宽排文字列（同预设 labelAutoWidth），只在有样式时生效；每次借出重设。
     row._exSettingsRowAutoWidth = style and options.autoWidth == true or nil
+    row._exSettingsRowSliderLabelWidth = nil -- 同卡滑杆行对齐用的标签列宽，V2 设置行布局每次重给
+    -- stacked：这一行一律标签在上、控件在下（控件与文字左缘对齐、占满文字列宽），只在有样式时生效；每次借出重设。
+    row._exSettingsRowStacked = style and options.stacked == true or nil
     row._exSettingsRowTrailingWidth = style and tonumber(options.trailingWidth) or nil
-    -- leadExtra = 标签前（勾选框 / 图标位之前）再多留的宽，调用方自己在这里摆东西（V2 快速工具条的星号）；不给为 0。
-    row._exSettingsRowLeadExtra = tonumber(options.leadExtra)
     if style and style.rowMinHeight then row._exSettingsRowMinHeight = style.rowMinHeight end
     row._exSettingsRowIsLast = options.isLast == true
     -- 标签前的可选位：lead = "checkbox"（勾选框由调用方摆在 UpdateSettingsRowLayout 返回的位置）
@@ -895,10 +905,9 @@ function EXUI:UpdateSettingsRowLayout(row, width, controlHeight, descriptionWidg
     local leadSize = row._exSettingsRowLead == "checkbox" and GM.size.checkboxBoxSize
         or (row._exSettingsRowLead == "icon" and GM.settings.leadIconSize) or 0
     local leadWidth = leadSize > 0 and (leadSize + GM.settings.leadGap) or 0
-    local leadExtra = row._exSettingsRowLeadExtra or 0
-    local leadX = rowPaddingX + leadExtra
+    local leadX = rowPaddingX
     local textX = leadX + leadWidth
-    innerWidth = math.max(1, innerWidth - leadWidth - leadExtra)
+    innerWidth = math.max(1, innerWidth - leadWidth)
     local textWidth, textHeight, controlX, controlY, controlWidth, height, stacked, labelColumn
     -- 标签文字列扣掉文字后面留的宽（只有样式行会有）；说明仍占整列。
     local trailing = row._exSettingsRowTrailingWidth or 0
@@ -933,6 +942,9 @@ function EXUI:UpdateSettingsRowLayout(row, width, controlHeight, descriptionWidg
             controlWidth, textWidth, stacked = ResolveSettingsRowColumns(innerWidth,
                 row._exSettingsRowControlWidth, row._exSettingsRowControlKind,
                 row._exSettingsRowInputWidthPercent, row._exSettingsRowMinControlWidth)
+        end
+        if row._exSettingsRowStacked then
+            controlWidth, textWidth, stacked, labelColumn = innerWidth, innerWidth, true, nil
         end
         local titleHeight = SettingsTextHeight(title, math.max(1, textWidth - trailing))
         textHeight = titleHeight
@@ -1009,7 +1021,7 @@ function EXUI:UpdateSettingsRowLayout(row, width, controlHeight, descriptionWidg
     divider:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -dividerInset, 0)
     divider:SetShown(not row._exSettingsRowIsLast)
     EXUI:ClearControlSurface(row)
-    -- 第 6、7 个返回值：标签前勾选框 / 图标的左上角（相对行）；leadExtra 留的位在它左边。
+    -- 第 6、7 个返回值：标签前勾选框 / 图标的左上角（相对行）。
     return height, controlX, controlY, controlWidth, stacked == true, leadX, leadTop
 end
 
@@ -2185,6 +2197,8 @@ function EXUI:RestoreSettingsListControl(widget)
     if state.sliderLayout then
         local sliderState = state.sliderLayout
         widget._exSettingsValuePosition = sliderState.valuePosition
+        widget._exSettingsInputWidth = sliderState.inputWidthSetting
+        widget._exSettingsInputHeight = nil
         widget._exGridFixedHeight = sliderState.fixedHeight
         widget:SetSize(sliderState.width, sliderState.height)
         local input = widget.numberInput
@@ -2200,6 +2214,27 @@ function EXUI:RestoreSettingsListControl(widget)
     end
     widget._exSettingsListVisualState = nil
     return true
+end
+
+-- 数字框宽 "fit"：按这条滑杆最小、最大值格式化后较长的那个定宽（负号、百分号、小数都算上），刚好不裁字。
+local function FitSliderInputWidth(widget)
+    local input = widget.numberInput
+    local measure = widget._exInputMeasure
+    if not measure then
+        measure = widget:CreateFontString(nil, "BACKGROUND")
+        measure:Hide()
+        widget._exInputMeasure = measure
+    end
+    local fontPath, fontSize, fontFlags = input:GetFont()
+    if fontPath then measure:SetFont(fontPath, fontSize, fontFlags) else measure:SetFontObject(input:GetFontObject()) end
+    local minimum, maximum = (widget.Slider or widget):GetMinMaxValues()
+    local format = widget._formatter or tostring
+    local widest = 0
+    for _, value in ipairs({ minimum, maximum }) do
+        measure:SetText(tostring(format(value)))
+        widest = math.max(widest, measure:GetUnboundedStringWidth())
+    end
+    return math.ceil(widest) + GM.space.sliderInputInset * 2 + 4
 end
 
 -- Reflow only the original GridSlider and its original number EditBox.  The
@@ -2222,13 +2257,20 @@ function EXUI:UpdateSettingsListControlLayout(widget, width, height)
     if widget._gridType == "GridSlider" and widget._exSettingsValuePosition == "right"
         and widget.numberInput then
         local height = math.max(SETTINGS_LIST_ORDINARY_CONTROL_HEIGHT, SLIDER_NUMBER_INPUT_HEIGHT)
+        -- 数值框是纯输入框（不带加减）。定宽：各条滑杆的轨道一样长；数值特别长放不下时才按最长数值加宽。
+        -- 高可由预设另给（_exSettingsInputHeight，见 PrepareSettingsListControl 的 inputHeight）。
+        local fixedWidth = widget._exSettingsInputWidth == "fit" and 0
+            or tonumber(widget._exSettingsInputWidth) or SLIDER_NUMBER_INPUT_WIDTH
+        local fullInputWidth = math.max(fixedWidth, FitSliderInputWidth(widget))
+        local inputHeight = widget._exSettingsInputHeight or SLIDER_NUMBER_INPUT_HEIGHT
+        local inputGap = GM.settings.sliderValueGap
         local gap, inputWidth, trackWidth
         if widget._exSettingsOrdinaryControl == true then
-            gap = math.min(GM.space.sliderInputGap, math.max(0, width - 2))
-            inputWidth = math.min(SLIDER_NUMBER_INPUT_WIDTH, math.max(1, width - gap - 1))
+            gap = math.min(inputGap, math.max(0, width - 2))
+            inputWidth = math.min(fullInputWidth, math.max(1, width - gap - 1))
             trackWidth = math.max(1, width - gap - inputWidth)
         else
-            gap, inputWidth = GM.space.sliderInputGap, SLIDER_NUMBER_INPUT_WIDTH
+            gap, inputWidth = inputGap, fullInputWidth
             trackWidth = math.max(GM.size.sliderTrackMinWidth, width - gap - inputWidth)
         end
         widget:SetSize(trackWidth, height)
@@ -2236,7 +2278,7 @@ function EXUI:UpdateSettingsListControlLayout(widget, width, height)
         local input = widget.numberInput
         input:ClearAllPoints()
         input:SetPoint("LEFT", widget, "RIGHT", gap, 0)
-        input:SetSize(inputWidth, SLIDER_NUMBER_INPUT_HEIGHT)
+        input:SetSize(inputWidth, inputHeight)
         local interactive = widget.Slider
         if interactive then
             interactive:ClearAllPoints()
@@ -2351,8 +2393,13 @@ function EXUI:PrepareSettingsListControl(widget, options)
             interactivePoints = interactive and CaptureRegionPoints(interactive) or nil,
             interactiveWidth = interactive and interactive:GetWidth() or nil,
             interactiveHeight = interactive and interactive:GetHeight() or nil,
+            inputWidthSetting = widget._exSettingsInputWidth,
         }
         widget._exSettingsValuePosition = "right"
+        -- inputWidth（可选，只有样式预设传）：数值框宽（数字或 "fit" = 按最长数值定宽）；
+        -- inputHeight（可选，只有样式预设传）：数值框高。不传同原样。
+        widget._exSettingsInputWidth = options.inputWidth
+        widget._exSettingsInputHeight = options.inputHeight
         self:UpdateSettingsListControlLayout(widget, widget:GetWidth())
     end
     if options.role == "label" then

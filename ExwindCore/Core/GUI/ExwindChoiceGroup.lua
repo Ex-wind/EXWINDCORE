@@ -39,6 +39,9 @@ local function SetMovingTexture(host, texture, x, width, animate)
             motion.texture:ClearAllPoints()
             motion.texture:SetPoint(motion.anchor, self, motion.anchor, motion.x, motion.y)
             motion.texture:SetWidth(motion.width)
+            -- 选中块的圆角片按自己在屏幕上的位置取整；只挪位置不触发尺寸变化，每帧按新位置重排（位置没变时直接跳过），
+            -- 否则停下后片落在半个像素上、片间露缝。
+            UI:RefreshCompositeSurfaces(motion.texture)
             if t >= 1 then self:SetScript("OnUpdate", nil) end
         end)
         return
@@ -409,8 +412,10 @@ local function LayoutLabel(button)
         label:SetPoint("LEFT", button.icon, "RIGHT", 6, 0)
         label:SetJustifyH("LEFT")
     else
-        label:SetPoint("TOPLEFT", button, "TOPLEFT", padding, 0)
-        label:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -padding, 0)
+        -- 分段 options.textOffsetY：文字整体下移（只有分段会写）。
+        local offsetY = host and host.textOffsetY or 0
+        label:SetPoint("TOPLEFT", button, "TOPLEFT", padding, -offsetY)
+        label:SetPoint("BOTTOMRIGHT", button, "BOTTOMRIGHT", -padding, -offsetY)
         label:SetJustifyH("CENTER")
     end
     label:SetJustifyV("MIDDLE")
@@ -686,6 +691,7 @@ local function Create(parent, options, tabs)
     host.mode = not tabs and options.mode == "multiple" and "multiple" or "single"
     -- 黑色轨道外观只给分段；每次借出重设，没写就是 nil。
     host.darkTrack = IsSegmented(host) and options.track == "dark" or nil
+    host.textOffsetY = IsSegmented(host) and options.textOffsetY or nil
     if IsSegmented(host) then
         PaintSegmentTrack(host)
     elseif host.choiceStyle == "segmented" or host.choiceStyle == "connected" or host.choiceStyle == "compact" or host.choiceStyle == "load-card" then
@@ -716,7 +722,8 @@ local function Create(parent, options, tabs)
     host.minItemWidth = math.max(16, options.minItemWidth or 44)
     host.gap = math.max(0, options.gap or (tabs and 4 or 3))
     if host.choiceStyle == "connected" then host.gap = 0 end
-    if IsSegmented(host) then host.gap, host.sizing, host.wrap = 0, "equal", false end
+    -- 分段默认各段等宽；调用方写了 sizing = "content" 才按文字宽。
+    if IsSegmented(host) then host.gap, host.wrap = 0, false; if options.sizing ~= "content" then host.sizing = "equal" end end
     if IsOptionCard(host) then host.gap, host.columns, host.sizing, host.wrap = 8, 1, "equal", true end
     host.itemHeight = math.max(18, options.itemHeight or (tabs and GM.size.tabHeight or GM.size.chipHeight))
     if tabs then host.itemHeight = math.max(GM.size.tabHeight, host.itemHeight) end

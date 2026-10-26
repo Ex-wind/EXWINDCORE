@@ -278,6 +278,9 @@ local function ApplyIcon(widget, spec, moduleKey)
         cooldown.durationTextProperty, cooldown.durationTextOptions)
     elseif cooldown.mode == "DURATION" then widget:SetDurationObject(cooldown.duration, cooldown.clearIfZero,
         cooldown.durationTextProperty, cooldown.durationTextOptions)
+        if type(cooldown.frozen) == "table" then
+            widget:FreezeCooldownSwipe(cooldown.frozen.elapsed, cooldown.frozen.total)
+        end
     elseif cooldown.static == true then
         widget:SetStaticCooldown(cooldown.remaining, cooldown.duration, cooldown.format)
         if type(cooldown.text) == "string" then widget:SetCountdownText(cooldown.text) end

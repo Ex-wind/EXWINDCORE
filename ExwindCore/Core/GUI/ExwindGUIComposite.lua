@@ -4074,9 +4074,8 @@ function EXUI:ShowDialog(options)
         overlay:SetFrameStrata("FULLSCREEN_DIALOG")
         overlay:SetFrameLevel(9600)
         overlay:EnableMouse(false)
-        overlay:EnableKeyboard(true)
-        overlay:SetPropagateKeyboardInput(false)
-        overlay:SetScript("OnKeyDown", function(_, key) HandleDialogKey(key, false) end)
+        -- 弹窗不拦任何按键（移动、技能照常），关闭只靠按钮和右上角叉。
+        overlay:EnableKeyboard(false)
         local dialog = CreateFrame("Frame", nil, overlay)
         dialog:SetPoint("CENTER", UIParent, "CENTER")
         dialog:SetFrameLevel(9602)
@@ -6699,12 +6698,8 @@ function EXUI:ShowContextMenu(options)
         closer:SetFrameStrata("FULLSCREEN_DIALOG")
         closer:SetFrameLevel(9400)
         closer:EnableMouse(true)
-        closer:EnableKeyboard(true)
-        closer:SetPropagateKeyboardInput(false)
+        -- 右键菜单只拦鼠标（点空白处关），不拦任何按键。
         closer:SetScript("OnClick", function() EXUI:HideContextMenu() end)
-        closer:SetScript("OnKeyDown", function(_, key)
-            if key == "ESCAPE" then EXUI:HideContextMenu() end
-        end)
         self._contextCloser = closer
     end
     local menu = BuildContextPanel(options.items, options.title or "", 9402, self._contextMenu)

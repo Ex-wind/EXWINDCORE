@@ -115,10 +115,50 @@ local function DestroyMacro(macro)
     retiredMacros[macro] = nil
     activeMacros[macro] = nil
 end
+-- spec.tooltip：悬停提示 { spell = 法术ID } / { item = 物品ID } / { text = "文字" }，只显示 GameTooltip，不改点击。
+local function ShowTooltip(owner, tooltip)
+    if not GameTooltip or type(tooltip) ~= "table" then return end
+    GameTooltip:SetOwner(owner, "ANCHOR_RIGHT")
+    if tooltip.spell then GameTooltip:SetSpellByID(tooltip.spell)
+    elseif tooltip.item then GameTooltip:SetItemByID(tooltip.item)
+    else GameTooltip:SetText(tooltip.text, nil, nil, nil, nil, true) end
+    GameTooltip:Show()
+end
+local function HideTooltip(owner)
+    if GameTooltip and GameTooltip:GetOwner() == owner then GameTooltip:Hide() end
+end
+-- 提示层只收鼠标移动、不收点击：点击穿过它落到下面的普通点击按钮；安全按钮在它上面，另挂同样的提示。
+local function ApplyTooltip(item, tooltip)
+    local hover = item._collectionTooltipFrame
+    if not tooltip then
+        if hover then HideTooltip(hover); hover:Hide() end
+        return
+    end
+    if not hover then
+        hover = CreateFrame("Frame", nil, item.root)
+        hover:SetMouseClickEnabled(false)
+        hover:SetMouseMotionEnabled(true)
+        hover:SetScript("OnEnter", function(self) ShowTooltip(self, self._tooltip) end)
+        hover:SetScript("OnLeave", HideTooltip)
+        hover:SetScript("OnHide", HideTooltip)
+        item._collectionTooltipFrame = hover
+    end
+    hover._tooltip = tooltip
+    hover:ClearAllPoints()
+    hover:SetAllPoints(item.root)
+    hover:SetFrameLevel((item.root:GetFrameLevel() or 0) + 10)
+    hover:Show()
+end
 local function CreateMacro(item)
     local button = CreateFrame("Button", nil, UIParent, "SecureActionButtonTemplate")
     button:EnableMouse(true)
     button:RegisterForClicks("LeftButtonUp")
+    button:HookScript("OnEnter", function(self)
+        local owner = activeMacros[item._collectionMacro] and item._collectionClickSpec
+        if owner and item._collectionMacro.button == self then ShowTooltip(self, owner.tooltip) end
+    end)
+    button:HookScript("OnLeave", HideTooltip)
+    button:HookScript("OnHide", HideTooltip)
     -- 插件建的安全按钮默认跟随 ActionButtonUseKeyDown（默认开）只在按下时执行；
     -- 这里只登记了松开，必须明确改成松开执行，否则点击不会执行任何动作。
     button:SetAttribute("useOnKeyDown", false)
@@ -166,6 +206,7 @@ end
 local function ApplyClick(item)
     if not item.root then return false end
     local spec = item._collectionClickSpec or {}
+    ApplyTooltip(item, spec.tooltip)
     if spec.mode ~= "code" and item._collectionCodeButton then
         item._collectionCodeButton:Hide()
         item._collectionCodeButton:SetScript("OnClick", nil)
@@ -248,6 +289,12 @@ function EXUI:ReleaseCollectionItemClick(item)
         code:SetParent(nil)
     end
     item._collectionCodeButton = nil
+    local hover = item._collectionTooltipFrame
+    if hover then
+        hover:Hide()
+        hover:SetParent(nil)
+    end
+    item._collectionTooltipFrame = nil
     DestroyMacro(item._collectionMacro)
     item._collectionMacro, item._collectionClickSpec = nil, nil
 end

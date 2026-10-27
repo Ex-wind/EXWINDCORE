@@ -3760,3 +3760,7 @@ L["声音"] = "Sound"
 L["声道"] = "Channel"
 L["朗读文字"] = "Text to speak"
 L["播放一次所选声音"] = "Play the selected sound once"
+L["点一下恢复打开时的颜色"] = "Click to restore the original color"
+-- /exbug
+L["EX 报错与状态"] = "EX Errors & State"
+L["全选复制下面的文字，贴给客服（当前 %d 条报错）"] = "Select all and copy the text below for support (%d errors so far)"

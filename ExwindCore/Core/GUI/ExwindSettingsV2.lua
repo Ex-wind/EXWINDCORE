@@ -137,8 +137,9 @@ local Fields = {
     -- placeholder = 搜索框占位字（可选）。顶上搜索框只筛显示，右侧显示“已选 n/m”；栏数、行高在 GM.settings.parts。
     picklist = "source toggle placeholder",
     -- iconpick = 图标选取（职业专精、种族、副本与首领这类）：source = sources 引用名，返回分组数组；toggle 必填 =
-    -- 点一项时调用 actions[toggle](context, 项, 新状态)。记录格式与排法见 ExwindIconPick.lua。
-    iconpick = "source toggle",
+    -- 点一项时调用 actions[toggle](context, 项, 新状态)；remove = actions 引用名（可选）：项右上角出删除小叉（悬停才显示），
+    -- 点叉调用 actions[remove](context, 项)。记录格式与排法见 ExwindIconPick.lua。
+    iconpick = "source toggle remove",
     -- texturepreview = 材质大预览（按元素自己的颜色染色，可成对）：source = sources 引用名，返回一条记录。
     -- texturegrid = 材质缩略图网格：source = sources 引用名，返回 { tint, items }；select 必填 = 点格子调用
     -- actions[select](context, 项)。记录格式见 ExwindTexturePick.lua。
@@ -701,6 +702,7 @@ local function ValidateNode(node, owner, ids, depth, location, columnCount, path
     elseif kind == "iconpick" then
         ok, issue = SchemaReference(owner, "sources", node.source, path .. ".source", id)
         if ok then ok, issue = SchemaReference(owner, "actions", node.toggle, path .. ".toggle", id) end
+        if ok and node.remove ~= nil then ok, issue = SchemaReference(owner, "actions", node.remove, path .. ".remove", id) end
         if not ok then return false, issue end
     elseif kind == "texturepreview" then
         ok, issue = SchemaReference(owner, "sources", node.source, path .. ".source", id)
@@ -2266,7 +2268,7 @@ local function StandardControl(spec, bindingFor)
                 label = spec.label, onChanged = function(number) Commit(number) end })
             widget:SetNumber(tonumber(value))
         elseif kind == "color" then
-            -- 预设写了 colorWidth：不带 label 的颜色控件只画色块（swatchOnly），宽 = 左边常用色条 + colorWidth。
+            -- 预设写了 colorWidth：不带 label 的颜色控件写色值不写文字（swatchOnly），宽 = colorWidth。
             local swatch = style and style.colorWidth and not spec.label
             widget = UI:CreateColorButton(host, spec.label or "", binding:Parent(false) or binding.root, binding:Key(), true,
                 function()
@@ -2274,7 +2276,7 @@ local function StandardControl(spec, bindingFor)
                     binding:Notify("committed")
                     context:RefreshPage()
                 end, swatch and { swatchOnly = true } or nil)
-            if swatch then widget:SetWidth(style.colorWidth + UI:GetColorPresetsReserve()) end
+            if swatch then widget:SetWidth(style.colorWidth) end
         elseif spec.media == "font" then
             widget = UI:CreateLSMDropdown(host, "font", width, spec.label, value, Commit, search)
         elseif spec.media == "sound" then
@@ -5618,10 +5620,10 @@ NaturalBase = function(node)
     if kind == "control" and not node.spec.label and SteppedSliderWidth(node.spec, style) then
         return SteppedSliderWidth(node.spec, style)
     end
-    -- 预设写了 colorWidth：不带 label 的颜色控件（path 或记录控件）只画色块，宽取 colorWidth。
+    -- 预设写了 colorWidth：不带 label 的颜色控件（path 或记录控件）写色值不写文字，宽取 colorWidth。
     if style and style.colorWidth and controlType == "color" then
         local colorSpec = node.adapter and node.adapter._exSpec or node.spec
-        if not colorSpec.label then return style.colorWidth + UI:GetColorPresetsReserve() end
+        if not colorSpec.label then return style.colorWidth end
     end
     -- 样式页的记录控件（owner 用 CreateSettingsV2Control 建）：owner 写了 size 档位就按档位宽（预设 shortWidth 等）。
     local ownerSpec = style and kind == "control" and node.adapter and node.adapter._exSpec
@@ -5785,9 +5787,12 @@ local function Stack(node, width, columns, offset)
             -- 卡片与卡片之间按 SettingsCardSpacing；其余节点保持原间距。
             -- 样式页：组与组之间取预设 groupGap。
             -- 样式页里两个自带外框的件（句子卡、入口卡……）之间取预设 surfaceGap。
+            -- 样式页里图标选取与前后节点之间取预设 iconPickSpacing（写了才用，可为负：压进前后行的上下内距，例如行下紧跟的已选图标）。
+            local iconPick = style and style.iconPickSpacing and (child.spec.kind == "iconpick" or previous.spec.kind == "iconpick")
             y = y + ((child.spec.kind == "card" and previous.spec.kind == "card")
                 and (style and style.groupGap or SETTINGS.cardGap)
                 or (style and style.surfaceGap and SelfSurfaced(child.spec) and SelfSurfaced(previous.spec) and style.surfaceGap)
+                or (iconPick and style.iconPickSpacing)
                 or GAP)
         end
         local inset = Bleeds(child) and bleed or 0
@@ -7145,7 +7150,7 @@ local function MouseOnHigherPopup(frame)
     for _, focus in ipairs(GetMouseFoci()) do
         if focus ~= WorldFrame and focus.GetFrameStrata and (STRATA_ORDER[focus:GetFrameStrata()] or 0) > level then return true end
     end
-    return MouseInside(_G.ColorPickerFrame)
+    return MouseInside(UI.colorPicker)
 end
 
 -- =========================================================

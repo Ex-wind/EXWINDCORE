@@ -563,6 +563,16 @@ local function ExtraTextureWidgetSetColorComponents(widget, components)
     return widget
 end
 
+-- 呼吸（presentation.pulse = { scale = 放大到几倍, duration = 放大或缩回一段的秒数 }，可选）：
+-- 动画本身是公共的 EXUI:StartBreath（ExwindAnimation.lua）；不写时停住。
+local function ExtraTextureWidgetApplyPulse(widget, pulse)
+    if type(pulse) ~= "table" then
+        EXUI:StopBreath(widget)
+        return
+    end
+    EXUI:StartBreath(widget, pulse.scale, pulse.duration)
+end
+
 -- 单材质的完整视觉合同只能通过 Widget API 应用。Collection / 模块不得拿到
 -- 内部 Texture 后各自 SetTexture、SetBlendMode 或 SetRotation；否则 panel、
 -- world 与 runtime 很容易变成三份不同的实现。
@@ -604,6 +614,7 @@ local function ExtraTextureWidgetApplyPresentation(widget, presentation)
         color.b or color[3] or presentation.colorB or 1,
         color.a or color[4] or presentation.colorA or presentation.alpha or 1)
     widget:SetVisible(presentation.shown ~= false and (atlas ~= nil and atlas ~= "" or file ~= nil and file ~= ""))
+    ExtraTextureWidgetApplyPulse(widget, presentation.pulse)
     return widget
 end
 
@@ -615,6 +626,7 @@ local function ExtraTextureWidgetClear(widget)
     widget.texture:SetAlpha(1)
     widget.texture:SetBlendMode("BLEND")
     widget.texture:SetRotation(0)
+    ExtraTextureWidgetApplyPulse(widget, nil)
     widget:Hide()
     return widget
 end

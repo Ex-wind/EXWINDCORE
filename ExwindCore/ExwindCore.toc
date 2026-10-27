@@ -41,6 +41,7 @@ Core\ExwindUnitFrame.lua
 Core\Renderer\ExwindBlizzardNameplateAnchor.lua
 Core\Renderer\ExwindUnitAnchor.lua
 Core\ExwindEvent.lua
+Core\ExwindBugReport.lua
 Core\ExwindFrameTask.lua
 Core\GUI\ExwindTools_Changelog.lua
 
@@ -56,12 +57,14 @@ Core\GUI\ExwindVirtualList.lua
 Core\GUI\ExwindGUI.lua
 Core\GUI\ExwindGUISettingsList.lua
 Core\GUI\ExwindGUIComposite.lua
+Core\GUI\ExwindColorPicker.lua
 Core\GUI\ExwindControlAppearance.lua
 Core\GUI\ExwindChoiceGroup.lua
 Core\GUI\ExwindGUITree.lua
 Core\GUI\ExwindVirtualTable.xml
 Core\GUI\ExwindTextureCatalog.lua
 Core\GUI\ExwindTextureBrowser.lua
+Core\Renderer\ExwindAnimation.lua
 Core\Renderer\ExwindWidgets.lua
 Core\Renderer\ExwindRegionElements.lua
 Core\Renderer\ExwindPreviewWorkspace.lua

@@ -611,6 +611,7 @@ local function TrackModernSurfaceFrame(frame)
             for _, cachedSkin in pairs(owner._exModernSurfaces or {}) do
                 if cachedSkin.Layout then cachedSkin.Layout() end
             end
+            for _, cachedSkin in pairs(owner._exSelectSurfaces or {}) do cachedSkin.Layout() end
         end
     end)
 end
@@ -719,20 +720,23 @@ function MODERN.surfaceAtlas:SetCornerTexCoord(texture, radiusPixels, band, row,
     texture:SetTexCoord(left, right, top, bottom)
 end
 
-local function GetModernSurface(frame, radius)
-    frame._exModernSurfaces = frame._exModernSurfaces or {}
-    local skin = frame._exModernSurfaces[radius]
+-- store 缺省是宿主自己的外观表 _exModernSurfaces；选中底另存 _exSelectSurfaces 并把填充压在
+-- BACKGROUND 子层 fillSubLevel，叠在宿主底色上、内容下面，且不被宿主换外观或取色恢复带走。
+local function GetModernSurface(frame, radius, store, fillSubLevel)
+    store = store or "_exModernSurfaces"
+    frame[store] = frame[store] or {}
+    local skin = frame[store][radius]
     if skin then
         TrackModernSurfaceFrame(frame)
         return skin
     end
 
     skin = { pieces = {}, radius = radius, active = false }
-    frame._exModernSurfaces[radius] = skin
+    frame[store][radius] = skin
     TrackModernSurfaceFrame(frame)
     for row = 1, 3 do
         for col = 1, 3 do
-            local texture = frame:CreateTexture(nil, "BACKGROUND", nil, 0)
+            local texture = frame:CreateTexture(nil, "BACKGROUND", nil, fillSubLevel or 0)
             MODERN.surfaceAtlas:ConfigureTexture(texture)
             skin.pieces[#skin.pieces + 1] = {
                 texture = texture, row = row, col = col, layer = 2,
@@ -947,137 +951,51 @@ function EXUI:ClearControlSurface(frame)
 end
 
 -- =========================================================
--- 选中外观（全项目唯一一种，样子同载入页首领卡）：一圈主色描边 + 主色柔光（ADD 叠在宿主底上、内容下面）。
--- 格（图标、卡片）用 PaintSelectCell：柔光比格子每边大出 spread（默认 GM.settings.parts.iconPickGlow）；
--- 行（树行、侧栏、列表行）用 PaintSelectRow：柔光收在行内，不压相邻行。
+-- 选中外观（全项目唯一一种）：一圈主色描边 + 很淡的中性整块底（GC.selectFill，同圆角，
+-- 叠在宿主底上、内容下面），不发光。格（图标、卡片）用 PaintSelectCell，行（树行、侧栏、列表行）
+-- 用 PaintSelectRow，两者只差缺省圆角。
 -- 描边压在宿主边上：宿主平时有淡边框的，选中时由调用方把自己的边换成透明。悬停底一律 GC.menuHover。
 -- =========================================================
-local SELECT_GLOW_TEXTURE = "Interface\\AddOns\\ExwindCore\\Textures\\GUI\\SoftGlow.png"
-local SELECT_GLOW_ALPHA = 0.3 -- 压淡：和描边叠在一起不显成两三圈，中间也不刺眼
-
-local function PaintSelection(frame, selected, radius, spread)
-    local parts = frame._exSelect
-    if not selected and not parts then return end
-    if not parts then
-        parts = { glow = frame:CreateTexture(nil, "BACKGROUND", nil, 1), ring = CreateFrame("Frame", nil, frame) }
-        parts.glow:SetTexture(SELECT_GLOW_TEXTURE)
-        parts.glow:SetBlendMode("ADD")
-        parts.glow:SetAlpha(SELECT_GLOW_ALPHA)
-        parts.ring:EnableMouse(false)
-        parts.ring:SetAllPoints(frame)
-        frame._exSelect = parts
+local function PaintSelection(frame, selected, radius)
+    local ring = frame._exSelectRing
+    if not selected and not ring then return end
+    if not ring then
+        ring = CreateFrame("Frame", nil, frame)
+        ring:EnableMouse(false)
+        ring:SetAllPoints(frame)
+        frame._exSelectRing = ring
+    end
+    radius = (radius == 3 or radius == 4 or radius == 5 or radius == 6
+        or radius == 8 or radius == 10 or radius == 21) and radius or 4
+    for key, skin in pairs(frame._exSelectSurfaces or {}) do
+        if key ~= radius or not selected then
+            skin.active = false
+            for _, piece in ipairs(skin.pieces) do piece.texture:Hide() end
+        end
     end
     if selected then
-        parts.ring:SetFrameLevel(frame:GetFrameLevel() + 3)
-        EXUI:SetControlSurface(parts.ring, radius, GC.transparent, GC.focusRing)
-        parts.glow:SetVertexColor(unpack(GC.pickGlow))
-        parts.glow:ClearAllPoints()
-        parts.glow:SetPoint("TOPLEFT", frame, "TOPLEFT", -spread, spread)
-        parts.glow:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", spread, -spread)
+        ring:SetFrameLevel(frame:GetFrameLevel() + 3)
+        EXUI:SetControlSurface(ring, radius, GC.transparent, GC.focusRing)
+        local fill = GetModernSurface(frame, radius, "_exSelectSurfaces", 1)
+        fill.active = true
+        for _, piece in ipairs(fill.pieces) do
+            piece.texture:SetVertexColor(unpack(piece.layer == 1 and GC.transparent or GC.selectFill))
+            piece.texture:Show()
+        end
+        fill.Layout()
     else
-        EXUI:ClearControlSurface(parts.ring)
+        EXUI:ClearControlSurface(ring)
     end
-    parts.ring:SetShown(selected)
-    parts.glow:SetShown(selected)
+    ring:SetShown(selected)
 end
 
-function EXUI:PaintSelectCell(frame, selected, radius, spread)
-    PaintSelection(frame, selected == true, radius, spread or GM.settings.parts.iconPickGlow)
+function EXUI:PaintSelectCell(frame, selected, radius)
+    PaintSelection(frame, selected == true, radius)
 end
 
 function EXUI:PaintSelectRow(frame, selected, radius)
     PaintSelection(frame, selected == true, radius or GM.radius.control, 0)
 end
-
--- =========================================================
--- 鼠标提示外观
---
--- 各插件都直接用 GameTooltip（SetOwner / SetText / AddLine / Show），调用方式不变。
--- 由本插件家族代码弹出的纯文字提示，在 Show 时统一重排：第一行是标题（亮字、
--- 原生标题字号），其余是正文（次要文字色）；每一行都自动换行，文字里的 \n 照样分行。
--- 只有一行且含 \n 时，\n 前面当标题。底色、边框用 GC 弹出层颜色，内距与卡片正文一致。
--- 物品、法术、单位这类数据提示不动；带右列的双列提示只换底色不重排。
--- 提示被换主人、清空或隐藏时撤掉外观，暴雪会把原生边框放回去。
--- =========================================================
-local TOOLTIP_SOURCE_PATTERNS = {
-    "%f[%w]ExwindCore[/\\]", "%f[%w]ExwindTools[/\\]",
-    "%f[%w]EXAura[%w_%-]*[/\\]", "%f[%w]EXBoss[%w_%-]*[/\\]",
-}
--- 原生提示文字离边框约 10 像素，SetPadding 只补差额。
-local TOOLTIP_EXTRA_PADDING = GM.space.cardBodyPadding - 10
-
-local function TooltipTextIsSecret(value)
-    return type(issecretvalue) == "function" and issecretvalue(value)
-end
-
--- 调用 Show 的代码是否来自本插件家族（第 1 层是下面的钩子自己，从第 2 层看起）。
-local function TooltipShownByExwind()
-    local stack = debugstack(2, 5, 0)
-    for _, pattern in ipairs(TOOLTIP_SOURCE_PATTERNS) do
-        if stack:find(pattern) then return true end
-    end
-    return false
-end
-
-local function UnstyleTooltip(tip)
-    if not tip._exwindTooltipStyled then return end
-    tip._exwindTooltipStyled = nil
-    EXUI:ClearControlSurface(tip)
-    tip:ClearPadding()
-    if tip.NineSlice then tip.NineSlice:Show() end
-end
-
--- 读出现有各行；有右列、或任一行是秘密值时返回 nil，只换底色不重排。
-local function CollectTooltipLines(tip)
-    local lines = {}
-    local tipName = tip:GetName()
-    for index = 1, tip:NumLines() do
-        local left = tip:GetLeftLine(index)
-        local text = left and left:GetText() or ""
-        if TooltipTextIsSecret(text) then return nil end
-        local right = _G[tipName .. "TextRight" .. index]
-        if right and right:IsShown() then
-            local rightText = right:GetText()
-            if TooltipTextIsSecret(rightText) or (rightText and rightText ~= "") then return nil end
-        end
-        lines[#lines + 1] = text
-    end
-    return lines
-end
-
-local function RebuildTooltipLines(tip, lines)
-    local title, body = lines[1], {}
-    if #lines == 1 then
-        local head, rest = title:match("^(.-)\n(.*)$")
-        if head and head ~= "" and rest ~= "" then title, body[1] = head, rest end
-    end
-    for index = 2, #lines do body[#body + 1] = lines[index] end
-    tip:ClearLines()
-    local tr, tg, tb = GC.text[1], GC.text[2], GC.text[3]
-    local br, bg, bb = GC.textDim[1], GC.textDim[2], GC.textDim[3]
-    tip:AddLine(title, tr, tg, tb, true)
-    for _, text in ipairs(body) do tip:AddLine(text, br, bg, bb, true) end
-end
-
-local tooltipRestyling = false
-local function RestyleExwindTooltip(tip)
-    if tooltipRestyling or tip.infoList or tip:NumLines() == 0 then return end
-    if not TooltipShownByExwind() then return end
-    tooltipRestyling = true
-    local lines = CollectTooltipLines(tip)
-    if lines then RebuildTooltipLines(tip, lines) end
-    if tip.NineSlice then tip.NineSlice:Hide() end
-    EXUI:SetControlSurface(tip, GM.radius.popup, GC.popup, GC.popupBorder)
-    tip:SetPadding(TOOLTIP_EXTRA_PADDING, TOOLTIP_EXTRA_PADDING, TOOLTIP_EXTRA_PADDING, TOOLTIP_EXTRA_PADDING)
-    tip._exwindTooltipStyled = true
-    tip:Show()
-    tooltipRestyling = false
-end
-
-hooksecurefunc(GameTooltip, "Show", RestyleExwindTooltip)
-hooksecurefunc(GameTooltip, "SetOwner", UnstyleTooltip)
-hooksecurefunc(GameTooltip, "ClearLines", UnstyleTooltip)
-GameTooltip:HookScript("OnHide", UnstyleTooltip)
 
 -- 浮层外观：控件浮在游戏画面上时（EXAura 跟随光环设置条）用半透明深底 + 白 0.22 边，文字加 OUTLINE。
 -- 标记 _exOverlay 由 EXUI:SetControlOverlayAppearance 设置、对象池 StandardReset 清掉；
@@ -5369,162 +5287,34 @@ end
 -- =========================================================
 -- 11. 颜色选择按钮 (Color Button)
 -- =========================================================
--- ColorPickerFrame 是暴雪全局窗口，XML 固定在 DIALOG strata。组合弹窗也在 DIALOG，
--- 因而从组合弹窗打开颜色选择器时，必须临时提升到 FULLSCREEN_DIALOG，否则会被父弹窗盖住。
--- 关闭后恢复原本 strata/level，不能污染暴雪或其他插件的普通颜色选择器。
-local function PromoteColorPickerForOwner(owner)
-    local picker = _G.ColorPickerFrame
-    if not picker or not owner or not owner.GetFrameStrata then return end
-
-    local ownerStrata = owner:GetFrameStrata()
-    local ownerLevel = owner.GetFrameLevel and owner:GetFrameLevel() or 0
-    if ownerStrata ~= "DIALOG" and ownerStrata ~= "TOOLTIP" and ownerStrata ~= "FULLSCREEN_DIALOG" then return end
-
-    if not picker._exuiColorPickerRestoreHook then
-        picker._exuiColorPickerRestoreHook = true
-        picker:HookScript("OnHide", function(self)
-            local restore = self._exuiColorPickerRestoreLayer
-            if not restore then return end
-            self:SetFrameStrata(restore.strata)
-            self:SetFrameLevel(restore.level)
-            self._exuiColorPickerRestoreLayer = nil
-        end)
-    end
-
-    if not picker._exuiColorPickerRestoreLayer then
-        picker._exuiColorPickerRestoreLayer = {
-            strata = picker:GetFrameStrata(),
-            level = picker:GetFrameLevel(),
-        }
-    end
-    local pickerStrata = ownerStrata == "DIALOG" and "FULLSCREEN_DIALOG" or ownerStrata
-    picker:SetFrameStrata(pickerStrata)
-    picker:SetFrameLevel(math.max(ownerLevel + 600, picker:GetFrameLevel()))
-    if picker.SetToplevel then picker:SetToplevel(true) end
+-- 颜色按钮：输入框同款外框，左边圆角色块。带文字时色块右边写文字；只画色块（swatchOnly）时色块右边写
+-- 十六进制色值（带透明度且不满时后面加百分比），按钮窄得放不下色值就只把色块摆正中。
+-- 点一下打开 Core 取色面板（ExwindColorPicker.lua，常用色在面板里），再点一下收起。
+local function ColorButtonValueText(btn)
+    local r, g, b, a = btn.swatch:GetVertexColor()
+    local text = string.format("%02X%02X%02X", math.floor(r * 255 + .5), math.floor(g * 255 + .5), math.floor(b * 255 + .5))
+    if btn._hasAlpha and a < 0.995 then text = text .. "  " .. math.floor(a * 100 + .5) .. "%" end
+    return text
 end
 
--- 颜色按钮里的常用色条（GC.colorPresets）：点一下直接设成该色，带透明度时保留原透明度；当前色描亮边。
--- 只画色块时条在色块左边，带文字时条在按钮右端；按钮宽放不下就不显示。
-local function ColorPresetStripWidth()
-    local count = #GC.colorPresets
-    return count * GM.size.colorPresetSize + (count - 1) * GM.space.colorPresetGap
-end
-
--- 只画色块的颜色按钮要显示常用色条时，在色块格宽之外再加的宽（左内距 + 色条）。
-function EXUI:GetColorPresetsReserve()
-    return GM.space.colorSwatchPaddingX + ColorPresetStripWidth()
-end
-
-local function PaintColorPresets(btn)
-    local strip = btn._exColorPresets
-    if not strip or not strip:IsShown() then return end
-    local r, g, b = btn.swatch:GetVertexColor()
-    local enabled = btn:IsEnabled()
-    strip:SetAlpha(enabled and 1 or 0.5)
-    for index, chip in ipairs(strip.chips) do
-        local color = GC.colorPresets[index]
-        local same = math.abs(color[1] - r) < 0.005 and math.abs(color[2] - g) < 0.005 and math.abs(color[3] - b) < 0.005
-        local border = same and GC.text or (enabled and chip:IsMouseOver() and GC.cardHoverBorder or GC.subcardBorder)
-        EXUI:SetControlSurface(chip, GM.radius.thumb, color, border)
-    end
-end
-
--- 写值走与取色器相同的路：有事务时 Begin → Live → Commit 一次，没有时写 DB 后调 onUpdate。
-local function ApplyColorPreset(btn, color)
-    local d, k = btn._currentDb, btn._currentKey
-    if type(d) ~= "table" or not btn:IsEnabled() then return end
-    local lease = btn._colorButtonLease
-    local picker = _G.ColorPickerFrame
-    if picker and picker:IsShown() then
-        -- 取色器开着：先关掉，按原流程收尾，再把常用色作为一次独立修改。
-        picker:Hide()
-        if btn._colorButtonLease ~= lease then return end
-    end
-    local a = 1
-    if btn._hasAlpha then
-        if not k or k == "" then a = d.a or 1 else a = d[k .. "A"] or 1 end
-    end
-    local value = { r = color[1], g = color[2], b = color[3], a = a }
-    local factory = btn._currentChangeFlow
-    local transaction = type(factory) == "function" and factory() or nil
-    if btn._colorButtonLease ~= lease then return end
-    if transaction then
-        transaction.onBegin()
-        if btn._colorButtonLease ~= lease then return end
-        transaction.onLive(value)
-        if btn._colorButtonLease ~= lease then return end
-        transaction.onCommit(value)
-    else
-        if not k or k == "" then
-            d.r, d.g, d.b, d.a = value.r, value.g, value.b, value.a
-        else
-            d[k .. "R"], d[k .. "G"], d[k .. "B"], d[k .. "A"] = value.r, value.g, value.b, value.a
-        end
-        if btn._currentOnUpdate then btn._currentOnUpdate(d) end
-    end
-    if btn._colorButtonLease == lease then btn:UpdateColor() end
-end
-
-local function LayoutColorPresets(btn)
-    local strip, swatch, text = btn._exColorPresets, btn._exRoundedSwatch, btn.labelText
-    local width, padX = btn:GetWidth(), GM.space.colorSwatchPaddingX
-    local fits
-    strip:ClearAllPoints()
+local function LayoutColorButton(btn)
+    local swatch, text = btn._exRoundedSwatch, btn.labelText
+    if not swatch or not text then return end
+    local padX = GM.space.colorSwatchPaddingX
+    if btn._exColorSwatchOnly then text:SetText(ColorButtonValueText(btn)) end
+    local textWidth = (text:GetText() or "") ~= "" and math.ceil(text:GetUnboundedStringWidth()) or 0
+    local fits = not btn._exColorSwatchOnly or btn:GetWidth() >= padX + GM.size.colorSwatchSize
+        + GM.space.colorSwatchGap + textWidth + GM.space.colorButtonTextPaddingRight
     swatch:ClearAllPoints()
     text:ClearAllPoints()
-    text:SetPoint("LEFT", btn.swatch, "RIGHT", GM.space.colorSwatchGap, 0)
-    if btn._exColorSwatchOnly then
-        -- 色块留在右边让出色条后的空处正中。
-        local reserve = EXUI:GetColorPresetsReserve()
-        fits = width - reserve >= GM.size.colorSwatchSize + padX * 2
-        if fits then
-            strip:SetPoint("LEFT", btn, "LEFT", padX, 0)
-            swatch:SetPoint("CENTER", btn, "LEFT", reserve + (width - reserve) / 2, 0)
-        else
-            swatch:SetPoint("CENTER", btn, "CENTER", 0, 0)
-        end
-        text:SetPoint("RIGHT", btn, "RIGHT", -GM.space.colorButtonTextPaddingRight, 0)
-    else
+    if fits then
         swatch:SetPoint("LEFT", btn, "LEFT", padX, 0)
-        local labelWidth = text:IsShown() and (text:GetText() or "") ~= ""
-            and math.ceil(text:GetUnboundedStringWidth()) + GM.space.colorSwatchGap or 0
-        fits = width >= padX + GM.size.colorSwatchSize + GM.space.colorSwatchGap + labelWidth
-            + ColorPresetStripWidth() + GM.space.colorButtonTextPaddingRight
-        if fits then
-            strip:SetPoint("RIGHT", btn, "RIGHT", -GM.space.colorButtonTextPaddingRight, 0)
-            text:SetPoint("RIGHT", strip, "LEFT", -GM.space.colorSwatchGap, 0)
-        else
-            text:SetPoint("RIGHT", btn, "RIGHT", -GM.space.colorButtonTextPaddingRight, 0)
-        end
+    else
+        swatch:SetPoint("CENTER", btn, "CENTER", 0, 0)
     end
-    strip:SetShown(fits)
-    PaintColorPresets(btn)
-end
-
-local function EnsureColorPresets(btn)
-    if btn._exColorPresets then return end
-    local strip = CreateFrame("Frame", nil, btn)
-    strip:EnableMouse(false)
-    strip:SetSize(ColorPresetStripWidth(), GM.size.colorPresetSize)
-    strip.chips = {}
-    local function Repaint() PaintColorPresets(btn) end
-    for index, color in ipairs(GC.colorPresets) do
-        local chip = CreateFrame("Button", nil, strip)
-        chip:SetSize(GM.size.colorPresetSize, GM.size.colorPresetSize)
-        chip:SetPoint("LEFT", strip, "LEFT", (index - 1) * (GM.size.colorPresetSize + GM.space.colorPresetGap), 0)
-        chip:RegisterForClicks("LeftButtonUp")
-        chip:SetScript("OnClick", function() ApplyColorPreset(btn, color) end)
-        chip:SetScript("OnEnter", Repaint)
-        chip:SetScript("OnLeave", Repaint)
-        strip.chips[index] = chip
-    end
-    btn._exColorPresets = strip
-    -- 按钮宽、显隐、启用状态变了都重排一次（这些钩子跨租约保留，排法每次按当前租约算）。
-    btn:HookScript("OnSizeChanged", LayoutColorPresets)
-    btn:HookScript("OnShow", LayoutColorPresets)
-    for _, method in ipairs({ "Enable", "Disable", "SetEnabled" }) do
-        hooksecurefunc(btn, method, Repaint)
-    end
+    text:SetPoint("LEFT", swatch, "RIGHT", GM.space.colorSwatchGap, 0)
+    text:SetPoint("RIGHT", btn, "RIGHT", -GM.space.colorButtonTextPaddingRight, 0)
+    text:SetShown(fits)
 end
 
 function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, options)
@@ -5587,20 +5377,22 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
         btn._exRoundedSwatch = CreateFrame("Frame", nil, btn)
         btn._exRoundedSwatch:EnableMouse(false)
     end
-    -- options.swatchOnly：只画居中色块、不显示文字（设置条上的颜色格）；每次借用都重新定位与复位。
+    -- options.swatchOnly：不写文字，色块右边写色值（设置条上的颜色格）；每次借用都重新定位与复位。
     local swatchOnly = type(options) == "table" and options.swatchOnly == true
     btn._exColorSwatchOnly = swatchOnly or nil
+    btn._hasAlpha = hasAlpha
     btn._exRoundedSwatch:SetSize(GM.size.colorSwatchSize, GM.size.colorSwatchSize)
     local function PaintSwatch()
         local r, g, b, a = swatch:GetVertexColor()
         -- 16px 的小色块用 control(4) 半径时，圆角和 1px 描边不同源，边缘会发毛；
         -- 小件统一用 thumb(3) 半径，描边改用更贴合的子卡边框色。
         EXUI:SetControlSurface(btn._exRoundedSwatch, GM.radius.thumb, {r,g,b,a}, GC.subcardBorder)
-        PaintColorPresets(btn)
+        LayoutColorButton(btn)
     end
     if not btn._exSwatchColorHook then
         btn._exSwatchColorHook = true
         hooksecurefunc(swatch, "SetVertexColor", PaintSwatch)
+        btn:HookScript("OnSizeChanged", LayoutColorButton)
     end
     PaintSwatch()
 
@@ -5615,10 +5407,7 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
     self:ApplyControlAppearance(btn)
     text:SetJustifyH("LEFT")
     text:SetText(swatchOnly and "" or (label or ""))
-
-    -- 4. 常用色条（同时摆好色块与文字的位置）
-    EnsureColorPresets(btn)
-    LayoutColorPresets(btn)
+    LayoutColorButton(btn)
 
     -- [关键] 属性挂载，以便池化复用时更新
     if btn.CancelColorTransaction then btn:CancelColorTransaction() end
@@ -5626,7 +5415,6 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
     btn._currentDb = db
     btn._currentKey = key
     btn._currentOnUpdate = onUpdate
-    btn._hasAlpha = hasAlpha
     btn._currentChangeFlow = type(options) == "table" and options._changeFlow or nil
 
     if not btn.UpdateColor then
@@ -5657,7 +5445,7 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
             local session = self._colorPickerSession
             if not session or (token ~= nil and session.token ~= token) then return false end
             self._colorPickerSession = nil
-            local picker = _G.ColorPickerFrame
+            local picker = EXUI.colorPicker
             local ownsPicker = picker and picker._exuiColorTransactionOwner == self
                 and picker._exuiColorTransactionToken == session.token
             if ownsPicker then
@@ -5672,7 +5460,7 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
 
     if not btn.IsColorPickerOpen then
         function btn:IsColorPickerOpen()
-            local session, picker = self._colorPickerSession, _G.ColorPickerFrame
+            local session, picker = self._colorPickerSession, EXUI.colorPicker
             local open = self._colorButtonLease ~= nil and session ~= nil and picker ~= nil
                 and picker:IsShown() and picker._exuiColorTransactionOwner == self
                 and picker._exuiColorTransactionToken == session.token
@@ -5680,7 +5468,7 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
         end
         function btn:OwnsColorPickerFrame(frame)
             if not self:IsColorPickerOpen() then return false end
-            local picker = _G.ColorPickerFrame
+            local picker = EXUI.colorPicker
             while frame do
                 if frame == picker then return true end
                 frame = frame.GetParent and frame:GetParent() or nil
@@ -5704,6 +5492,8 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
         colorFactory:AttachPoolRelease(btn, function(self)
             self._colorButtonLease = nil
             self:CancelColorTransaction()
+            local picker = EXUI.colorPicker
+            if picker and picker:IsShown() and picker:GetOwner() == self then picker:Hide() end
             self._currentDb, self._currentKey, self._currentOnUpdate, self._currentChangeFlow = nil, nil, nil, nil
         end)
     end
@@ -5712,7 +5502,9 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
         local lease = self._colorButtonLease
         local d, k = self._currentDb, self._currentKey
         if type(d) ~= "table" then return end
-        local picker = ColorPickerFrame
+        local picker = EXUI:GetColorPicker()
+        -- 再点一下同一个颜色按钮 = 收起面板（收起照常按当前色收尾）。
+        if picker:IsShown() and picker:GetOwner() == self then picker:Hide(); return end
         local previousOwner, previousToken = picker._exuiColorTransactionOwner, picker._exuiColorTransactionToken
         local previousOpening = picker._exuiColorSetupLease
         if previousOwner and type(previousOwner.FinishColorTransaction) == "function" then
@@ -5773,9 +5565,9 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
             picker._exuiColorTransactionOwner, picker._exuiColorTransactionToken = self, token
             transaction.onBegin()
             if not Current() then RetireOpening(); return end
-            if not ColorPickerFrame._exuiColorTransactionHook then
-                ColorPickerFrame._exuiColorTransactionHook = true
-                ColorPickerFrame:HookScript("OnHide", function(frame)
+            if not picker._exuiColorTransactionHook then
+                picker._exuiColorTransactionHook = true
+                picker:HookScript("OnHide", function(frame)
                     local owner, ownerToken = frame._exuiColorTransactionOwner, frame._exuiColorTransactionToken
                     frame._exuiColorTransactionOwner, frame._exuiColorTransactionToken = nil, nil
                     if owner and type(owner.FinishColorTransaction) == "function" then
@@ -5807,13 +5599,13 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
 
         local info = {
             swatchFunc = function()
-                local r, g, b = ColorPickerFrame:GetColorRGB()
-                local a = hasAlpha and ColorPickerFrame:GetColorAlpha() or 1
+                local r, g, b = picker:GetColorRGB()
+                local a = hasAlpha and picker:GetColorAlpha() or 1
                 ApplyColor(r, g, b, a)
             end,
             opacityFunc = hasAlpha and function()
-                local r, g, b = ColorPickerFrame:GetColorRGB()
-                local a = ColorPickerFrame:GetColorAlpha()
+                local r, g, b = picker:GetColorRGB()
+                local a = picker:GetColorAlpha()
                 ApplyColor(r, g, b, a)
             end or nil,
             cancelFunc = function(prev)
@@ -5834,9 +5626,8 @@ function EXUI:CreateColorButton(parent, label, db, key, hasAlpha, onUpdate, opti
             g = currG,
             b = currB,
         }
-        ColorPickerFrame:SetupColorPickerAndShow(info)
+        picker:SetupColorPickerAndShow(info, self)
         if not Current() then RetireOpening(); return end
-        PromoteColorPickerForOwner(self)
     end)
     return btn
 end

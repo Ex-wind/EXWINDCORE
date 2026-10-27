@@ -4294,6 +4294,41 @@ function EXUI:ShowConfirmDialog(options)
     })
 end
 
+-- 输入一行文字：EXUI:ShowInputDialog({ title, text, value, maxLetters, onConfirm = function(text), onCancel })
+-- 回车确定、ESC 取消；外壳、拖动、按键与 ShowDialog 相同。
+function EXUI:ShowInputDialog(options)
+    return self:ShowDialog({
+        sourceAddon = options.sourceAddon, sourceModule = options.sourceModule,
+        id = options.id, title = options.title, text = options.text, width = options.width,
+        onClose = options.onClose,
+        input = { text = options.value, maxLetters = options.maxLetters, highlight = true,
+            onChanged = options.onChanged },
+        defaultButton = "confirm", cancelButton = "cancel",
+        buttons = {
+            { id = "cancel", text = options.cancelText or L["取消"], onClick = function(r)
+                if options.onCancel then options.onCancel(r.text) end
+            end },
+            { id = "confirm", text = options.confirmText or L["确定"], variant = "primary", onClick = function(r)
+                if options.onConfirm then options.onConfirm(r.text) end
+            end },
+        },
+    })
+end
+
+-- 纯提示：EXUI:ShowAlertDialog({ title, text, onClose = function() })，只有一个确定，ESC 等同确定。
+function EXUI:ShowAlertDialog(options)
+    return self:ShowDialog({
+        sourceAddon = options.sourceAddon, sourceModule = options.sourceModule,
+        id = options.id, title = options.title, text = options.text, width = options.width,
+        defaultButton = "ok", cancelButton = "ok",
+        buttons = {
+            { id = "ok", text = options.confirmText or L["确定"], variant = "primary", onClick = function()
+                if options.onClose then options.onClose() end
+            end },
+        },
+    })
+end
+
 function EXUI:HideConfirmDialog(accepted)
     local overlay = self._dialogOverlay
     if not overlay or not overlay.options then return end

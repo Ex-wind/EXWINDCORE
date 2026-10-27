@@ -56,10 +56,9 @@ local function SetPreviewBackground(r, g, b)
 end
 
 local function OpenPreviewBackgroundPicker()
-    local picker = _G.ColorPickerFrame
-    if not picker then return end
+    local picker = EXUI:GetColorPicker()
     local originalR, originalG, originalB = previewFill[1], previewFill[2], previewFill[3]
-    -- 同一个暴雪取色器开启新事务前，结束原事务，避免旧取消回调遗留。
+    -- 同一个取色面板开启新事务前，结束原事务，避免旧取消回调遗留。
     if picker:IsShown() then
         if picker.cancelFunc then picker.cancelFunc(picker.previousValues) end
         picker:Hide()

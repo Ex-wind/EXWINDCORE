@@ -1,6 +1,8 @@
 -- 图标选取（V2 节点 kind = "iconpick"）：按分组排一组可点的格子（图标、副本卡、首领卡），点了调用 owner 的动作，
 -- 选中状态由 owner 给。职业专精、种族、副本、首领这类“从一大张表里挑几个”的面板，和载入页行下的已选图标都用它。
--- 声明：{ id, kind = "iconpick", source = sources 引用名, toggle = actions 引用名 }。
+-- 声明：{ id, kind = "iconpick", source = sources 引用名, toggle = actions 引用名, remove = actions 引用名（可选） }。
+-- 写了 remove：icon / label / instance / boss 项右上角（带小图标的 label 在小图标右上角）有删除小叉，同法术芯片角上的删除叉
+-- （chipCornerRemoveSize），鼠标移到这一项上才显示，点叉调用 actions[remove](context, 项)；没写不出叉。
 -- sources[source](scope) 返回分组数组，每组：
 --   { title = 小标题（可选）, head = 一项 label（可选，代替 title：点它通常 = 这一组全选 / 全取消）,
 --     pack = nil（占满整行）| "split"（相邻的 split 组平分一行）| "flow"（相邻的 flow 组按宽度自动排成几栏）
@@ -32,6 +34,7 @@ Factory:InitCompositePool(POOL)
 Factory:InitCompositePool(ITEM_POOL)
 local Kinds = { icon = true, instance = true, boss = true, label = true, nav = true, sep = true, more = true }
 local Packs = { split = true, flow = true, side = true }
+local Removable = { icon = true, label = true, instance = true, boss = true }
 -- 首领卡 3D 头像的镜头（同 EXBoss 首领页）。
 local MODEL_ZOOM, MODEL_CAMERA = 0.85, 1.05
 
@@ -47,7 +50,7 @@ end
 
 -- 选中外框（公共选中外观，压在格子边上，代替 face 的淡边框）；没选中只留一圈淡边框（画在 face 上）。
 local function PaintRing(frame, on, radius)
-    UI:PaintSelectCell(frame, on, radius, frame._ip.part("iconPickGlow"))
+    UI:PaintSelectCell(frame, on, radius)
 end
 
 local function Paint(frame)
@@ -126,10 +129,15 @@ local function NewItem(frame)
     frame.button = CreateFrame("Button", nil, frame)
     frame.button:SetAllPoints(frame)
     frame.button:RegisterForClicks("LeftButtonUp")
-    frame.button:SetScript("OnEnter", function() Paint(frame); ShowTip(frame) end)
+    frame.button:SetScript("OnEnter", function()
+        Paint(frame); ShowTip(frame)
+        if frame.remove and frame._ip and frame._ip.enabled then frame.remove:Show() end
+    end)
     frame.button:SetScript("OnLeave", function(self)
         Paint(frame)
         if GameTooltip:GetOwner() == self then GameTooltip:Hide() end
+        -- 移到删除小叉上时还在格子里，叉留着；离开格子才收起。
+        if frame.remove and not frame:IsMouseOver() then frame.remove:Hide() end
     end)
     frame.button:SetScript("OnMouseDown", function(self) if GameTooltip:GetOwner() == self then GameTooltip:Hide() end end)
     frame.button:SetScript("OnClick", function()
@@ -162,6 +170,31 @@ local function EnsureRounded(frame)
     frame.rounded = UI:CreateRoundedImage(frame.face, GM.radius.popup, true)
 end
 local PARTS = { "face", "label", "line", "rounded", "image" }
+
+-- 删除小叉（声明写了 remove）：同法术芯片角上的删除叉，整个落在格子里面（离边 2），平时隐藏。
+local function ReleaseRemove(frame)
+    if not frame.remove then return end
+    frame.remove:Release()
+    frame.remove = nil
+end
+local function AttachRemove(frame, part)
+    local state = frame._ip
+    if not state.onRemove or not Removable[state.kind] then return end
+    local size, GC = part("chipCornerRemoveSize"), Colors()
+    local remove = UI:CreateIconButton(frame, size, size, { icon = "x", appearance = "ghost", iconSize = size,
+        iconColor = GC.dangerText, hoverIconColor = GC.text,
+        onClick = function(_, mouseButton)
+            local current = frame._ip
+            if mouseButton == "LeftButton" and current and current.enabled and current.onRemove then current.onRemove(current.item) end
+        end })
+    local item = state.item
+    local anchor = state.kind == "label" and (item.icon or item.atlas) and frame.face or frame
+    remove:ClearAllPoints()
+    remove:SetPoint("TOPRIGHT", anchor, "TOPRIGHT", -2, -2)
+    remove:SetFrameLevel(frame.button:GetFrameLevel() + 2)
+    remove:Hide()
+    frame.remove = remove
+end
 
 -- 首领卡的零件（3D 头像、首领战 ID 小牌）第一次用到才建，照 EXBoss 首领卡的尺寸和锚点。
 local function EnsureBossParts(frame, part)
@@ -219,11 +252,13 @@ local function FillRounded(frame, item)
 end
 
 -- 借一项并按种类摆好里面的零件（尺寸存在 _ip.width / _ip.height；instance / boss 的宽由排法给）。
-local function AcquireItem(parent, item, part, onClick)
+local function AcquireItem(parent, item, part, onClick, onRemove)
     local frame, isNew = Factory:AcquireCompositeHost(ITEM_POOL, parent)
     if isNew then NewItem(frame) end
+    ReleaseRemove(frame)
     local kind = item.kind
-    local state = { item = item, kind = kind, part = part, enabled = true, onClick = kind ~= "sep" and onClick or nil }
+    local state = { item = item, kind = kind, part = part, enabled = true, onClick = kind ~= "sep" and onClick or nil,
+        onRemove = onRemove }
     frame._ip = state
     frame.button:SetFrameLevel(frame:GetFrameLevel() + 6)
     frame.button:SetShown(kind ~= "sep")
@@ -351,12 +386,14 @@ local function AcquireItem(parent, item, part, onClick)
         if kind ~= "more" then frame.label:SetJustifyH("LEFT") end
         if kind ~= "boss" then frame.label:SetJustifyV("MIDDLE") end
     end
+    AttachRemove(frame, part)
     frame:Show()
     return frame
 end
 
 local function ReleaseItem(frame)
     if GameTooltip:GetOwner() == frame.button then GameTooltip:Hide() end
+    ReleaseRemove(frame)
     frame._ip = nil
     if frame.label then frame.label:SetText("") end
     if frame.image then frame.image:SetTexture(nil) end
@@ -477,6 +514,7 @@ local function Adapter(node, kit)
         local function Click(item)
             session.owner.actions[spec.toggle](context, item, item.selected ~= true)
         end
+        local Remove = spec.remove and function(item) session.owner.actions[spec.remove](context, item) end or nil
         if signature == state.signature then
             -- 结构没变：换成这次的项（新表），只重画选中状态变了的项。
             for s, section in ipairs(sections) do
@@ -488,6 +526,7 @@ local function Adapter(node, kit)
                         local frame = built.rows[r].items[i]
                         frame._ip.item = item
                         frame._ip.onClick = item.kind ~= "sep" and Click or nil
+                        frame._ip.onRemove = Remove
                         Sync(frame)
                     end
                 end
@@ -536,7 +575,7 @@ local function Adapter(node, kit)
                     builtRow.scroll, parent = scroll, scroll._ipContent
                 end
                 for i, item in ipairs(row.items or {}) do
-                    builtRow.items[i] = AcquireItem(parent, item, part, Click)
+                    builtRow.items[i] = AcquireItem(parent, item, part, Click, Remove)
                 end
                 built.rows[r] = builtRow
             end

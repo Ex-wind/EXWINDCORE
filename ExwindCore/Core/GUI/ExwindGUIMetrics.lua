@@ -118,10 +118,10 @@ ExwindTools.GUIMetrics = {
             propsValueInset = 6,       -- 值框文字左右内距
             propsButtonSize = 24,      -- 框后图标按钮边长
             propsButtonIconSize = 14,  -- 框后图标按钮里的图标边长
-            propsPrefixWidth = 22,     -- prefixIcon 项：框内前缀图标占的宽（文字从这里开始）
-            propsPrefixInset = 5,      -- 前缀图标离值框左缘
-            propsPrefixIconSize = 13,  -- 前缀图标边长
-            propsPrefixShortWidth = 72, -- prefixIcon 项 size="short" 的值框宽（含图标）
+            propsPrefixWidth = 28,     -- prefixIcon 项：框内前缀图标占的宽（文字从这里开始）
+            propsPrefixInset = 6,      -- 前缀图标离值框左缘
+            propsPrefixIconSize = 16,  -- 前缀图标边长（和框里文字相称）
+            propsPrefixShortWidth = 78, -- prefixIcon 项 size="short" 的值框宽（含图标）
             propsInlineButtonSize = 22, -- prefixIcon 项：框内右侧图标按钮边长
             propsInlineButtonInset = 2, -- 框内图标按钮离值框右缘
             propsClampPadY = 3,        -- clampLines 多行项：文字上下内距
@@ -359,7 +359,9 @@ ExwindTools.GUIMetrics = {
         colorSwatchPaddingX = 10,      -- 色块到按钮左缘的内边距
         colorSwatchGap = 8,            -- 色块到标签的间隙
         colorButtonTextPaddingRight = 8, -- 标签右内边距
-        colorPresetGap = 4,            -- 常用色小方块之间
+        colorPresetGap = 4,            -- 取色面板色块之间（一排 13 个职业色要放得下）
+        colorPickerGap = 10,           -- 取色面板：色轮、明度条、透明度条、右栏之间，色轮到常用色一排
+        colorPickerSideGap = 6,        -- 取色面板右栏：对比色块、十六进制框、透明度框之间
 
         -- 复合设置组（ExwindGUIComposite.lua 的 COMPOSITE_* 常量真源）。
         compositePadX = 10,            -- 复合组左右内边距；加上列内控件内缩 10 后与设置行左缘 20 对齐（settings.rowPaddingX）
@@ -465,7 +467,11 @@ ExwindTools.GUIMetrics = {
         dialogCloseGlyphSize = 16,         -- 对话框关闭图标边长；比 Toast 的 14 大一档，对应更大的按钮
         colorButtonDefaultWidth = 225,     -- 颜色按钮默认宽度
         colorSwatchSize = 16,              -- 颜色按钮左侧色块边长
-        colorPresetSize = 12,              -- 颜色按钮里常用色小方块边长
+        colorPresetSize = 16,              -- 取色面板色块边长
+        colorPickerWheelSize = 128,        -- 取色面板色轮边长（明度条、透明度条同高）
+        colorPickerBarWidth = 14,          -- 取色面板明度条、透明度条宽
+        colorPickerSideWidth = 84,         -- 取色面板右栏宽（对比色块、十六进制框、透明度框）
+        colorPickerSwatchHeight = 20,      -- 取色面板新旧对比色块各高
         cardHeaderHeight = 32,             -- 设置卡片标题栏高度；ExwindGUISettingsList.lua SETTINGS_CARD_HEADER_HEIGHT
         personPortraitAvatar = 56,         -- 人物卡竖排默认圆形头像直径
         homeContactIcon = 48,              -- 首页顶部联系图标
@@ -576,7 +582,7 @@ do
         settingAutoWidth = true,        -- setting 行（左标签 + 多个子控件）文字列按标签实际字宽；单控件标准行照原算法
         iconButtonSize = 28,            -- 图标按钮（button 写 icon、text 为空）边长
         iconButtonIconSize = 16,        -- 图标按钮里的图标边长
-        colorWidth = 46,                -- 不带 label 的颜色控件只画色块，宽 46
+        colorWidth = 132,               -- 不带 label 的颜色控件（色块 + 十六进制色值 + 透明度百分比）宽
         controlHeight = 26,             -- 输入框、下拉等单行控件高（用户 10-22：原 30 太高）
         chipHeight = 26,                -- 芯片、三态小标签高
         summaryPaddingX = 10,           -- 摘要卡 / 句子卡左右内距
@@ -708,6 +714,10 @@ do
         labelAutoWidth = true,
         controlWidth = 150,             -- 标准控件宽
         shortWidth = 60,                -- size="short" 的宽
-        catalogTileWidth = 96,          -- 行下已选的副本 / 首领卡：名字放得下 7 个字
+        -- 行下已选（职业专精、种族是图标；副本、首领是图标 + 名字）：图标比默认小号大一档，行上下不另留内距。
+        iconPickSmall = 32,
+        iconPickCell = 32,
+        iconPickRowPadY = 0,
+        iconPickSpacing = -4,           -- 已选图标行与前后行之间：压进两边的行内距，图标上下各只留 6
     })
 end

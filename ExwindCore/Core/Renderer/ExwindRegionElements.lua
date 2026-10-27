@@ -376,6 +376,7 @@ local function ApplyTexture(widget, spec)
         flipV = content.flipV,
         blendMode = content.blendMode or spec.style.blendMode,
         rotation = content.rotation or spec.style.rotation,
+        pulse = content.pulse,
         color = content.color or spec.style,
         shown = content.shown ~= false and spec.shown ~= false,
     })

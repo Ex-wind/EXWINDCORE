@@ -269,10 +269,11 @@ ExwindTools.GUIColors = {
  -- [新]
     checkCardDesc           = H(C.dim),
  -- [新]
-    -- 图标选取（iconpick）格子：没选中去色后乘这个暗色，悬停乘浅一点的；选中外发光着主色。
+    -- 图标选取（iconpick）格子：没选中去色后乘这个暗色，悬停乘浅一点的。
     pickDimShade            = Hex(0x6b, 0x6b, 0x6b),
     pickHoverShade          = Hex(0xbf, 0xbf, 0xbf),
-    pickGlow                = AccentA(0.55),
+    -- 公共选中外观（UI:PaintSelectRow / PaintSelectCell）的整块底：比悬停底 menuHover 还淡的中性灰叠层。
+    selectFill              = NeutralA(0.05),
  -- [新]
 
     -- 彈出層 / 下拉選單
@@ -536,7 +537,7 @@ ExwindTools.GUIColors = {
     iconDarkDisabledIcon = WhiteA(0.19), -- 停用圖示（平常圖示的 35%）
     -- 發光設置組顏色行的色板（金、白、藍、綠、紅、紫；不含透明度，透明度另有滑桿）
     glowPalette = { { 1, 0.82, 0.2 }, { 1, 1, 1 }, { 0.35, 0.8, 1 }, { 0.4, 1, 0.45 }, { 1, 0.35, 0.3 }, { 0.8, 0.45, 1 } },
-    -- 颜色按钮左边的常用色（白、红、橙、黄、绿、青、蓝、紫），点一下直接设成该色。
+    -- 取色面板底下一排常用色（白、红、橙、黄、绿、青、蓝、紫），点一下直接设成该色。
     colorPresets = {
         Hex(0xff, 0xff, 0xff), Hex(0xff, 0x30, 0x30), Hex(0xff, 0x80, 0x00), Hex(0xff, 0xd1, 0x00),
         Hex(0x1e, 0xff, 0x00), Hex(0x00, 0xcc, 0xff), Hex(0x00, 0x70, 0xdd), Hex(0xa3, 0x35, 0xee),

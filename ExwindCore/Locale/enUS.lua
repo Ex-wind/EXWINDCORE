@@ -3764,3 +3764,9 @@ L["点一下恢复打开时的颜色"] = "Click to restore the original color"
 -- /exbug
 L["EX 报错与状态"] = "EX Errors & State"
 L["全选复制下面的文字，贴给客服（当前 %d 条报错）"] = "Select all and copy the text below for support (%d errors so far)"
+
+L["盗贼隐秘之刃监控(临时版)"] = "Rogue Unseen Blade Monitor (Temporary Version)"
+L["技能计数与覆盖技能音效提示，并显示指定增益的层数。"] = "Tracks ability counts, plays sound alerts for override abilities, and displays the stack count of a specified buff."
+L["2层语音"] = "Voice Alert at 2 Stacks"
+L["3层语音"] = "Voice Alert at 3 Stacks"
+L["致命一击语音"] = "Coup de Grace Voice Alert"

@@ -4,6 +4,15 @@ local L = ExwindLocale and ExwindLocale.NewLocale("zhCN", true)
 if not L then return end
 
 -- ExwindTools localization
+L["2层语音"] = true
+L["3层语音"] = true
+L["致命一击语音"] = true
+L["盗贼隐秘之刃监控(临时版)"] = true
+L["技能计数与覆盖技能音效提示，并显示指定增益的层数。"] = true
+L["状态1 = 2"] = true
+L["状态1 = 3"] = true
+L["状态2 = true"] = true
+L["BUFF 441786 层数（面板开启时可拖动预览）"] = true
 L["全部"] = true
 L["编辑"] = true
 L["布局"] = true
